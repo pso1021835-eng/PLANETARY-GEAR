@@ -277,7 +277,7 @@
     const renderer = new TH.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false });
     renderer.setPixelRatio(mobile ? 1 : Math.min(2, window.devicePixelRatio || 1));
     renderer.setSize(W0, H0);
-    renderer.outputEncoding = TH.sRGBEncoding; renderer.toneMapping = TH.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.08; renderer.setClearColor(0x000000, 0);
+    renderer.outputEncoding = TH.sRGBEncoding; renderer.toneMapping = TH.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0; renderer.setClearColor(0x000000, 0);
     renderer.shadowMap.enabled = full && !mobile; renderer.shadowMap.type = TH.PCFSoftShadowMap;
     renderer.localClippingEnabled = true;
     host.prepend(renderer.domElement);
@@ -309,10 +309,10 @@
       sun1: { color: 0x3d6fb8, metalness: 1, roughness: .22, clearcoat: .4, clearcoatRoughness: .15 }, planet1: { color: 0x5b8fd6, metalness: 1, roughness: .24, clearcoat: .4, clearcoatRoughness: .15 },
       sun2: { color: 0xc99a2e, metalness: 1, roughness: .22, clearcoat: .4, clearcoatRoughness: .15 }, planet2: { color: 0xdcb04a, metalness: 1, roughness: .24, clearcoat: .4, clearcoatRoughness: .15 },
       ring: { color: 0xd3d5d8, metalness: .9, roughness: .34 }, pin: { color: 0xf1f2f4, metalness: 1, roughness: .12 },
-      carrier: { color: 0x2c2e33, metalness: .55, roughness: .42, clearcoat: .3, clearcoatRoughness: .3 },
-      housing: { color: 0xf4f2ee, metalness: 0, roughness: .36, clearcoat: .55, clearcoatRoughness: .22, sheen: 0, envMapIntensity: .9 },
-      flange: { color: 0xe4612a, metalness: .25, roughness: .38, clearcoat: .6, clearcoatRoughness: .2 }, roller: { color: 0xf4f5f7, metalness: 1, roughness: .08 }, race: { color: 0xcfd2d6, metalness: 1, roughness: .2 },
-      bolt: { color: 0x1d1e21, metalness: .8, roughness: .38 }, seal: { color: 0xe4612a, metalness: 0, roughness: .55 }, shaft: { color: 0xd8dadd, metalness: 1, roughness: .26 }
+      carrier: { color: 0x0c0d0f, metalness: .55, roughness: .42, clearcoat: .3, clearcoatRoughness: .3 },
+      housing: { color: 0xd9d5cc, metalness: 0, roughness: .42, clearcoat: .5, clearcoatRoughness: .24, envMapIntensity: .75 },
+      flange: { color: 0xc4290a, metalness: .2, roughness: .4, clearcoat: .6, clearcoatRoughness: .2 }, roller: { color: 0xf4f5f7, metalness: 1, roughness: .08 }, race: { color: 0xcfd2d6, metalness: 1, roughness: .2 },
+      bolt: { color: 0x1d1e21, metalness: .8, roughness: .38 }, seal: { color: 0xc4290a, metalness: 0, roughness: .55 }, shaft: { color: 0xd8dadd, metalness: 1, roughness: .26 }
     };
     const mkMat = k => { const m = new TH.MeshPhysicalMaterial(Object.assign({ envMapIntensity: 1.1 }, MAT[k])); m.userData.base = Object.assign({}, MAT[k]); mats.push(m); return m; };
     function add(obj, partId, parent = root, layer = 0, dz = 0) {
@@ -473,7 +473,8 @@
     root.updateMatrixWorld(true);
     parts.forEach((p, id) => { const bb = new TH.Box3(); p.objs.forEach(o => bb.expandByObject(o)); p.center = bb.getCenter(new TH.Vector3()); p.radius = bb.getSize(new TH.Vector3()).length() / 2; });
     const S0 = Math.max(maxR * 2, len);
-    const view = { target: new TH.Vector3(), az: Math.PI / 4, el: Math.atan(1 / Math.SQRT2), dist: S0 * 2.7 };
+    const fitDist = () => S0 * 2.7 / Math.min(1, (host.clientWidth / Math.max(1, host.clientHeight)) / 1.25);
+    const view = { target: new TH.Vector3(), az: Math.PI / 4, el: Math.atan(1 / Math.SQRT2), dist: fitDist() };
     const home = { az: view.az, el: view.el, dist: view.dist, target: new TH.Vector3() };
     if (opt.initialView) { const iv = opt.initialView; view.az = iv.az; view.el = iv.el; view.dist = iv.dist; view.target.fromArray(iv.target); }
     const goal = { target: view.target.clone(), az: view.az, el: view.el, dist: view.dist };
@@ -513,7 +514,7 @@
       caps.splice(0).forEach(c => { c.parent?.remove(c); c.material.dispose(); });
       if (on) meshes.forEach(ms => {
         if (ms.isInstancedMesh || !ms.visible) return;
-        const cm = new TH.MeshBasicMaterial({ color: 0xe4612a, side: TH.BackSide, clippingPlanes: [plane], toneMapped: false });
+        const cm = new TH.MeshBasicMaterial({ color: 0xc8320e, side: TH.BackSide, clippingPlanes: [plane], toneMapped: false });
         const c = new TH.Mesh(ms.geometry, cm); c.raycast = () => { }; c.renderOrder = 1; ms.add(c); caps.push(c);
       });
     }
@@ -544,7 +545,7 @@
       const wc = p.center.clone().applyMatrix4(root.matrixWorld);
       goal.target.copy(wc); goal.dist = Math.max(S0 * 1.1, p.radius * 4.2); goal.az = view.az; goal.el = view.el;
     }
-    function resetView() { goal.target.copy(home.target); goal.az = home.az; goal.el = home.el; goal.dist = home.dist; }
+    function resetView() { goal.target.copy(home.target); goal.az = home.az; goal.el = home.el; goal.dist = home.dist = fitDist(); }
 
     // ---- pointer: orbit with inertia, pan (shift / middle), wheel zoom, pick, context menus
     const cv = renderer.domElement, ray = new TH.Raycaster(), ndc = new TH.Vector2();
