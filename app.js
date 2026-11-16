@@ -1,0 +1,610 @@
+/* Planetary Gear Designer — UI */
+{
+const E = window.PGD;
+const $ = s => document.querySelector(s);
+const fmt = (x, n = 2) => Number.isFinite(x) ? x.toFixed(n) : (x === Infinity ? '∞' : '—');
+const fmtH = h => !Number.isFinite(h) ? (h === Infinity ? '∞' : '—') : h >= 1e6 ? (h / 1e6).toFixed(1) + 'M' : h >= 1e4 ? (h / 1e3).toFixed(0) + 'k' : h.toFixed(0);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const KEY = 'pgd-design-v1';
+let D = load(), R = null, MC = null, SENS = null, view = 'overview', worker = null, jobId = 0;
+
+function fillMissing(dst, src) { for (const k in src) { if (dst[k] === undefined || dst[k] === null && src[k] !== null && typeof src[k] === 'object') dst[k] = JSON.parse(JSON.stringify(src[k])); else if (Array.isArray(src[k]) && Array.isArray(dst[k])) { dst[k].forEach((v, i) => { if (v && typeof v === 'object' && src[k][i] && typeof src[k][i] === 'object' && !Array.isArray(v)) fillMissing(v, src[k][i]); }); } else if (src[k] && typeof src[k] === 'object' && dst[k] && typeof dst[k] === 'object') fillMissing(dst[k], src[k]); } return dst; }
+function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.schema === 'pgd/1') { s.config.floatingSun = false; return fillMissing(s, E.defaultDesign()); } } catch (e) { } return E.defaultDesign(); }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(D)); } catch (e) { } }
+const get = p => p.split('.').reduce((o, k) => o?.[k], D);
+const set = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((o, k) => o[k], D)[last] = v; };
+
+function compute() {
+  try { R = E.analyze(D); } catch (e) { R = { errors: ['계산 오류: ' + e.message], warns: [] }; console.error(e); }
+  MC = null; SENS = null;
+}
+
+// ------------------------------------------------------------------ inputs
+function num(path, label, opt = {}) {
+  const v = get(path);
+  return `<label class="f">${label}<input type="number" step="${opt.step ?? 'any'}" ${opt.min != null ? `min="${opt.min}"` : ''} data-p="${path}" data-t="num" value="${v ?? ''}" ${opt.disabled ? 'disabled' : ''}></label>`;
+}
+function sel(path, label, options, opt = {}) {
+  const v = String(get(path));
+  return `<label class="f">${label}<select data-p="${path}" data-t="${opt.type || 'str'}" ${opt.disabled ? 'disabled' : ''}>${options.map(([k, t]) => `<option value="${esc(k)}" ${String(k) === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+}
+function chk(path, label) { return `<label class="c"><input type="checkbox" data-p="${path}" data-t="bool" ${get(path) ? 'checked' : ''}> ${label}</label>`; }
+function bindInputs(root) {
+  root.querySelectorAll('[data-p]').forEach(elm => elm.addEventListener('change', () => {
+    const t = elm.dataset.t; let v = elm.value;
+    if (t === 'num') { v = elm.value === '' ? null : Number(elm.value); }
+    else if (t === 'int') v = parseInt(v, 10);
+    else if (t === 'bool') v = elm.checked;
+    else if (t === 'numsel') v = Number(v);
+    set(elm.dataset.p, v);
+    changed();
+  }));
+}
+function changed() { save(); compute(); renderRail(); renderVerdict(); render(true); }
+
+// ------------------------------------------------------------------ rail & verdict
+const STEPS = [
+  ['overview', '', '종합 판정'],
+  ['s1', '정의', '1. 요구사양'], ['s2', '', '2. 구성·감속비'],
+  ['s3', '설계', '3. 기어 제원·형상'], ['s4', '', '4. 치형 검사'], ['s5', '', '5. 정밀도·치형 수정'], ['s6', '', '6. 재료·열처리'],
+  ['s7', '해석·강도', '7. 하중 계수'], ['s8', '', '8. 기어 강도'], ['slub', '', '9. 윤활·스커핑'], ['s9', '', '10. 베어링 (유성·출력)'], ['scar', '', '11. 캐리어·핀'],
+  ['s10', '검증', '12. 성능 예측'], ['s11', '', '13. 가상 검증'], ['reg', '', '가정 대장']
+];
+function status(id) {
+  if (!R || R.errors?.length) return ['s3', 's4', 'overview'].includes(id) ? 'bad' : '';
+  const v = Object.fromEntries(R.verdict.map(x => [x.k, x.ok]));
+  const geoWarn = R.ctx.stages.some(s => s.geo.warns.length || s.geo.checks.some(c => !c.ok));
+  switch (id) {
+    case 'overview': return R.verdict.every(x => x.ok) ? 'ok' : 'bad';
+    case 's4': return geoWarn ? 'warn' : 'ok';
+    case 's6': return R.ctx.stages.some(s => s.mats.some(m => m.warnings.length)) ? 'warn' : 'ok';
+    case 's8': return v['정격 토크 · 목표 수명 (기어)'] && v['부하 스펙트럼 수명 (기어)'] && v['피크 토크 정적 안전율'] ? 'ok' : 'bad';
+    case 's9': return v['유성 베어링 L10 (스펙트럼)'] && v['유성 베어링 정적 s0 (피크)'] && v['출력 베어링 L10'] && v['출력 베어링 정적 s0 (피크)'] && v['출력 베어링 롤러 접촉 s0 (피크)'] !== false ? 'ok' : 'bad';
+    case 'scar': return v['유성 핀·캐리어 정적 (피크)'] ? 'ok' : 'bad';
+    case 'slub': return !v['스커핑 안전율 (피크, 섬광온도)'] ? 'bad' : R.lube.lambdaMin < 1 ? 'warn' : 'ok';
+    case 's10': return v['효율 (정격, 추정)'] && v['출력 백래시 (추정)'] ? 'ok' : 'warn';
+    case 's11': return MC ? (MC.passLife >= .9 ? 'ok' : 'bad') : '';
+    default: return '';
+  }
+}
+function renderRail() {
+  $('#rail').innerHTML = STEPS.map(([id, g, t]) => `${g ? `<div class="grp">${g}</div>` : ''}<button data-v="${id}" aria-current="${view === id}"><span class="dot ${status(id)}"></span>${t}</button>`).join('');
+  $('#rail').querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.v));
+}
+function go(id) { view = id; try { history.replaceState(null, '', '#' + id); } catch (e) { } renderRail(); render(); window.scrollTo(0, 0); }
+function renderVerdict() {
+  const el = $('#verdict');
+  if (!R || R.errors?.length) { el.innerHTML = `<div class="kpi"><div class="label">계산 불가</div></div><ul class="warns">${(R?.errors || []).map(e => `<li>${esc(e)}</li>`).join('')}</ul>`; return; }
+  const ok = R.verdict.every(x => x.ok);
+  el.innerHTML = `
+   <div class="kpi"><div class="label">감속기 한계 · ISO 설계 판정 (${D.req.lifeH} h)</div><div class="big ${R.reducerCap < D.req.Trated ? 'bad' : ''}">${fmt(R.reducerCap, 1)}<small> N·m</small></div><div class="note">${esc(R.reducerGov)}</div></div>
+   ${MC ? `<div class="kpi"><div class="label">현실 예측 · 중앙값 (P10–P90)</div><div class="big">${fmt(MC.capacity.p50, 1)}<small> N·m</small></div><div class="note">${fmt(MC.capacity.p10, 1)} – ${fmt(MC.capacity.p90, 1)} N·m · 몬테카를로 ${MC.n}회</div></div>` : `<div class="kpi"><div class="label">현실 예측</div><div class="note">13단계에서 가상 검증을 실행하면 표시됩니다.</div></div>`}
+   <div class="kpi"><div class="label">목표 정격 ${D.req.Trated} N·m · 판정</div><div class="big ${ok ? 'good' : 'bad'}" style="font-size:28px">${ok ? '전 항목 충족' : R.verdict.filter(x => !x.ok).length + '개 항목 미달'}</div></div>
+   <ul>${R.verdict.map(x => `<li><span>${esc(x.k)}</span><b class="${x.ok ? 'good' : 'bad'}">${x.ok ? '✓' : '✗'} ${fmtV(x)}</b></li>`).join('')}</ul>`;
+}
+function fmtV(x) { return x.unit === 'h' ? fmtH(x.value) + ' h' : fmt(x.value, x.unit === '%' ? 1 : 2) + (x.unit ? ' ' + x.unit : ''); }
+
+// ------------------------------------------------------------------ views
+function render(keepScroll) {
+  const m = $('#main');
+  const y = window.scrollY;
+  m.innerHTML = (VIEWS[view] || VIEWS.overview)();
+  bindInputs(m);
+  (AFTER[view] || (() => { }))(m);
+  if (keepScroll) window.scrollTo(0, y);
+}
+const head = (t, lead) => `<h2>${t}</h2><p class="lead">${lead}</p>`;
+const errBox = () => R?.errors?.length ? `<div class="card"><h3 class="bad">계산할 수 없습니다</h3><ul class="warns">${R.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : '';
+const tag = s => `<span class="tag ${s}">${s}</span>`;
+const partLabel = r => `${r.stage}단 ${r.mesh} · ${r.partName}`;
+
+const VIEWS = {
+  overview() {
+    if (!R || R.errors?.length) return head('종합 판정', '입력에 오류가 있어 계산하지 못했습니다.') + errBox();
+    const tgt = D.req.Trated, cap = R.capacityLife;
+    const maxV = Math.max(tgt, cap, MC ? MC.capacity.p90 : 0, R.capacityInf) * 1.15 || 1;
+    const pct = v => clampPct(v / maxV * 100);
+    const gov = R.govRated;
+    return head('종합 판정', '실측값 없이, 규격식·물리 모델·명시된 가정만으로 계산합니다. 왼쪽 단계 순서대로 입력을 확정하고, 오른쪽 판정에서 미달 항목을 확인하세요.') +
+      `<div class="card"><h3>정격 출력토크 · 목표 수명 ${D.req.lifeH} h, ${D.req.rpm} rpm 일정 운전</h3>
+       <div class="range" aria-hidden="true">
+        ${MC ? `<div class="bar" style="left:${pct(MC.capacity.p10)}%;width:${pct(MC.capacity.p90) - pct(MC.capacity.p10)}%"></div><div class="mid" style="left:${pct(MC.capacity.p50)}%"></div>` : ''}
+        <div class="iso" style="left:${pct(cap)}%"></div><div class="tgt" style="left:${pct(tgt)}%"></div></div>
+       <div class="legend"><span><i style="background:var(--ink)"></i>ISO 설계 판정 ${fmt(cap, 1)} N·m</span><span><i style="background:var(--brick)"></i>목표 ${tgt} N·m</span>${MC ? `<span><i style="background:var(--accent2)"></i>현실 예측 P10–P90 ${fmt(MC.capacity.p10, 1)}–${fmt(MC.capacity.p90, 1)}, 중앙 ${fmt(MC.capacity.p50, 1)} N·m</span>` : '<span>현실 예측: 13단계에서 실행</span>'}</div>
+       <p class="note">ISO 설계 판정은 피로강도 99 % 신뢰도, 공차 상한(제곱합), 목표 안전율 SH ${D.req.SH} · SF ${D.req.SF} 기준입니다. 현실 예측은 공차·하중분배·재료 산포를 무작위로 뽑아 중앙값 강도로 계산한 분포입니다.</p></div>
+      <div class="two">
+       <div class="card"><h3>지배 부위</h3><p class="big" style="font-size:24px">${gov ? esc(partLabel(gov.row)) + ' ' + gov.mode : '—'}</p>
+        <table><tr><th>항목</th><th>값</th></tr>
+        <tr><td>무한 수명(10¹⁰회) 한계</td><td>${fmt(R.capacityInf)} N·m</td></tr>
+        <tr><td>정적 한계 (피크)</td><td>${fmt(R.staticCap)} N·m</td></tr>
+        <tr><td>출력 베어링 L10</td><td>${fmtH(R.outBearing.L10h)} h</td></tr>
+        <tr><td>유성 베어링 한계 (목표 수명)</td><td>${R.bearingCap.map(v => fmt(v, 1)).join(' / ')} N·m</td></tr>
+        <tr><td>스펙트럼 수명 (기어 최소)</td><td>${fmtH(R.spectrum.minLife)} h</td></tr></table></div>
+       <div class="card"><h3>먼저 손댈 것</h3>${advice()}</div></div>
+      ${R.warns.length ? `<div class="card"><h3>주의</h3><ul class="warns">${R.warns.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>` : ''}`;
+  },
+  s1() {
+    const d = D.req.duty;
+    const cs = E.CASES, cur = cs[D.req.case], has = !!cur;
+    const pos_ = has ? D.req.case.split('-')[0] : 'lower', axis = has ? D.req.case.split('-')[1] : 'pitch';
+    return head('1. 요구사양', '로봇 관절 위치(상체·하체)와 축(롤·피치·요)을 골라 적용하면 피크·비상 토크 비, 부하 스펙트럼, 관절 속도, 수명, 출력 베어링 외부 하중이 정격 토크에 비례해 채워집니다. 채운 값은 대표 가정값이므로 아래에서 고칠 수 있습니다.') +
+      `<div class="card"><h3>관절 케이스</h3><div class="grid">
+        ${num('req.Trated', '정격 출력토크 N·m')}
+        <label class="f">관절 위치<select id="cPos"><option value="lower" ${pos_ === 'lower' ? 'selected' : ''}>하체</option><option value="upper" ${pos_ === 'upper' ? 'selected' : ''}>상체</option></select></label>
+        <label class="f">관절 축<select id="cAxis">${['roll', 'pitch', 'yaw'].map(a => `<option value="${a}" ${axis === a ? 'selected' : ''}>${{ roll: '롤', pitch: '피치', yaw: '요' }[a]}</option>`).join('')}</select></label>
+        <label class="f">&nbsp;<button class="btn primary" id="cApply" type="button">케이스 적용</button></label></div>
+        <p class="note">현재: <b>${has ? esc(cur.label) : '사용자 정의'}</b>${has ? ' · ' + esc(cur.note) : ''}. 적용 뒤 아래 값을 고치면 고친 값이 쓰입니다. 정격 토크를 바꾼 뒤에는 다시 적용해야 비례값이 갱신됩니다.</p>
+        <div class="scroll"><table><tr><th class="l">케이스</th><th>피크 ×</th><th>비상 ×</th><th>관절 rpm</th><th>수명 h</th><th>Fr/T</th><th>Fa/T</th><th>M/T</th><th class="l">특징</th></tr>
+        ${Object.entries(cs).map(([k, c]) => `<tr class="${k === D.req.case ? 'gov' : ''}"><td class="l">${esc(c.label)}</td><td>${c.peak}</td><td>${c.emerg}</td><td>${c.outRpm}</td><td>${c.life}</td><td>${c.ext[0]}</td><td>${c.ext[1]}</td><td>${c.ext[2]}</td><td class="l note">${esc(c.note)}</td></tr>`).join('')}</table></div>
+        <p class="note">Fr·Fa는 정격 토크 1 N·m당 N, M은 1 N·m당 N·m. 링크 길이·자중으로 실제 하중을 알면 아래 출력 베어링 외부 하중에 직접 넣으세요.</p></div>
+      <div class="card"><h3>토크·속도·수명</h3><div class="grid">
+        ${num('req.Tpeak', '반복 피크 토크 N·m')}${num('req.Temerg', '비상·충돌 토크 N·m')}
+        ${num('req.rpm', '정격 입력 회전수 rpm')}${num('req.lifeH', '목표 수명 h')}</div></div>
+       <div class="card"><h3>목표 안전율·성능</h3><div class="grid">
+        ${num('req.SH', '피로 접촉 SH')}${num('req.SF', '피로 굽힘 SF')}${num('req.SHstat', '정적 접촉 SH')}${num('req.SFstat', '정적 굽힘 SF')}
+        ${num('req.s0', '베어링 정적 s0')}${num('req.effMin', '최소 효율 %')}${num('req.backlashMax', '최대 백래시 arcmin')}</div></div>
+       <div class="card"><h3>출력 베어링 외부 하중 (정격 토크 구간)</h3><div class="grid">${num('req.ext.Fr', '반경 하중 Fr N')}${num('req.ext.Fa', '축 하중 Fa N')}${num('req.ext.M', '모멘트 M N·m')}</div>
+        <p class="note">스펙트럼 구간마다 토크 비율만큼 비례한다고 봅니다. 피크·비상 정적 검토는 토크 비를 곱합니다.</p></div>
+       <div class="card"><h3>부하 스펙트럼 (정격 대비 %, 시간 비율 %)</h3>
+        <div class="scroll"><table><tr><th>구간</th><th>토크 %</th><th>토크 N·m</th><th>시간 %</th><th>입력 rpm (0=정격)</th><th></th></tr>
+        ${d.map((l, i) => `<tr><td>${i + 1}</td><td><input type="number" data-p="req.duty.${i}.torque" data-t="num" value="${l.torque}" style="width:80px"></td><td>${fmt(D.req.Trated * l.torque / 100, 1)}</td><td><input type="number" data-p="req.duty.${i}.time" data-t="num" value="${l.time}" style="width:80px"></td><td><input type="number" data-p="req.duty.${i}.rpm" data-t="num" value="${l.rpm || 0}" style="width:90px"></td><td><button class="btn" data-del="${i}">삭제</button></td></tr>`).join('')}
+        </table></div><p><button class="btn" id="addDuty">구간 추가</button> <span class="note">시간 합 ${fmt(d.reduce((s, l) => s + (l.time || 0), 0), 1)} % (합이 100이 아니어도 비율로 계산)</span></p>
+        ${dutyChart()}</div>`;
+  },
+  s2() {
+    const st = R?.ctx?.stages || [];
+    return head('2. 구성·감속비', '단수와 링 공유를 정합니다. 썬은 축에 고정(플로팅 아님)으로 보며, 유성 간 하중분배(Kγ)는 7단계에서 유성 위치 공차와 강성으로 계산합니다.') +
+      `<div class="card"><div class="grid">${sel('config.stages', '단수', [[1, '1단'], [2, '2단']], { type: 'numsel' })}</div>
+       ${chk('config.sharedRing', '1·2단 링기어 공유 (2단 유성 잇수·모듈·비틀림각은 1단 링 기준 자동)')}
+</div>
+       <div class="card"><h3>감속비</h3><table><tr><th>단</th><th>S / P / R</th><th>단 감속비</th></tr>
+        ${st.map(s => `<tr><td>${s.i + 1}단</td><td>${s.st.s} / ${s.st.p} / ${s.geo.r}</td><td>${fmt(s.geo.ratio, 4)}</td></tr>`).join('')}
+        <tr><td><b>총</b></td><td></td><td><b>${fmt(R?.ratio, 4)} : 1</b></td></tr></table></div>
+       <div class="card"><h3>잇수 조합 탐색기</h3><div class="grid">
+        <label class="f">목표 단 감속비<input type="number" id="fRatio" value="${fmt(st[0]?.geo.ratio || 3, 3)}" step="any"></label>
+        <label class="f">유성 개수<input type="number" id="fN" value="${D.stages[0].n}"></label>
+        <label class="f">썬 잇수 범위<input id="fS" value="12-60"></label>
+        <label class="f">최대 링 잇수<input type="number" id="fR" value="140"></label></div>
+        <p><button class="btn" id="fGo">탐색</button> <span class="note">조립 조건 · 인접 간섭 · 헌팅 투스를 만족하는 조합 (모듈 ${D.stages[0].m} mm 기준)</span></p><div id="fOut"></div></div>`;
+  },
+  s3() {
+    if (!R?.ctx) return '';
+    const cards = D.stages.slice(0, D.config.stages).map((s, i) => {
+      const locked = i === 1 && D.config.sharedRing;
+      const g = R.ctx.stages[i]?.geo;
+      return `<div class="card"><h3>${i + 1}단</h3><div class="grid">
+        ${num(`stages.${i}.s`, '썬 잇수', { step: 1 })}${num(`stages.${i}.p`, '유성 잇수', { step: 1, disabled: locked })}
+        <label class="f">링 잇수<input value="${g?.r ?? ''}" disabled></label>
+        ${sel(`stages.${i}.n`, '유성 개수', [2, 3, 4, 5, 6].map(v => [v, v + '개']), { type: 'numsel' })}
+        ${num(`stages.${i}.m`, '치직각 모듈 mm', { disabled: locked })}${num(`stages.${i}.beta`, '비틀림각 °', { disabled: locked })}
+        ${num(`stages.${i}.b`, '치폭 mm')}${num(`stages.${i}.alpha`, '압력각 °', { disabled: locked })}
+        ${num(`stages.${i}.xs`, '썬 전위계수')}${num(`stages.${i}.xp`, '유성 전위계수')}${num(`stages.${i}.xr`, '링 전위계수', { disabled: s.autoRingShift })}</div>
+        ${chk(`stages.${i}.autoRingShift`, '링 전위 자동 (외접·내접 중심거리 일치)')}
+        ${g?.parts?.length ? `<div class="scroll"><table><tr><th>기어</th><th>잇수</th><th>PCD</th><th>이끝원</th><th>이뿌리원</th><th>기초원</th><th>전위</th><th>이끝 두께</th></tr>
+        ${g.parts.map(p => `<tr><td>${p.name}</td><td>${p.z}</td><td>${fmt(p.d, 3)}</td><td>${fmt(p.da, 3)}</td><td>${fmt(p.df, 3)}</td><td>${fmt(p.db, 3)}</td><td>${fmt(p.x, 3)}</td><td>${fmt(p.tipThickness, 3)}</td></tr>`).join('')}</table></div>
+        <p class="note">캐리어 핀 PCD Ø${fmt(2 * g.meshes[0].center, 3)} mm · 작용 압력각 외접 ${fmt(g.meshes[0].aw / Math.PI * 180, 2)}° / 내접 ${fmt(g.meshes[1].aw / Math.PI * 180, 2)}° · 단 감속비 ${fmt(g.ratio, 4)}</p>` : ''}</div>`;
+    }).join('');
+    return head('3. 기어 제원·형상', '잇수·모듈·비틀림각·치폭과 전위를 정합니다. 표의 지름은 축직각 기준입니다.') + errBox() +
+      `<div class="card" style="padding:10px"><div id="viewer"><div class="ctl"><button class="btn" id="vPlay">일시정지</button><button class="btn" id="vRing">링 숨기기</button></div><div class="hud">드래그: 회전 · 휠: 확대 · 썬 입력 / 링 고정 / 캐리어 출력</div></div>
+       <div class="grid" style="margin-top:10px"><label class="f">1단 썬 입력 회전수 rpm<input type="number" id="aRpm" value="${D.anim.rpm}" step="any"></label>
+        <label class="f">재생 배속 (1 = 실속도)<select id="aSlow">${[[1, '1× 실속도'], [.2, '0.2×'], [.05, '0.05×'], [.02, '0.02×'], [.005, '0.005×']].map(([v, l]) => `<option value="${v}" ${+D.anim.slow === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <div class="f" id="aOut" style="font-size:13px;line-height:1.5"></div></div></div>` + cards;
+  },
+  s4() {
+    if (!R?.ctx) return '';
+    return head('4. 치형 검사', '조립·간섭·물림률·이끝 두께·림 두께를 확인합니다. 권장 범위를 벗어난 항목은 붉게 표시합니다.') + errBox() +
+      R.ctx.stages.map(s => `<div class="card"><h3>${s.i + 1}단</h3><table><tr><th class="l">항목</th><th>값</th><th>판정</th><th class="l">기준</th></tr>
+      ${s.geo.checks.map(c => `<tr class="${c.ok ? '' : 'bad'}"><td class="l">${esc(c.k)}</td><td>${typeof c.v === 'number' ? fmt(c.v, 3) : esc(c.v)}</td><td>${c.ok ? '통과' : '확인'}</td><td class="l note">${esc(c.note || '')}</td></tr>`).join('')}
+      ${(s.geo.rims || []).map((r, k) => `<tr class="${r.YB > 1.001 || r.error ? 'bad' : ''}"><td class="l">${E.NAMES[k]} 림 두께 sR / 기준 (${r.solid ? '중실' : (r.assumed ? '자동' : '입력') + ' Ø' + fmt(r.diameter, 2)})</td><td>${r.solid ? '중실' : fmt(r.sR, 3) + ' mm'}</td><td>YB ${fmt(r.YB, 3)}</td><td class="l note">${k === 2 ? 'sR/m ≥ 3.5면 YB = 1' : 'sR/ht ≥ 1.2면 YB = 1'}</td></tr>`).join('')}
+      </table></div>`).join('') +
+      `<div class="card"><h3>림 지름 입력</h3><div class="grid">${D.stages.slice(0, D.config.stages).map((s, i) => num(`stages.${i}.sunBore`, `${i + 1}단 썬 보어 mm (0=중실, 빈칸=자동)`) + num(`stages.${i}.planetBore`, `${i + 1}단 유성 보어 mm (0=중실, 빈칸=자동)`) + (i === 1 && D.config.sharedRing ? '' : num(`stages.${i}.ringOD`, `${i + 1}단 링 외경 mm (빈칸=자동)${D.config.sharedRing ? ' · 공유 링' : ''}`))).join('')}</div>
+       <p class="note">입력한 보어·외경은 3단계 3D 모델에도 반영됩니다. 썬·유성 보어 0은 중실(구멍 없음, YB = 1)입니다. 빈칸이면 림 두께 계수 YB = 1이 되는 최소 림(썬·유성 sR = 1.2·h, 링 sR = 4·m)으로 그립니다.</p></div>
+      <div class="card"><h3>헌팅 투스란</h3><p style="font-size:14px;line-height:1.65">맞물리는 두 기어의 잇수에 공약수가 없으면(최대공약수 1), 한 기어의 특정 이가 상대 기어의 모든 이와 한 번씩 만난 뒤에야 같은 이와 다시 만납니다. 이것을 헌팅 투스라고 합니다. 공약수가 있으면 같은 이 쌍끼리만 반복해서 만나므로, 어느 한 이의 가공 오차·흠·이물이 상대 기어의 일부 이에만 계속 전달돼 마모·피팅·소음이 국부적으로 커질 수 있습니다.</p>
+       <p style="font-size:14px;line-height:1.65">유성기어는 썬–유성, 유성–링 두 쌍을 봅니다. 예: S46 · P23은 공약수 23이 있어 썬의 한 이는 유성의 같은 이 하나와만 계속 만납니다 (P23 · R92도 같음). 다만 조립 조건((S+R)/유성 수 = 정수)과 감속비가 먼저이고, 연삭·표면경화한 정밀 기어나 그리스 윤활 저속 관절에서는 영향이 작아 <b>권장 조건</b>으로만 표시합니다. 이 검사는 강도 계산에 들어가지 않습니다.</p></div>`;
+  },
+  s5() {
+    if (!R?.ctx) return '';
+    return head('5. 정밀도·치형 수정', '정밀도 등급은 KHβ·Kv·KHα의 공차 입력이 됩니다. 크라우닝은 유성기어에 주어 두 치합 모두에 작용한다고 봅니다.') +
+      D.stages.slice(0, D.config.stages).map((s, i) => `<div class="card"><h3>${i + 1}단</h3><div class="grid">
+        ${sel(`stages.${i}.grade`, '정밀도 등급 (ISO 1328 / JIS N)', [3, 4, 5, 6, 7, 8].map(v => [v, 'N' + v]), { type: 'numsel' })}
+        ${num(`stages.${i}.mod.crown`, '리드 크라우닝 µm (유성)')}${num(`stages.${i}.mod.tip`, '치끝 수정 µm')}
+        ${sel(`stages.${i}.mod.verified`, '치형 수정 근거 수준 (fZCa)', [['none', '근거 없음 · 1.20'], ['qualified', '하중 하 적합 계산 · 1.07'], ['uniform', '3D 균일 접촉 확인 · 1.00']])}</div>
+        <div class="scroll"><table><tr><th>기어</th><th>단일 피치 fp</th><th>치형 형상 ffα</th><th>잇줄 기울기 fHβ</th><th>잇줄 형상</th></tr>
+        ${(R.ctx.stages[i]?.geo.tol || []).map((t, k) => `<tr><td>${E.NAMES[k]}</td><td>${fmt(t.pitch, 1)}</td><td>${fmt(t.profileForm, 1)}</td><td>${fmt(t.helixSlope, 1)}</td><td>${fmt(t.helixForm, 1)}</td></tr>`).join('')}</table></div>
+        <p class="note">공차 단위 µm · ISO 1328-1:2013 식(= JIS B 1702-1:2016). "하중 하 적합 계산"은 수정량을 하중 변형으로 계산해 정한 경우를 뜻합니다.</p></div>`).join('');
+  },
+  s6() {
+    if (!R?.ctx) return '';
+    const rows = [];
+    for (let i = 0; i < D.config.stages; i++) for (let k = 0; k < 3; k++) {
+      const idx = i * 3 + k, shared = i === 1 && k === 2 && D.config.sharedRing;
+      const m = R.ctx.stages[i]?.mats[k];
+      rows.push(`<tr><td>${i + 1}단 ${E.NAMES[k]}</td>
+       <td>${shared ? '1단 링과 공유' : `<select data-p="materials.${idx}.family">${Object.entries(E.FAMILY).map(([f, v]) => `<option value="${f}" ${D.materials[idx].family === f ? 'selected' : ''}>${v.label}</option>`).join('')}</select>`}</td>
+       <td>${shared ? '' : `<input type="number" step="any" data-t="num" data-p="materials.${idx}.surfaceHRC" value="${D.materials[idx].surfaceHRC}" style="width:70px">`}</td>
+       <td>${shared ? '' : `<input type="number" step="any" data-t="num" data-p="materials.${idx}.coreHRC" value="${D.materials[idx].coreHRC}" style="width:70px">`}</td>
+       <td>${shared ? '' : `<input type="number" step="any" data-t="num" data-p="materials.${idx}.depth" value="${D.materials[idx].depth}" style="width:70px">`}</td>
+       <td>${fmt(m?.hv, 0)}</td><td>${fmt(m?.HlimISO, 0)}</td><td>${fmt(m?.FlimISO, 0)}</td></tr>`);
+    }
+    const cd = R.caseDepth || [];
+    return head('6. 재료·열처리', '경도는 HRC로 입력합니다. 허용응력은 ISO 6336-5 재료선과 품질 등급으로 정합니다. 경화 깊이는 피크 토크에서의 최대 전단 깊이와 비교합니다.') +
+      `<div class="card"><div class="grid">${sel('design.quality', '재료 품질 등급', [['ML', 'ML · 최소 품질'], ['MQ', 'MQ · 일반 양산 품질'], ['ME', 'ME · 고품질 (증빙 필요)']])}
+       ${num('lube.rzFlank', '치면 Rz µm')}${num('lube.rzRoot', '치근 Rz µm')}</div></div>
+       <div class="card scroll"><table><tr><th>부품</th><th class="l">재료</th><th>표면 HRC</th><th>심부 HRC</th><th>경화 깊이 mm</th><th>표면 HV</th><th>σHlim</th><th>σFlim</th></tr>${rows.join('')}</table>
+       <p class="note">σHlim·σFlim은 1 % 파손확률 기준값(MPa). 질화강(NV)은 ISO 표가 650 HV까지라 그 이상은 650 HV 값을 씁니다.</p></div>
+       <div class="card"><h3>경화 깊이 검토 · 피크 ${D.req.Tpeak} N·m</h3><table><tr><th>부위</th><th>최대 전단 깊이 mm</th><th>경화 깊이 mm</th><th>비율</th></tr>
+       ${cd.map(c => `<tr class="${c.ratio != null && c.ratio < 2 ? 'bad' : ''}"><td>${c.stage}단 ${c.mesh} · ${c.partName}</td><td>${fmt(c.zMax, 3)}</td><td>${fmt(c.depth, 2)}</td><td>${fmt(c.ratio, 2)}</td></tr>`).join('')}</table>
+       <p class="note">비율 2 미만이면 케이스 크러싱(심부 파손) 검토를 권합니다 (간이 기준).</p></div>`;
+  },
+  s7() {
+    if (!R?.ctx) return '';
+    const rs = R.rated;
+    return head('7. 하중 계수', '실측 없이 계수를 정하는 단계입니다. Kγ는 유성 위치오차·치합 강성·핀 강성로, KHβ는 공차 제곱합·핀 처짐·크라우닝으로 계산합니다.') + errBox() +
+      `<div class="card"><div class="grid">${num('loads.KA', '사용계수 KA')}
+        ${sel('loads.kgMode', 'Kγ 산정', [['model', '물리 모델 (권장)'], ['agma', 'AGMA 6123 표'], ['fixed', '직접 입력']])}
+        ${num('loads.kgFixed', 'Kγ 직접 입력값')}${num('loads.posError', '유성 위치 공차 ± µm')}</div></div>
+       <div class="card"><h3>썬 반경 지지 (플로팅 아님)</h3><div class="grid">${D.stages.slice(0, D.config.stages).map((s, i) => { const ss = D.loads.sunSupport[i] || {}; const k = E.sunSupportK(D, i);
+         return sel(`loads.sunSupport.${i}.mode`, `${i + 1}단 지지 산정`, [['structure', '구조 (베어링 ⊕ 축)'], ['direct', '직접 입력']]) +
+         (ss.mode === 'structure' ? num(`loads.sunSupport.${i}.bearingK`, `${i + 1}단 지지 베어링 반경 강성 N/µm`) + num(`loads.sunSupport.${i}.od`, `${i + 1}단 축 외경 mm`) + num(`loads.sunSupport.${i}.id`, `${i + 1}단 축 내경 mm (중공)`) + num(`loads.sunSupport.${i}.overhang`, `${i + 1}단 베어링→치폭 중앙 mm`)
+           : num(`loads.sunSupport.${i}.k`, `${i + 1}단 썬 지지 반경 강성 N/µm`)) + num(`loads.sunSupport.${i}.play`, `${i + 1}단 반경 유격 µm (베어링 틈새)`) +
+         `<div class="f note">→ ${i + 1}단 지지 강성 <b>${fmt(k.k, 1)} N/µm</b>${k.kShaft ? ` (축 ${fmt(k.kShaft, 0)})` : ''}</div>`; }).join('')}</div>
+        <p class="note">1단 썬은 입력축(중공축) 지지 베어링, 2단 썬은 1단 캐리어를 받치는 베어링에 해당합니다. 반경 유격은 베어링 내부 틈새의 절반 정도이며, 클수록 썬이 자리를 잡아 Kγ가 작아집니다. 기본값은 가정입니다.</p></div>
+       <div class="card"><div class="grid">
+        ${sel('loads.fmaMode', '잇줄 오차 결합', [['rss', '제곱합 · ISO 식 66'], ['worst', '최악합 · ISO 식 64']])}
+        ${num('loads.carrierParallel', '캐리어 핀 구멍 평행도 µm')}</div>${chk('loads.reverse', '썬·링 매 주기 하중 반전 (YM 0.7)')}</div>
+       <div class="card scroll"><h3>정격 ${D.req.Trated} N·m에서의 계수</h3><table><tr><th>부위</th><th>Kγ</th><th>Kv</th><th>fma µm</th><th>fsh 핀 / 캐리어 / 출력베어링 µm</th><th>접촉폭</th><th>KHβ</th><th>KHα</th><th class="l">근거</th></tr>
+       ${rs.rows.filter(r => r.part === (r.mesh === '썬–유성' ? 0 : 2)).map(r => `<tr><td>${r.stage}단 ${r.mesh}</td><td>${fmt(r.f.Kg, 3)}</td><td>${fmt(r.f.Kv, 3)}</td><td>${fmt(r.f.fma, 2)}</td><td>${fmt(r.f.fshPin, 2)} / ${fmt(r.f.fshCar, 2)} / ${fmt(r.f.fshOB, 2)}</td><td>${fmt(r.f.frac * 100, 0)} %</td><td>${fmt(r.f.KHb, 3)}</td><td>${fmt(r.f.KHa, 3)}</td><td class="l">${tag(r.f.KgSrc)} ${esc(r.f.KgNote)}</td></tr>`).join('')}</table>
+       <p class="note">KHβ는 부하가 낮을수록 커집니다(부분 접촉). 썬은 플로팅이 아니지만 축·베어링으로 지지되어 반경 방향으로 조금 밀립니다. Kγ는 유성 위치 공차, 치합·핀 경로 강성, 썬 지지 강성·유격의 힘 평형(에너지 최소)으로 계산합니다. 썬 지지 강성이 무한대면 완전 고정, 0이면 플로팅과 같습니다. 지지 강성·유격은 위 입력에서 정합니다.</p></div>`;
+  },
+  s8() {
+    if (!R?.ctx || R.errors?.length) return head('8. 기어 강도', '') + errBox();
+    const gid = R.govRated?.row.id;
+    return head('8. 기어 강도', 'ISO 6336-2/-3 방법 B. 허용응력은 목표 수명의 반복수로 수명계수(ZNT·YNT)와 환경계수를 보간합니다. 피크·비상 토크는 정적 강도로 따로 봅니다.') +
+      `<div class="two"><div class="card"><h3>정격 한계</h3><table>
+        <tr><td>목표 수명 ${D.req.lifeH} h · ${D.req.rpm} rpm</td><td><b>${fmt(R.capacityLife)} N·m</b></td></tr>
+        <tr><td>무한 수명 (10¹⁰회)</td><td>${fmt(R.capacityInf)} N·m</td></tr>
+        <tr><td>정적 (피크 기준 SH ${D.req.SHstat} · SF ${D.req.SFstat})</td><td>${fmt(R.staticCap)} N·m</td></tr>
+        <tr><td>피크 ${D.req.Tpeak} N·m 최소 안전율</td><td class="${R.peakS < 1 ? 'bad' : ''}">${fmt(R.peakS, 3)}</td></tr>
+        <tr><td>비상 ${D.req.Temerg} N·m 최소 안전율</td><td class="${R.emergS < 1 ? 'bad' : ''}">${fmt(R.emergS, 3)}</td></tr></table></div>
+       <div class="card"><h3>부하 스펙트럼 수명 (Miner)</h3><table><tr><th>부위</th><th>수명 h</th><th>모드</th></tr>
+        ${R.spectrum.list.slice(0, 6).map(p => `<tr class="${p.lifeH < D.req.lifeH ? 'bad' : ''}"><td>${p.stage}단 ${p.mesh} · ${p.partName}</td><td>${fmtH(p.lifeH)}</td><td>${p.mode}</td></tr>`).join('')}</table></div></div>
+       <div class="card scroll"><h3>정격 ${D.req.Trated} N·m · 목표 수명에서의 응력</h3><table><tr><th>부위</th><th>반복수</th><th>σH</th><th>σHP</th><th>SH</th><th>σF</th><th>σFP</th><th>SF</th><th>ZNT</th><th>YNT</th><th>ZB/ZD</th><th>YF</th><th>YS</th></tr>
+       ${R.rated.rows.map(r => `<tr class="${r.id === gid ? 'gov' : ''} ${r.SH < D.req.SH || r.SF < D.req.SF ? 'bad' : ''}"><td>${partLabel(r)}</td><td>${r.N.toExponential(1)}</td><td>${fmt(r.H, 0)}</td><td>${fmt(r.HP, 0)}</td><td>${fmt(r.SH, 3)}</td><td>${fmt(r.F, 0)}</td><td>${fmt(r.FP, 0)}</td><td>${fmt(r.SF, 3)}</td><td>${fmt(r.f.ZNT, 3)}</td><td>${fmt(r.f.YNT, 3)}</td><td>${fmt(r.f.ZBD, 3)}</td><td>${fmt(r.f.YF, 3)}</td><td>${fmt(r.f.YS, 3)}</td></tr>`).join('')}</table>
+       <p class="note">응력 MPa. 유성 굽힘은 양방향 하중으로 YM 0.7. 강조 행이 정격 한계를 정하는 부위입니다.</p></div>`;
+  },
+  slub() {
+    if (!R?.ctx || R.errors?.length) return head('9. 윤활·스커핑', '') + errBox();
+    const L = R.lube, g = D.lube.type === 'grease';
+    return head('9. 윤활·스커핑', '운전 온도에서의 점도로 유막 두께·마찰계수·섬광온도를 계산합니다. 윤활제 데이터시트의 ν40·ν100(그리스는 기유)과 FZG 하중 단계를 넣고, 운전 온도는 가정으로 둡니다.') +
+      `<div class="card"><div class="grid">${sel('lube.type', '윤활 방식', [['grease', '그리스 (기유 점도 입력)'], ['oil', '오일']])}
+        ${num('lube.nu40', '기유 ν40 mm²/s')}${num('lube.nu100', '기유 ν100 mm²/s')}${num('lube.temp', '운전 온도 °C (가정)')}
+        ${num('lube.alphaP', '압력-점도 계수 ×10⁻⁸ /Pa')}${g ? num('lube.starvation', '그리스 유막 결핍 계수 (0–1)') : ''}${num('lube.fzg', 'FZG 스커핑 하중 단계')}${num('lube.XL', '윤활제 계수 XL (광유 1)')}${num('lube.XW', '조직 계수 XW')}${num('req.SBmin', '요구 스커핑 안전율')}</div>
+        <p class="note">운전 점도 ν(${D.lube.temp} °C) = <b>${fmt(L.nuOp, 1)} mm²/s</b> (Walther 식, ν40·ν100 사이 직선 보간). 치면 조도는 6단계 Rz를 Ra ≈ Rz/6으로 씁니다.</p></div>
+       <div class="card scroll"><h3>정격 ${D.req.Trated} N·m · ${D.req.rpm} rpm</h3><table><tr><th>단</th><th>치합</th><th>피치선 속도 m/s</th><th>선하중 N/mm</th><th>최소 유막 µm</th><th>λ</th><th>윤활 영역</th><th>μ</th><th>섬광온도 K</th></tr>
+       ${L.meshes.map(m => `<tr class="${m.lambda < 1 ? 'bad' : ''}"><td>${m.stage}단</td><td>${m.mesh}</td><td>${fmt(m.vt, 2)}</td><td>${fmt(m.wline, 1)}</td><td>${fmt(m.hmin, 3)}</td><td>${fmt(m.lambda, 2)}</td><td>${m.regime}</td><td>${fmt(m.mu, 3)}</td><td>${fmt(m.flash, 1)}</td></tr>`).join('')}</table>
+       <p class="note">유막: Dowson–Higginson 선접촉식, 피치점·치직각 곡률반경${g ? `, 그리스는 기유 유막 × ${D.lube.starvation} (결핍 가정)` : ''}. λ = 최소 유막 / √(Ra₁² + Ra₂²). λ < 1 경계 윤활, 1–3 혼합, > 3 완전 유막. 마찰계수: ISO/TR 14179-2 식 (0.02–0.12로 제한).</p></div>
+       <div class="card scroll"><h3>스커핑 · 피크 ${D.req.Tpeak} N·m</h3><table><tr><th>단</th><th>치합</th><th>최대 섬광온도 K</th><th>접촉 온도 θB °C</th><th>스커핑 온도 θS °C</th><th>안전율 SB</th></tr>
+       ${L.peak.map(m => `<tr class="${m.SB < (D.req.SBmin || 1.5) ? 'bad' : ''}"><td>${m.stage}단</td><td>${m.mesh}</td><td>${fmt(m.flash, 1)}</td><td>${fmt(m.thetaB, 1)}</td><td>${fmt(m.thetaS, 0)}</td><td>${Number.isFinite(m.SB) ? fmt(m.SB, 1) : '∞'}</td></tr>`).join('')}</table>
+       <p class="note">Blok 섬광온도를 물림 시작·피치점·물림 끝에서 계산하고 최댓값을 씁니다. θS = 80 + (0.85 + 1.4·XW)·XL·FZG² (ISO/TR 13989-1 형태), 벌크 온도 = 운전 온도로 가정. SB = (θS − θ운전) / 섬광온도. 저속 관절에서는 스커핑보다 λ가 낮은 경계 윤활 마모·마이크로피팅이 실제 위험입니다 (마이크로피팅 정량 판정은 시험 등급 데이터가 필요해 λ로만 표시).</p></div>`;
+  },
+  s9() {
+    if (!R?.ctx || R.errors?.length) return head('10. 베어링 (유성·출력)', '') + errBox();
+    const ob = R.outBearing;
+    return head('10. 베어링 (유성·출력)', '유성 베어링은 치합 하중을, 출력 메인 베어링은 관절의 외부 하중·모멘트를 받습니다. 수명은 ISO 281 기본 수명(L10)으로 보고 중앙 수명(L50)은 참고로 둡니다.') +
+      `<div class="card"><h3>유성 베어링</h3><div class="grid">${D.stages.slice(0, D.config.stages).map((s, i) =>
+        `<label class="f">${i + 1}단 베어링 이름<input data-p="stages.${i}.bearing.name" value="${esc(s.bearing.name)}"></label>` + num(`stages.${i}.bearing.C`, `${i + 1}단 동정격 C N`) + num(`stages.${i}.bearing.C0`, `${i + 1}단 정정격 C0 N`) + num(`stages.${i}.bearing.count`, `${i + 1}단 유성당 개수`)).join('')}</div>
+        <p class="note">카탈로그 C·C0를 넣으세요. 기본값은 예시입니다.</p></div>
+       <div class="card scroll"><table><tr><th>단</th><th>등가 하중 Peq N</th><th>L10 h</th><th>L50 h (추정)</th><th>s0 피크</th><th>s0 비상</th><th>유성 상대 rpm</th><th>목표 수명 토크 한계</th></tr>
+       ${R.bearings.map((b, i) => `<tr class="${b.L10h < D.req.lifeH || b.s0peak < D.req.s0 ? 'bad' : ''}"><td>${b.stage}단</td><td>${fmt(b.Peq, 0)}</td><td>${fmtH(b.L10h)}</td><td>${fmtH(b.L50h)}</td><td>${fmt(b.s0peak, 2)}</td><td>${fmt(b.s0emerg, 2)}</td><td>${fmt(b.planetRpm, 0)}</td><td>${fmt(R.bearingCap[i], 1)} N·m</td></tr>`).join('')}</table>
+       <p class="note">유성 1개당 반경 하중 = 두 치합 접선력 합 × Kγ × Kv. L50은 와이블 기울기 1.5 가정.</p></div>
+       <div class="card"><h3>출력 메인 베어링</h3><div class="grid">
+        <label class="f">이름<input data-p="outBearing.name" data-t="str" value="${esc(D.outBearing.name)}"></label>
+        ${sel('outBearing.type', '형식', [['roller', '크로스 롤러 (p = 10/3)'], ['ball', '4점 접촉 볼 (p = 3)']])}
+        ${num('outBearing.C', '동정격 C N')}${num('outBearing.C0', '정정격 C0 N')}${num('outBearing.dp', '롤러 피치원 dp mm')}${num('outBearing.Z', '롤러 수 Z (0=분포 계산 끔)')}${num('outBearing.Dw', '롤러 지름 Dw mm')}${num('outBearing.Lw', '롤러 유효 길이 Lw mm')}${num('outBearing.preload', '예압 µm (음수=틈새)')}${num('outBearing.Km', '카탈로그 모멘트 강성 N·m/arcmin (비교용)')}</div>
+        <div class="scroll"><table><tr><th>출력 rpm</th><th>Fr / Fa / M (정격)</th><th>등가 하중 Peq N</th><th>L10 h</th><th>s0 피크</th><th>s0 비상</th><th>기울기 정격</th><th>기울기 피크</th></tr>
+        <tr class="${ob.L10h < D.req.lifeH || ob.s0peak < D.req.s0 ? 'bad' : ''}"><td>${fmt(ob.outRpm, 1)}</td><td>${fmt(ob.ext.Fr, 0)} N / ${fmt(ob.ext.Fa, 0)} N / ${fmt(ob.ext.M, 2)} N·m</td><td>${fmt(ob.Peq, 0)}</td><td>${fmtH(ob.L10h)}</td><td>${fmt(ob.s0peak, 2)}</td><td>${fmt(ob.s0emerg, 2)}</td><td>${fmt(ob.tiltRated, 3)}′</td><td>${fmt(ob.tiltPeak, 3)}′</td></tr></table></div>
+        ${ob.roll ? `<h3 style="margin-top:14px">롤러 하중분포 (모델)</h3><div class="scroll"><table><tr><th>조건</th><th>Fr / Fa / M</th><th>최대 롤러 하중 N</th><th>평균 N</th><th>하중 받는 롤러</th><th>최대 접촉응력 MPa</th><th>접촉 s0</th><th>기울기</th><th>모멘트 강성 (모델)</th></tr>
+        ${['rated', 'peak', 'emerg'].map(k => { const q = ob.roll[k], M = ob.ext.M * q.k; return `<tr class="${q.s0 < D.req.s0 ? 'bad' : ''}"><td>${{ rated: '정격', peak: '피크', emerg: '비상' }[k]}</td><td>${fmt(ob.ext.Fr * q.k, 0)} / ${fmt(ob.ext.Fa * q.k, 0)} N / ${fmt(M, 2)} N·m</td><td>${fmt(q.Qmax, 0)}</td><td>${fmt(q.Qmean, 0)}</td><td>${q.loaded} / ${q.Z}</td><td>${fmt(q.p0, 0)}</td><td>${fmt(q.s0, 2)}</td><td>${fmt(q.tiltArcmin, 3)}′</td><td>${q.tiltArcmin > 1e-6 ? fmt(M / q.tiltArcmin, 0) + ' N·m/′' : '—'}</td></tr>`; }).join('')}</table></div>
+        <p class="note">교차 배열 롤러(접촉각 45°)를 반경·축·기울기 3자유도로 풀고, 롤러 강성은 Palmgren 선접촉식(δ = 2·3.84×10⁻⁵·Q^0.9/L^0.8)입니다. 접촉 s0 = (4000 MPa / 최대 접촉응력)². 모델 기울기는 마지막 단 기어의 치폭 방향 오정렬(fsh)로 들어갑니다 (7단계 표의 '출력베어링' 값). 링 하우징·캐리어 판의 변형은 포함하지 않습니다.</p>` : ''}
+        <p class="note">등가 하중 P = X(Fr + 2000·M/dp) + Y·Fa. Fa/(Fr + 2000M/dp) ≤ 1.5이면 X 1, Y 0.45, 넘으면 X·Y 0.67 (크로스 롤러 카탈로그 식). 정적 P0 = Fr + 2000M/dp + 0.44Fa. 외부 하중은 1단계 관절 케이스에서 오며, 기울기 = M / 모멘트 강성. 기본 C·C0·강성은 예시값입니다.</p></div>
+       <div class="card"><h3>감속기 한계</h3><p class="big">${fmt(R.reducerCap, 1)}<small> N·m · ${esc(R.reducerGov)}</small></p></div>`;
+  },
+  scar() {
+    if (!R?.ctx || R.errors?.length) return head('11. 캐리어·핀', '') + errBox();
+    return head('11. 캐리어·핀', '유성 핀은 두 치합 접선력 합(× Kγ·Kv)을 받는 보로 봅니다. 핀 굽힘·전단, 캐리어 구멍 면압, 처짐과 치폭 방향 기울기를 계산하며, 기울기는 7단계 KHβ의 fsh로 들어갑니다.') +
+      `<div class="card"><div class="grid">${D.stages.slice(0, D.config.stages).map((s, i) =>
+        num(`stages.${i}.pin.d`, `${i + 1}단 핀 지름 mm`) + sel(`stages.${i}.pin.type`, `${i + 1}단 지지`, [['double', '양단 지지'], ['single', '편단 지지']]) + sel(`stages.${i}.pin.material`, `${i + 1}단 핀 소재`, [['SUJ2', 'SUJ2'], ['SCM440', 'SCM440'], ['S45C', 'S45C']]) + num(`stages.${i}.pin.wall`, `${i + 1}단 캐리어 판 두께(핀 끼워맞춤) mm`) + num(`stages.${i}.pin.allow`, `${i + 1}단 핀 허용 굽힘 MPa`)
+        + num(`stages.${i}.carrier.webW`, `${i + 1}단 기둥 원주 방향 폭 mm`) + num(`stages.${i}.carrier.webH`, `${i + 1}단 기둥 반경 방향 두께 mm`) + sel(`stages.${i}.carrier.material`, `${i + 1}단 캐리어 소재`, [['S45C', 'S45C'], ['SCM440', 'SCM440'], ['SUJ2', 'SUJ2']])).join('')}
+        ${num('carrier.allowP', '캐리어 구멍 허용 면압 MPa')}${num('carrier.allowB', '캐리어 기둥 허용 굽힘 MPa')}</div></div>
+       <div class="card scroll"><h3>캐리어 강성 (양단 지지 캐리어)</h3><table><tr><th>단</th><th>기둥 강성 N/mm</th><th>비틀림 와인드업 정격 µrad</th><th>핀 기울기 정격 µrad</th><th>fsh 기여 µm</th><th>기둥 굽힘 피크 MPa</th><th>안전율</th><th>캐리어 비틀림 강성 N·m/rad</th></tr>
+       ${R.carrierPin.map((c, i) => { const r = c.car.rated, pk = c.car.peak; return r.double ? `<tr class="${c.Sweb < 1 ? 'bad' : ''}"><td>${c.stage}단</td><td>${fmt(r.kweb, 0)}</td><td>${fmt(r.windup * 1e6, 1)}</td><td>${fmt(r.slope * 1e6, 1)}</td><td>${fmt(R.rated.rows.find(x => x.stage === c.stage)?.f.fshCar, 2)}</td><td>${fmt(pk.sigma, 0)}</td><td>${fmt(c.Sweb, 2)}</td><td>${fmt(r.ktor, 0)}</td></tr>` : `<tr><td>${c.stage}단</td><td colspan="7" class="l note">편단 지지: 기둥 없음 · 핀 외팔보 처짐만 반영 (판은 강체)</td></tr>`; }).join('')}</table>
+       <p class="note">양단 지지 캐리어는 핀 하중의 절반이 반대쪽 판에서 기둥(유성 사이, 핀 PCD 위치, 길이 = 치폭 + 1 mm)을 거쳐 출력 판으로 갑니다. 기둥을 양단 고정 보(굽힘 + 전단)로 보고 두 판 사이 비틀림 와인드업을 구하며, 이것이 핀을 원주 방향으로 기울여 두 치합의 fsh에 더해집니다. 캐리어 비틀림 강성은 12단계 비틀림 강성에도 들어갑니다. 판 자체 굽힘은 포함하지 않습니다.</p></div>
+       <div class="card scroll"><table><tr><th>단</th><th>조건</th><th>핀 하중 N</th><th>굽힘 σ MPa</th><th>전단 τ MPa</th><th>구멍 면압 MPa</th><th>처짐 µm</th><th>치폭 기울기 µm</th></tr>
+       ${R.carrierPin.map(c => ['rated', 'peak', 'emerg'].map(k => `<tr class="${k !== 'rated' && (c[k].sigma > c.allow || c[k].p > c.carrierAllowP) ? 'bad' : ''}"><td>${c.stage}단</td><td>${{ rated: '정격', peak: '피크', emerg: '비상' }[k]}</td><td>${fmt(c[k].F, 0)}</td><td>${fmt(c[k].sigma, 0)}</td><td>${fmt(c[k].tau, 1)}</td><td>${fmt(c[k].p, 1)}</td><td>${k === 'rated' ? fmt(c.rated.defl, 2) : ''}</td><td>${k === 'rated' ? fmt(Math.abs(c.rated.tilt), 3) : ''}</td></tr>`).join('')).join('')}</table>
+       <p class="note">핀 지지 길이: 양단 = 치폭 + 0.6 + 벽, 편단 = 치폭(외팔보). 피크 기준 굽힘 안전율 ${R.carrierPin.map(c => fmt(c.Sbend, 2)).join(' / ')}, 구멍 면압 안전율 ${R.carrierPin.map(c => fmt(c.Spress, 2)).join(' / ')} (1단 / 2단). 피크 시 캐리어 전달 토크 ${R.carrierPin.map(c => fmt(c.carrierTorque, 1)).join(' / ')} N·m. 캐리어 판의 변형·비틀림은 이 버전에서 다루지 않습니다.</p></div>`;
+  },
+  s10() {
+    if (!R?.ctx || R.errors?.length) return head('12. 성능 예측', '') + errBox();
+    return head('12. 성능 예측', '효율·백래시·강성을 모델로 추정합니다. 모두 가정이 들어간 추정값이며 범위를 함께 보세요.') +
+      `<div class="card"><div class="grid">${sel('perf.muMode', '마찰계수', [['model', 'ISO/TR 14179-2 식 (윤활 조건 반영)'], ['fixed', '고정값']])}${D.perf.muMode === 'fixed' ? num('perf.mu', '치면 마찰계수 μ') : ''}${num('perf.otherLoss', '기타 손실 %/단 (베어링·씰·교반)')}
+        ${D.stages.slice(0, D.config.stages).map((s, i) => num(`stages.${i}.jt.0`, `${i + 1}단 썬–유성 백래시 µm`) + num(`stages.${i}.jt.1`, `${i + 1}단 유성–링 백래시 µm`)).join('')}</div></div>
+       <div class="two"><div class="card"><h3>효율 (정격)</h3><p class="big">${fmt(R.eff.total * 100, 1)}<small> %</small></p>
+        <table><tr><th>단</th><th>썬–유성</th><th>유성–링</th><th>기어만</th><th>단 효율</th></tr>${R.eff.stages.map(s => `<tr><td>${s.stage}단</td><td>${fmt(s.etaMesh[0] * 100, 2)}</td><td>${fmt(s.etaMesh[1] * 100, 2)}</td><td>${fmt(s.gear * 100, 2)}</td><td>${fmt(s.eta * 100, 2)}</td></tr>`).join('')}</table>
+        <p class="note">치합 손실: Ohlendorf 손실계수 × μ, μ는 ${D.perf.muMode === 'fixed' ? '고정값' : '9단계 윤활 조건(운전 점도·속도·하중·조도)에서 ISO/TR 14179-2 식'}. 고정 링·썬 입력 유성 효율식.</p></div>
+       <div class="card"><h3>백래시 · 강성</h3><table>
+        <tr><td>출력 백래시 (치합만)</td><td><b>${fmt(R.backlash.arcmin, 2)} arcmin</b></td></tr>
+        ${R.backlash.stages.map(s => `<tr><td>${s.stage}단 기여 (출력축 환산)</td><td>${fmt(s.arcminOut, 2)} arcmin</td></tr>`).join('')}
+        <tr><td>비틀림 강성 (치합 + 핀 + 캐리어)</td><td>${fmt(R.stiffness.NmPerArcmin, 2)} N·m/arcmin</td></tr>
+        ${R.stiffness.stages.map(s => `<tr><td>${s.stage}단 캐리어 기준 · 치합+핀 / 캐리어</td><td>${fmt(s.Kmesh * Math.PI / 10800, 1)} / ${Number.isFinite(s.Kcar) ? fmt(s.Kcar * Math.PI / 10800, 1) : '강체'} N·m/′</td></tr>`).join('')}</table>
+        <p class="note">하우징·출력 베어링 비틀림·백래시 영역(저토크 비선형)은 뺀 값입니다. 정격 근처의 접선 강성에 해당합니다.</p></div></div>`;
+  },
+  s11() {
+    return head('13. 가상 검증', '실측 대신 불확실성을 계산합니다. 공차(잇줄·피치·유성 위치)를 공정 분포로, 재료 피로강도를 대수정규 산포로 뽑아 수명과 정격 한계의 분포를 구합니다. 민감도는 어떤 결정이 결과를 가장 크게 바꾸는지 보여 줍니다.') +
+      `<div class="card"><div class="grid">${num('mc.samples', '표본 수')}${num('mc.utilization', '공차 활용률 (3σ / 공차)')}${num('reliability.covH', '접촉 피로 산포 σln')}${num('reliability.covF', '굽힘 피로 산포 σln')}</div>
+       <p><button class="btn primary" id="runMC">가상 검증 실행</button> <button class="btn" id="runSens">민감도 계산</button></p><div class="prog"><i id="prog"></i></div><div id="mcOut">${mcHTML()}</div></div>
+       <div class="card"><h3>민감도 · ISO 설계 정격 기준</h3><div id="sensOut">${sensHTML()}</div></div>`;
+  },
+  reg() {
+    if (!R?.register) return head('가정 대장', '') + errBox();
+    return head('가정 대장', '계산에 들어간 모든 계수와 그 근거 등급입니다. 규격 = ISO·AGMA 식, 모델 = 물리 모델 계산, 가정 = 사람이 고른 값. 가정 항목이 결과의 신뢰도를 정합니다.') +
+      `<div class="card scroll"><table><tr><th class="l">구분</th><th class="l">항목</th><th class="l">값</th><th class="l">근거</th><th class="l">설명</th></tr>
+      ${R.register.map(r => `<tr><td class="l">${r.group}</td><td class="l">${esc(r.item)}</td><td class="l">${esc(String(r.value))}</td><td class="l">${tag(r.src)}</td><td class="l note">${esc(r.basis)}</td></tr>`).join('')}</table></div>`;
+  }
+};
+
+function clampPct(x) { return Math.max(0, Math.min(100, x)); }
+function dutyChart() {
+  const d = D.req.duty, tot = d.reduce((s, l) => s + (l.time || 0), 0) || 1, maxT = Math.max(...d.map(l => l.torque), 100);
+  return `<div style="display:flex;align-items:flex-end;height:110px;gap:2px;border-bottom:1px solid var(--rule);margin-top:10px">${d.map(l => `<div title="${l.torque}% × ${l.time}%" style="flex:${Math.max(l.time, .5) / tot};height:${l.torque / maxT * 100}%;background:var(--accent2);opacity:.6"></div>`).join('')}</div><p class="note">가로 = 시간 비율, 세로 = 토크</p>`;
+}
+function advice() {
+  const out = [];
+  const g = R.govRated;
+  if (R.capacityLife < D.req.Trated && g) {
+    if (g.mode.includes('피팅')) out.push('지배는 치면 피팅입니다. 재료(침탄)·치폭·크라우닝·정밀도 순으로 효과가 큽니다. 13단계 민감도로 확인하세요.');
+    else out.push('지배는 치근 굽힘입니다. 모듈·전위·림 두께를 먼저 보세요.');
+  }
+  R.ctx.stages.forEach(s => { if (s.geo.meshes[0].eb > 0 && s.geo.meshes[0].eb < 1) out.push(`${s.i + 1}단 εβ ${fmt(s.geo.meshes[0].eb)} → 비틀림각이나 치폭으로 1 이상 또는 스퍼(0)로.`); });
+  if (R.ctx.stages.some(s => s.mats.some(m => m.warnings.length))) out.push('표면경도가 ISO 재료표 범위를 넘습니다. 허용응력은 표 끝점으로 제한됩니다.');
+  if (R.bearings.some(b => b.L10h < D.req.lifeH)) out.push('유성 베어링 수명이 부족합니다. 핀·베어링 크기를 키우세요.');
+  if (R.rated?.stages?.some(s => s.Kg > 1.25)) out.push(`Kγ ${R.rated.stages.map(s => fmt(s.Kg, 2)).join(' / ')}: 유성 위치 공차(7단계)를 줄이거나 핀·치합 강성을 낮춰(유연 핀 등) 하중분배를 개선하세요.`);
+  if (!out.length) out.push('모든 항목이 목표를 만족합니다. 13단계 가상 검증으로 분포까지 확인하세요.');
+  return `<ul class="warns">${out.map(o => `<li>${esc(o)}</li>`).join('')}</ul>`;
+}
+function mcHTML() {
+  if (!MC) return '<p class="note">아직 실행하지 않았습니다. 표본 200개 기준 수 초 걸립니다.</p>';
+  if (MC.error) return `<p class="bad">${esc(MC.error)}</p>`;
+  const caps = MC.capacity.all.filter(Number.isFinite), lo = Math.min(...caps), hi = Math.max(...caps), nb = 24, bins = Array(nb).fill(0);
+  caps.forEach(c => bins[Math.min(nb - 1, Math.floor((c - lo) / ((hi - lo) || 1) * nb))]++);
+  const mx = Math.max(...bins);
+  return `<div class="two"><div><h3>정격 한계 분포 · 목표 수명 ${D.req.lifeH} h</h3><div class="hist">${bins.map(b => `<i style="height:${b / mx * 100}%"></i>`).join('')}</div>
+      <div class="legend"><span>${fmt(lo, 1)} N·m</span><span style="margin-left:auto">${fmt(hi, 1)} N·m</span></div>
+      <table><tr><td>P10</td><td>${fmt(MC.capacity.p10, 2)} N·m</td></tr><tr><td><b>P50 (중앙값)</b></td><td><b>${fmt(MC.capacity.p50, 2)} N·m</b></td></tr><tr><td>P90</td><td>${fmt(MC.capacity.p90, 2)} N·m</td></tr></table></div>
+    <div><h3>스펙트럼 수명 분포</h3><table><tr><td>P10</td><td>${fmtH(MC.life.p10)} h</td></tr><tr><td><b>P50</b></td><td><b>${fmtH(MC.life.p50)} h</b></td></tr><tr><td>P90</td><td>${fmtH(MC.life.p90)} h</td></tr>
+      <tr><td>목표 ${D.req.lifeH} h 달성 확률</td><td class="${MC.passLife < .9 ? 'bad' : 'good'}"><b>${fmt(MC.passLife * 100, 0)} %</b></td></tr>
+      <tr><td>Kγ 중앙 / P90</td><td>${fmt(MC.Kg.p50, 3)} / ${fmt(MC.Kg.p90, 3)}</td></tr><tr><td>KHβ 중앙 / P90</td><td>${fmt(MC.KHb.p50, 3)} / ${fmt(MC.KHb.p90, 3)}</td></tr></table>
+      <p class="note">ISO 설계 판정 ${fmt(R?.capacityLife, 2)} N·m와의 차이는 99 % 신뢰도·공차 상한 대신 중앙값·공정 분포를 쓴 효과입니다.</p></div></div>`;
+}
+function sensHTML() {
+  if (!SENS) return '<p class="note">"민감도 계산"을 누르세요.</p>';
+  if (SENS.error) return `<p class="bad">${esc(SENS.error)}</p>`;
+  const mx = Math.max(...SENS.cases.map(c => Math.abs(c.delta || 0)), 1);
+  return `<p class="note">기준 ${fmt(SENS.base, 2)} N·m (목표 수명 정격). 막대는 하나만 바꿨을 때의 변화.</p>` + SENS.cases.map(c => {
+    const w = Math.abs(c.delta || 0) / mx * 50, up = (c.delta || 0) >= 0;
+    return `<div class="hbar"><span class="lab">${esc(c.label)}</span><span class="track"><i style="${up ? 'left:50%' : 'right:50%'};width:${w}%;background:${up ? 'var(--accent2)' : 'var(--brick)'}"></i><i style="left:50%;width:1px;background:var(--rule)"></i></span><span class="num">${fmt(c.value, 2)} (${up ? '+' : ''}${fmt(c.delta, 0)}%)</span></div>`;
+  }).join('');
+}
+
+// ------------------------------------------------------------------ after-render hooks
+const AFTER = {
+  s1(m) {
+    m.querySelector('#cApply').onclick = () => { E.applyCase(D, m.querySelector('#cPos').value + '-' + m.querySelector('#cAxis').value, R?.ratio); D.anim.rpm = D.req.rpm; changed(); };
+    m.querySelector('#addDuty').onclick = () => { D.req.duty.push({ torque: 50, time: 10, rpm: 0 }); changed(); };
+    m.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { D.req.duty.splice(+b.dataset.del, 1); changed(); });
+  },
+  s2(m) {
+    m.querySelector('#fGo').onclick = () => {
+      const target = +m.querySelector('#fRatio').value, n = +m.querySelector('#fN').value, [s0, s1] = m.querySelector('#fS').value.split('-').map(Number), rmax = +m.querySelector('#fR').value;
+      const g = (a, b) => { while (b) [a, b] = [b, a % b]; return a; };
+      const res = [];
+      for (let s = s0; s <= s1; s++) for (let p = 9; p <= 120; p++) {
+        const r = s + 2 * p; if (r > rmax || (s + r) % n) continue;
+        const ratio = 1 + r / s, a = (s + p) / 2, gap = 2 * a * Math.sin(Math.PI / n) - (p + 2);
+        if (gap <= 0.5) continue;
+        res.push({ s, p, r, ratio, err: Math.abs(ratio - target) / target, hunt: g(s, p) === 1 && g(p, r) === 1 });
+      }
+      res.sort((a, b) => a.err - b.err || b.hunt - a.hunt);
+      m.querySelector('#fOut').innerHTML = `<div class="scroll"><table><tr><th>S</th><th>P</th><th>R</th><th>감속비</th><th>오차</th><th>헌팅</th><th></th></tr>${res.slice(0, 12).map(x => `<tr><td>${x.s}</td><td>${x.p}</td><td>${x.r}</td><td>${fmt(x.ratio, 4)}</td><td>${fmt(x.err * 100, 2)} %</td><td>${x.hunt ? '예' : ''}</td><td><button class="btn" data-ap="${x.s},${x.p},${n}">1단에 적용</button></td></tr>`).join('')}</table></div>`;
+      m.querySelectorAll('[data-ap]').forEach(b => b.onclick = () => { const [s, p, nn] = b.dataset.ap.split(',').map(Number); Object.assign(D.stages[0], { s, p, n: nn }); if (D.config.sharedRing) { D.stages[1].s = s; D.stages[1].n = nn; } changed(); });
+    };
+  },
+  s3(m) { mountViewer(m.querySelector('#viewer')); },
+  s11(m) {
+    m.querySelector('#runMC').onclick = () => runJob('mc', r => { MC = r; renderVerdict(); renderRail(); if (view === 's11') m.querySelector('#mcOut').innerHTML = mcHTML(); });
+    m.querySelector('#runSens').onclick = () => runJob('sens', r => { SENS = r; if (view === 's11') m.querySelector('#sensOut').innerHTML = sensHTML(); });
+  }
+};
+function runJob(type, done) {
+  const id = ++jobId, bar = $('#prog');
+  if (bar) bar.style.width = '2%';
+  const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
+  try {
+    if (!worker) worker = new Worker('worker.js');
+    worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
+    worker.onerror = () => { worker = null; inline(); };
+    worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });
+  } catch (e) { inline(); }
+  function inline() { setTimeout(() => { try { finish(type === 'mc' ? E.monteCarlo(D, D.mc.samples) : E.sensitivity(D)); } catch (err) { finish({ error: err.message }); } }, 30); }
+}
+
+// ------------------------------------------------------------------ 3D viewer (Three.js r128)
+let VIEW3D = null;
+// 3D: involute extrusions with helical twist. Phasing: with sun at 0, a planet at carrier angle φ meshes the sun when its
+// rotation is π − π/zp + (φ mod 2π/zs)·zs/zp + φ, and the ring meshes when the ring sits at π/zr (odd zp) or 0 (even zp).
+// A shared ring is one body; stage 2 is rotated as a whole so its planets fit that ring at stage 2's axial position.
+function mountViewer(host) {
+  if (VIEW3D) { VIEW3D.dispose(); VIEW3D = null; }
+  if (!window.THREE || !host || !R?.ctx || R.errors?.length) { if (host) host.insertAdjacentHTML('beforeend', `<p class="note" style="padding:12px">${window.THREE ? '3D 표시는 계산 오류가 없을 때 나타납니다.' : '3D 라이브러리(three.js)를 불러오지 못했습니다.'}</p>`); return; }
+  const T = window.THREE, W = host.clientWidth, H = host.clientHeight;
+  const renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); renderer.setSize(W, H);
+  host.prepend(renderer.domElement);
+  const scene = new T.Scene(), camera = new T.PerspectiveCamera(35, W / H, 1, 5000);
+  scene.add(new T.AmbientLight(0xffffff, .55));
+  const l1 = new T.DirectionalLight(0xffffff, .9); l1.position.set(1, 1.5, 2); scene.add(l1);
+  const l2 = new T.DirectionalLight(0xffffff, .35); l2.position.set(-2, -1, -1); scene.add(l2);
+  const root = new T.Group(); scene.add(root);
+  const stages = R.ctx.stages, shared = !!(D.config.sharedRing && stages.length > 1), gap = 3;
+  const metal = c => new T.MeshStandardMaterial({ color: c, metalness: .55, roughness: .38 });
+  const colors = [[0x4f7cac, 0x8fb3d9], [0xb08a3e, 0xd8b56a]];
+  const ringMat = new T.MeshStandardMaterial({ color: 0x9a948c, metalness: .5, roughness: .45, transparent: true, opacity: .4, side: T.DoubleSide });
+  const carrierMat = new T.MeshStandardMaterial({ color: 0x6b6660, metalness: .4, roughness: .5, transparent: true, opacity: .55, side: T.DoubleSide });
+  const zStart = []; let z0 = 0;
+  stages.forEach(s => { zStart.push(z0); z0 += s.st.b + gap; });
+  const totalZ = z0 - gap;
+  const rimD = (g, k) => g.rims?.[k]?.diameter;
+  const parts = []; let maxR = 0, ringBody = null, ringBodyPhase = 0;
+  stages.forEach((s, i) => {
+    const g = s.geo, st = s.st, b = st.b, at = g.at, zb = zStart[i];
+    const zs = g.parts[0].z, zp = g.parts[1].z, zr = g.parts[2].z, a = g.meshes[0].center;
+    const rho0 = (zp % 2) ? Math.PI / zr : 0;
+    const tb = Math.tan(st.beta * Math.PI / 180), rr = g.parts[2].d / 2;
+    let psi = 0, ring = null;
+    if (shared && i > 0) {
+      ring = ringBody;                                         // ring flank at this height is turned by the helix
+      psi = (ringBodyPhase - zb * tb / rr) - rho0;
+    } else {
+      const depth = shared ? totalZ : b;
+      ring = gearMesh(T, g.parts[2], at, depth, -st.beta, true, ringMat, rimD(g, 2));
+      ring.position.z = zb; ring.rotation.z = rho0; root.add(ring);
+      if (shared) { ringBody = ring; ringBodyPhase = rho0; }
+    }
+    const sun = gearMesh(T, g.parts[0], at, b, st.beta, false, metal(colors[i % 2][0]), rimD(g, 0));
+    sun.position.z = zb; root.add(sun);
+    const planets = [];
+    for (let j = 0; j < st.n; j++) {
+      const pm = gearMesh(T, g.parts[1], at, b, -st.beta, false, metal(colors[i % 2][1]), rimD(g, 1));
+      pm.position.z = zb; root.add(pm); planets.push(pm);
+    }
+    const carrier = new T.Group(), rc = a + g.parts[1].da / 4;
+    const disk = new T.Mesh(new T.RingGeometry(Math.max(rimD(g, 0) || 0, g.parts[0].df * .6) / 2, rc, 64), carrierMat);
+    disk.position.z = zb + b + 1.2; carrier.add(disk);
+    for (let j = 0; j < st.n; j++) {
+      const pin = new T.Mesh(new T.CylinderGeometry(st.pin.d / 2, st.pin.d / 2, b + 2.4, 20), metal(0xcfcac2));
+      pin.rotation.x = Math.PI / 2; const ang = 2 * Math.PI * j / st.n;
+      pin.position.set(a * Math.cos(ang), a * Math.sin(ang), zb + b / 2 + .6); carrier.add(pin);
+    }
+    root.add(carrier);
+    const phase = Array.from({ length: st.n }, (_, j) => {
+      const phi = 2 * Math.PI * j / st.n, pitchS = 2 * Math.PI / zs, delta = ((phi % pitchS) + pitchS) % pitchS;
+      return Math.PI - Math.PI / zp + delta * zs / zp;
+    });
+    parts.push({ sun, planets, ring, carrier, a, zs, zp, ratio: g.ratio, n: st.n, phase, psi, ownRing: !(shared && i > 0) });
+    maxR = Math.max(maxR, (rimD(g, 2) || g.parts[2].df) / 2 + 2);
+  });
+  root.position.z = -totalZ / 2;
+  let az = -.6, el = .55, dist = maxR * 4.2, playing = true, theta = 0, last = performance.now(), showRing = true;
+  const place = () => { camera.position.set(dist * Math.cos(el) * Math.sin(az), -dist * Math.cos(el) * Math.cos(az), dist * Math.sin(el)); camera.up.set(0, 0, 1); camera.lookAt(0, 0, 0); };
+  place();
+  let drag = null;
+  const cv = renderer.domElement;
+  cv.addEventListener('pointerdown', e => { drag = [e.clientX, e.clientY, az, el]; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', e => { if (!drag) return; az = drag[2] - (e.clientX - drag[0]) * .008; el = Math.max(-1.4, Math.min(1.4, drag[3] + (e.clientY - drag[1]) * .008)); place(); });
+  cv.addEventListener('pointerup', () => drag = null);
+  cv.addEventListener('wheel', e => { e.preventDefault(); dist = Math.max(maxR * 1.5, Math.min(maxR * 12, dist * (1 + Math.sign(e.deltaY) * .08))); place(); }, { passive: false });
+  host.querySelector('#vPlay').onclick = e => { playing = !playing; e.target.textContent = playing ? '일시정지' : '재생'; };
+  host.querySelector('#vRing').onclick = e => { showRing = !showRing; parts.forEach(p => { if (p.ownRing) p.ring.visible = showRing; }); e.target.textContent = showRing ? '링 숨기기' : '링 보이기'; };
+  // speed panel: input rpm of the stage-1 sun and playback factor
+  const rpmIn = document.getElementById('aRpm'), slowIn = document.getElementById('aSlow'), outEl = document.getElementById('aOut');
+  const readout = () => {
+    if (!outEl) return;
+    let n = +D.anim.rpm || 0; const lines = [];
+    parts.forEach((p, i) => { const nc = n / p.ratio, np = (n - nc) * p.zs / p.zp; lines.push(`${i + 1}단 썬 ${fmt(n, 1)} → 캐리어 ${fmt(nc, 2)} rpm · 유성 자전 ${fmt(np, 1)} rpm`); n = nc; });
+    outEl.innerHTML = lines.join('<br>') + `<br><b>출력 ${fmt(n, 2)} rpm</b> · 화면 ${fmt(D.anim.rpm * D.anim.slow, 2)} rpm`;
+  };
+  if (rpmIn) rpmIn.onchange = () => { D.anim.rpm = Math.max(0, +rpmIn.value || 0); save(); readout(); };
+  if (slowIn) slowIn.onchange = () => { D.anim.slow = +slowIn.value; save(); readout(); };
+  readout();
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let raf;
+  const frame = now => {
+    const dt = Math.min(.05, (now - last) / 1000); last = now;
+    if (playing && !reduce) theta += dt * (+D.anim.rpm || 0) * (+D.anim.slow || 0) * 2 * Math.PI / 60;
+    let sunAng = theta;
+    parts.forEach(p => {
+      const car = sunAng / p.ratio;
+      p.sun.rotation.z = sunAng + p.psi;
+      p.carrier.rotation.z = car + p.psi;
+      p.planets.forEach((pm, j) => {
+        const phi = 2 * Math.PI * j / p.n + car + p.psi;
+        pm.position.x = p.a * Math.cos(phi); pm.position.y = p.a * Math.sin(phi);
+        pm.rotation.z = p.phase[j] + phi - (sunAng - car) * p.zs / p.zp;
+      });
+      sunAng = car;
+    });
+    renderer.render(scene, camera);
+    raf = requestAnimationFrame(frame);
+  };
+  raf = requestAnimationFrame(frame);
+  const ro = new ResizeObserver(() => { const w = host.clientWidth, h = host.clientHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); });
+  ro.observe(host);
+  VIEW3D = { dispose() { cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); scene.traverse(o => { o.geometry?.dispose?.(); }); } };
+}
+// transverse involute outline; internal gears trace the tooth spaces as "teeth" between tip (inner) and root (outer) radii
+function outline(g, at) {
+  const z = g.z, rb = g.db / 2, inv = a => Math.tan(a) - a;
+  const inner = g.internal ? g.da / 2 : g.df / 2, outer = g.internal ? g.df / 2 : g.da / 2;
+  const half = (Math.PI / 2 + (g.internal ? -2 : 2) * g.x * Math.tan(20 * Math.PI / 180)) / z;
+  const w = r => { const rr = Math.max(r, rb * 1.0000001); return half + inv(at) - inv(Math.acos(Math.min(1, rb / rr))); };
+  const r0 = Math.max(inner, rb), steps = 7, pts = [];
+  for (let k = 0; k < z; k++) {
+    const c = 2 * Math.PI * k / z + (g.internal ? Math.PI / z : 0);
+    pts.push([inner, c - w(r0)]);
+    for (let i = 0; i <= steps; i++) { const r = r0 + (outer - r0) * i / steps; pts.push([r, c - w(r)]); }
+    const wa = w(outer); for (let i = 1; i < 4; i++) pts.push([outer, c - wa + 2 * wa * i / 4]);
+    for (let i = steps; i >= 0; i--) { const r = r0 + (outer - r0) * i / steps; pts.push([r, c + w(r)]); }
+    pts.push([inner, c + w(r0)]);
+    const nx = 2 * Math.PI * (k + 1) / z + (g.internal ? Math.PI / z : 0) - w(r0), cur = c + w(r0);
+    for (let i = 1; i < 3; i++) pts.push([inner, cur + (nx - cur) * i / 3]);
+  }
+  return pts.map(([r, a]) => [r * Math.cos(a), r * Math.sin(a)]);
+}
+// rimDia: bore for external gears, outside diameter for the ring (from step 4 inputs or the automatic rim)
+function gearMesh(T, g, at, b, betaDeg, internal, mat, rimDia) {
+  const pts = outline(g, at).map(([x, y]) => new T.Vector2(x, y));
+  let shape;
+  if (internal) {
+    shape = new T.Shape(); const R0 = Math.max(g.df / 2 + .5 * g.m, (rimDia || g.df + 8 * g.m) / 2);
+    shape.absarc(0, 0, R0, 0, Math.PI * 2, false); shape.holes.push(new T.Path(pts.slice().reverse()));
+  } else {
+    shape = new T.Shape(pts);
+    const rh = Math.min((rimDia || 0) / 2, g.df / 2 - .3 * g.m);
+    if (rh > .2) { const hole = new T.Path(); hole.absarc(0, 0, rh, 0, Math.PI * 2, true); shape.holes.push(hole); }
+  }
+  const geo = new T.ExtrudeGeometry(shape, { depth: b, bevelEnabled: false, curveSegments: 32, steps: Math.max(2, Math.round(b)) });
+  const tb = Math.tan(betaDeg * Math.PI / 180), rp = g.d / 2, pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i), zz = pos.getZ(i), a = zz * tb / rp, c = Math.cos(a), s = Math.sin(a); pos.setXY(i, x * c - y * s, x * s + y * c); }
+  geo.computeVertexNormals();
+  return new T.Mesh(geo, mat);
+}
+
+// ------------------------------------------------------------------ header actions
+$('#dname').value = D.name || '';
+$('#dname').onchange = e => { D.name = e.target.value; save(); };
+$('#bExample').onclick = () => { D = E.defaultDesign(); $('#dname').value = D.name; changed(); };
+$('#bExport').onclick = () => {
+  const txt = JSON.stringify(D, null, 1);
+  dlg('설계 JSON', txt, '아래 내용을 복사해 보관하세요. "복사"를 누르면 클립보드에 넣습니다.', '복사', async () => { try { await navigator.clipboard.writeText(txt); return '복사했습니다.'; } catch (e) { $('#dlgText').select(); return '자동 복사가 막혀 있어 내용을 선택해 두었습니다. Ctrl+C로 복사하세요.'; } });
+};
+$('#bImport').onclick = () => dlg('JSON 불러오기', '', '이 사이트에서 복사한 설계 JSON을 붙여 넣고 확인을 누르세요.', '불러오기', () => {
+  try { const d = JSON.parse($('#dlgText').value); if (d.schema !== 'pgd/1') throw new Error('형식이 다릅니다'); d.config.floatingSun = false; D = fillMissing(d, E.defaultDesign()); $('#dname').value = D.name || ''; changed(); $('#dlg').close(); return null; } catch (e) { return '불러오지 못했습니다: ' + e.message; }
+});
+function dlg(title, text, note, okLabel, onOk) {
+  $('#dlgTitle').textContent = title; $('#dlgText').value = text; $('#dlgNote').textContent = note; $('#dlgOk').textContent = okLabel;
+  $('#dlgOk').onclick = async e => { e.preventDefault(); const msg = await onOk(); if (msg) $('#dlgNote').textContent = msg; };
+  $('#dlg').showModal();
+}
+window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (STEPS.some(s => s[0] === h) && h !== view) go(h); });
+const h0 = location.hash.slice(1); if (STEPS.some(s => s[0] === h0)) view = h0;
+compute(); renderRail(); renderVerdict(); render();
+}
