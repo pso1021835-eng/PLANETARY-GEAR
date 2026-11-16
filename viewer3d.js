@@ -252,7 +252,7 @@
   // ------------------------------------------------------------------ environment (code-generated soft boxes)
   function makeEnv(renderer) {
     const TH = T(), env = new TH.Scene();
-    const room = new TH.Mesh(new TH.BoxGeometry(40, 20, 40), new TH.MeshBasicMaterial({ color: 0x8c8a86, side: TH.BackSide }));
+    const room = new TH.Mesh(new TH.BoxGeometry(40, 20, 40), new TH.MeshBasicMaterial({ color: 0x5a5854, side: TH.BackSide }));
     env.add(room);
     const panel = (w, h, x, y, z, ry, rx, k) => { const m = new TH.Mesh(new TH.PlaneGeometry(w, h), new TH.MeshBasicMaterial({ color: new TH.Color(k, k, k), side: TH.DoubleSide })); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, 0); env.add(m); };
     panel(14, 3, 0, 9.5, 0, 0, Math.PI / 2, 6);         // top strip
@@ -311,7 +311,7 @@
       ring: { color: 0xd3d5d8, metalness: .9, roughness: .34 }, pin: { color: 0xf1f2f4, metalness: 1, roughness: .12 },
       carrier: { color: 0x0c0d0f, metalness: .55, roughness: .42, clearcoat: .3, clearcoatRoughness: .3 },
       housing: { color: 0xd9d5cc, metalness: 0, roughness: .42, clearcoat: .5, clearcoatRoughness: .24, envMapIntensity: .75 },
-      flange: { color: 0xc4290a, metalness: .2, roughness: .4, clearcoat: .6, clearcoatRoughness: .2 }, roller: { color: 0xf4f5f7, metalness: 1, roughness: .08 }, race: { color: 0xcfd2d6, metalness: 1, roughness: .2 },
+      flange: { color: 0xb8240a, metalness: .15, roughness: .48, clearcoat: .25, clearcoatRoughness: .35, envMapIntensity: .55 }, roller: { color: 0xf4f5f7, metalness: 1, roughness: .08 }, race: { color: 0xcfd2d6, metalness: 1, roughness: .2 },
       bolt: { color: 0x1d1e21, metalness: .8, roughness: .38 }, seal: { color: 0xc4290a, metalness: 0, roughness: .55 }, shaft: { color: 0xd8dadd, metalness: 1, roughness: .26 }
     };
     const mkMat = k => { const m = new TH.MeshPhysicalMaterial(Object.assign({ envMapIntensity: 1.1 }, MAT[k])); m.userData.base = Object.assign({}, MAT[k]); mats.push(m); return m; };
@@ -545,7 +545,7 @@
       const wc = p.center.clone().applyMatrix4(root.matrixWorld);
       goal.target.copy(wc); goal.dist = Math.max(S0 * 1.1, p.radius * 4.2); goal.az = view.az; goal.el = view.el;
     }
-    function resetView() { goal.target.copy(home.target); goal.az = home.az; goal.el = home.el; goal.dist = home.dist = fitDist(); }
+    function resetView() { st.zoomed = false; goal.target.copy(home.target); goal.az = home.az; goal.el = home.el; goal.dist = home.dist = fitDist() * (1 + .75 * st.explodeTarget); }
 
     // ---- pointer: orbit with inertia, pan (shift / middle), wheel zoom, pick, context menus
     const cv = renderer.domElement, ray = new TH.Raycaster(), ndc = new TH.Vector2();
@@ -582,7 +582,7 @@
       if (!moved) { const id = pick(e.clientX, e.clientY); select(id, false); opt.onPick?.(id); vel.az = vel.el = 0; }
     });
     cv.addEventListener('dblclick', () => resetView());
-    cv.addEventListener('wheel', e => { e.preventDefault(); goal.dist = clamp(goal.dist * (1 + Math.sign(e.deltaY) * .1), S0 * .5, S0 * 12); }, { passive: false });
+    cv.addEventListener('wheel', e => { e.preventDefault(); goal.dist = clamp(goal.dist * (1 + Math.sign(e.deltaY) * .1), S0 * .5, S0 * 12); st.zoomed = true; }, { passive: false });
     cv.addEventListener('pointerdown', e => { if (e.button === 2) { const id = pick(e.clientX, e.clientY); openMenu(e, id); } });
 
     // ---- tooltip, menus, overlay (DOM)
@@ -664,7 +664,8 @@
     }
 
     function select(id, doFocus) { st.selected = id; paint(); if (id && doFocus) focus(id); }
-    function setExplode(v) { st.explodeTarget = clamp(v, 0, 1); }
+    // keep the exploded assembly in frame unless the user has zoomed by hand
+    function setExplode(v) { st.explodeTarget = clamp(v, 0, 1); if (!st.zoomed) goal.dist = fitDist() * (1 + .75 * st.explodeTarget); }
 
     // ---- animation loop
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
