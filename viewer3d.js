@@ -252,15 +252,17 @@
   // ------------------------------------------------------------------ environment (code-generated soft boxes)
   function makeEnv(renderer) {
     const TH = T(), env = new TH.Scene();
-    const room = new TH.Mesh(new TH.BoxGeometry(40, 20, 40), new TH.MeshBasicMaterial({ color: 0x5a5854, side: TH.BackSide }));
+    // photo-studio HDR: dark room with bright, sharp-edged strip lights → crisp specular streaks on metal
+    const room = new TH.Mesh(new TH.BoxGeometry(40, 20, 40), new TH.MeshBasicMaterial({ color: 0x262524, side: TH.BackSide }));
     env.add(room);
-    const panel = (w, h, x, y, z, ry, rx, k) => { const m = new TH.Mesh(new TH.PlaneGeometry(w, h), new TH.MeshBasicMaterial({ color: new TH.Color(k, k, k), side: TH.DoubleSide })); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, 0); env.add(m); };
-    panel(14, 3, 0, 9.5, 0, 0, Math.PI / 2, 6);         // top strip
-    panel(8, 10, -19.5, 2, 4, Math.PI / 2, 0, 3.2);      // key softbox left
-    panel(6, 8, 19.5, 1, -6, -Math.PI / 2, 0, 1.6);      // fill right
-    panel(16, 2, 0, 3, -19.5, 0, 0, 2.4);                // rim back
-    panel(30, 6, 0, -9.5, 0, 0, -Math.PI / 2, .9);       // warm floor bounce
-    panel(4, 14, 12, 4, 19.5, 0, 0, 3.5);                // front-side strip (crisp edge highlights)
+    const panel = (w, h, x, y, z, ry, rx, k, tint = [1, 1, 1]) => { const m = new TH.Mesh(new TH.PlaneGeometry(w, h), new TH.MeshBasicMaterial({ color: new TH.Color(k * tint[0], k * tint[1], k * tint[2]), side: TH.DoubleSide })); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, 0); env.add(m); };
+    panel(22, 4, 0, 9.5, 0, 0, Math.PI / 2, 14);              // overhead strip (main streak)
+    panel(3, 16, -19.5, 2, 8, Math.PI / 2, 0, 12, [1, .97, .92]); // tall key strip left, warm
+    panel(3, 16, -19.5, 2, -6, Math.PI / 2, 0, 7);            // second strip left
+    panel(10, 12, 19.5, 1, -4, -Math.PI / 2, 0, 3.5, [.92, .96, 1]); // soft fill right, cool
+    panel(2, 14, 14, 2, 19.5, 0, 0, 10);                      // front-side kicker
+    panel(20, 1.6, 0, 4, -19.5, 0, 0, 9);                     // rim line back
+    panel(30, 8, 0, -9.5, 0, 0, -Math.PI / 2, 1.4, [1, .96, .9]); // warm floor bounce
     const pm = new TH.PMREMGenerator(renderer);
     const tex = pm.fromScene(env, .02).texture; pm.dispose();
     env.traverse(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
@@ -293,7 +295,7 @@
     scene.environment = makeEnv(renderer);
     const camera = new TH.PerspectiveCamera(30, W0 / H0, 1, 6000);
     const hemi = new TH.HemisphereLight(0xfffaf2, 0x6d6a64, .45); scene.add(hemi);
-    const key = new TH.DirectionalLight(0xfff6ec, 1.5); key.castShadow = renderer.shadowMap.enabled;
+    const key = new TH.DirectionalLight(0xfff6ec, 2.2); key.castShadow = renderer.shadowMap.enabled;
     key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0004; key.shadow.radius = 9; scene.add(key); scene.add(key.target);
     const fill = new TH.DirectionalLight(0xe6ecf5, .55); scene.add(fill);
     const rim = new TH.DirectionalLight(0xffffff, .8); scene.add(rim);
@@ -306,13 +308,13 @@
     const mats = [];                  // all part materials (clones)
     const MAT = {
       sun: { color: 0xc9ccd2, metalness: 1, roughness: .28 }, planet: { color: 0xb3b8bf, metalness: 1, roughness: .3 },
-      sun1: { color: 0x3d6fb8, metalness: 1, roughness: .22, clearcoat: .4, clearcoatRoughness: .15 }, planet1: { color: 0x5b8fd6, metalness: 1, roughness: .24, clearcoat: .4, clearcoatRoughness: .15 },
-      sun2: { color: 0xc99a2e, metalness: 1, roughness: .22, clearcoat: .4, clearcoatRoughness: .15 }, planet2: { color: 0xdcb04a, metalness: 1, roughness: .24, clearcoat: .4, clearcoatRoughness: .15 },
-      ring: { color: 0xd3d5d8, metalness: .9, roughness: .34 }, pin: { color: 0xf1f2f4, metalness: 1, roughness: .12 },
-      carrier: { color: 0x0c0d0f, metalness: .55, roughness: .42, clearcoat: .3, clearcoatRoughness: .3 },
-      housing: { color: 0xd9d5cc, metalness: 0, roughness: .42, clearcoat: .5, clearcoatRoughness: .24, envMapIntensity: .75 },
-      flange: { color: 0xb8240a, metalness: .15, roughness: .48, clearcoat: .25, clearcoatRoughness: .35, envMapIntensity: .55 }, roller: { color: 0xf4f5f7, metalness: 1, roughness: .08 }, race: { color: 0xcfd2d6, metalness: 1, roughness: .2 },
-      bolt: { color: 0x1d1e21, metalness: .8, roughness: .38 }, seal: { color: 0xc4290a, metalness: 0, roughness: .55 }, shaft: { color: 0xd8dadd, metalness: 1, roughness: .26 }
+      sun1: { color: 0x2f62b4, metalness: 1, roughness: .12, clearcoat: .8, clearcoatRoughness: .06 }, planet1: { color: 0x4a86d8, metalness: 1, roughness: .14, clearcoat: .8, clearcoatRoughness: .06 },
+      sun2: { color: 0xc8901c, metalness: 1, roughness: .12, clearcoat: .8, clearcoatRoughness: .06 }, planet2: { color: 0xdaa636, metalness: 1, roughness: .14, clearcoat: .8, clearcoatRoughness: .06 },
+      ring: { color: 0xd6d8dc, metalness: 1, roughness: .18 }, pin: { color: 0xf4f5f7, metalness: 1, roughness: .06 },
+      carrier: { color: 0x1a1c20, metalness: .9, roughness: .24, clearcoat: .6, clearcoatRoughness: .12 },
+      housing: { color: 0xdcd8cf, metalness: 0, roughness: .3, clearcoat: .9, clearcoatRoughness: .08, envMapIntensity: .8 },
+      flange: { color: 0xb8240a, metalness: .6, roughness: .26, clearcoat: .7, clearcoatRoughness: .1, envMapIntensity: .7 }, roller: { color: 0xf7f8fa, metalness: 1, roughness: .04 }, race: { color: 0xdadde1, metalness: 1, roughness: .1 },
+      bolt: { color: 0x1d1e21, metalness: 1, roughness: .22 }, seal: { color: 0xc4290a, metalness: 0, roughness: .55 }, shaft: { color: 0xdcdee2, metalness: 1, roughness: .12 }
     };
     const mkMat = k => { const m = new TH.MeshPhysicalMaterial(Object.assign({ envMapIntensity: 1.1 }, MAT[k])); m.userData.base = Object.assign({}, MAT[k]); mats.push(m); return m; };
     function add(obj, partId, parent = root, layer = 0, dz = 0) {
@@ -480,7 +482,7 @@
     const goal = { target: view.target.clone(), az: view.az, el: view.el, dist: view.dist };
     const placeLights = () => {
       const a = (prefs.lightAz || 35) * Math.PI / 180, I = prefs.light ?? 1;
-      key.position.set(S0 * 2 * Math.cos(a), S0 * 2.6, S0 * 2 * Math.sin(a) + S0); key.intensity = 1.6 * I;
+      key.position.set(S0 * 2 * Math.cos(a), S0 * 2.6, S0 * 2 * Math.sin(a) + S0); key.intensity = 2.2 * I;
       key.shadow.camera.left = key.shadow.camera.bottom = -S0 * 1.4; key.shadow.camera.right = key.shadow.camera.top = S0 * 1.4; key.shadow.camera.near = 1; key.shadow.camera.far = S0 * 10; key.shadow.camera.updateProjectionMatrix();
       fill.position.set(-S0 * 2, S0, S0); fill.intensity = .45 * I; rim.position.set(0, S0, -S0 * 3); rim.intensity = .8 * I; hemi.intensity = .25 * I;
       mats.forEach(m => m.envMapIntensity = (m.userData.base.envMapIntensity ?? 1.1) * (.5 + .5 * I));
