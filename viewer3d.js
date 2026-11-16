@@ -226,7 +226,8 @@
     renderer.localClippingEnabled = true;
     host.prepend(renderer.domElement);
     const scene = new TH.Scene();
-    const prefs = Object.assign({ bg: '#17181a', shade: 'pbr', light: 1, lightAz: 35 }, D.view || {});
+    const prefs = Object.assign({ bg: '#e8eaed', shade: 'pbr', light: 1, lightAz: 35 }, D.view || {});
+    if (prefs.bg === '#17181a') prefs.bg = '#e8eaed'; // old dark default → new light default
     scene.background = new TH.Color(prefs.bg);
     scene.environment = makeEnv(renderer);
     const camera = new TH.PerspectiveCamera(30, W0 / H0, 1, 6000);
@@ -244,6 +245,8 @@
     const mats = [];                  // all part materials (clones)
     const MAT = {
       sun: { color: 0xc9ccd2, metalness: 1, roughness: .28 }, planet: { color: 0xb3b8bf, metalness: 1, roughness: .3 },
+      sun1: { color: 0x3d6fb8, metalness: 1, roughness: .22, clearcoat: .4, clearcoatRoughness: .15 }, planet1: { color: 0x5b8fd6, metalness: 1, roughness: .24, clearcoat: .4, clearcoatRoughness: .15 },
+      sun2: { color: 0xc99a2e, metalness: 1, roughness: .22, clearcoat: .4, clearcoatRoughness: .15 }, planet2: { color: 0xdcb04a, metalness: 1, roughness: .24, clearcoat: .4, clearcoatRoughness: .15 },
       ring: { color: 0x9da2a9, metalness: 1, roughness: .38 }, pin: { color: 0xe3e5e9, metalness: 1, roughness: .15 },
       carrier: { color: 0x8a9098, metalness: 1, roughness: .42 }, housing: { color: 0x050506, metalness: 0, roughness: .62, reflectivity: .08, clearcoat: .35, clearcoatRoughness: .18, envMapIntensity: .5 },
       flange: { color: 0xa9aeb5, metalness: 1, roughness: .34 }, roller: { color: 0xeef0f3, metalness: 1, roughness: .1 }, race: { color: 0xc4c8ce, metalness: 1, roughness: .22 },
@@ -280,9 +283,9 @@
         add(ring, L.shared ? 'ring' : `ring${sid}`, root, 0, 0);
         if (L.shared) { ringBody = ring; ringBodyPhase = rho0; }
       }
-      const sun = new TH.Mesh(gearGeometry(g.parts[0], at, b, st.beta, false, x.sunBore), mkMat('sun'));
+      const sun = new TH.Mesh(gearGeometry(g.parts[0], at, b, st.beta, false, x.sunBore), mkMat(i === 0 ? 'sun1' : 'sun2'));
       sun.position.z = zb; add(sun, `sun${sid}`, root, 2, i === 0 ? dzStage * 1.9 : 0);
-      const pg = []; const pMat = mkMat('planet');
+      const pg = []; const pMat = mkMat(i === 0 ? 'planet1' : 'planet2');
       const pGeo = gearGeometry(g.parts[1], at, b, -st.beta, false, x.planetBore);
       for (let j = 0; j < st.n; j++) { const pm = new TH.Mesh(pGeo, pMat); pm.position.z = zb; add(pm, `planet${sid}`, root, 1, dzStage); pg.push(pm); }
       // Carrier holes and pin stock are positioned from the same resolved geometry.
