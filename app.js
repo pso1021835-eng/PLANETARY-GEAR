@@ -316,18 +316,40 @@ const VIEWS = {
        <div class="card"><h3>감속기 한계</h3><p class="big">${fmt(R.reducerCap, 1)}<small> N·m · ${esc(R.reducerGov)}</small></p></div>`;
   },
   scar() {
-    if (!R?.ctx || R.errors?.length) return head('10. 캐리어·핀', '') + errBox();
-    return head('10. 캐리어·핀', '유성 핀은 두 치합 접선력 합(× Kγ·Kv)을 받는 보로 봅니다. 핀 굽힘·전단, 캐리어 구멍 면압, 처짐과 치폭 방향 기울기를 계산하며, 기울기는 7단계 KHβ의 fsh로 들어갑니다.') +
-      `<div class="card"><div class="grid">${D.stages.slice(0, D.config.stages).map((s, i) =>
-        num(`stages.${i}.pin.d`, `${i + 1}단 핀 지름 mm`) + sel(`stages.${i}.pin.type`, `${i + 1}단 지지`, [['double', '양단 지지'], ['single', '편단 지지']]) + sel(`stages.${i}.pin.material`, `${i + 1}단 핀 소재`, [['SUJ2', 'SUJ2'], ['SCM440', 'SCM440'], ['S45C', 'S45C']]) + num(`stages.${i}.pin.wall`, `${i + 1}단 캐리어 판 두께(핀 끼워맞춤) mm`) + num(`stages.${i}.pin.allow`, `${i + 1}단 핀 허용 굽힘 MPa`)
-        + num(`stages.${i}.carrier.webW`, `${i + 1}단 기둥 원주 방향 폭 mm`) + num(`stages.${i}.carrier.webH`, `${i + 1}단 기둥 반경 방향 두께 mm`) + sel(`stages.${i}.carrier.material`, `${i + 1}단 캐리어 소재`, [['S45C', 'S45C'], ['SCM440', 'SCM440'], ['SUJ2', 'SUJ2']])).join('')}
-        ${num('carrier.allowP', '캐리어 구멍 허용 면압 MPa')}${num('carrier.allowB', '캐리어 기둥 허용 굽힘 MPa')}</div></div>
+    const fields = D.stages.slice(0, D.config.stages).map((s, i) => {
+      const pin = `stages.${i}.pin`, carrier = `stages.${i}.carrier`, double = s.pin.type !== 'single';
+      const shape = R?.ctx?.stages[i]?.carrier;
+      const auto = (label, value) => Number.isFinite(value) ? `${label} · 적용 ${fmt(value, 2)}` : label;
+      return `<div class="card"><h3>${i + 1}단 캐리어·유성 핀</h3><div class="grid">
+        ${sel(pin + '.type', '지지 형식', [['double', '양단 지지'], ['single', '편단 지지']])}
+        ${num(carrier + '.outerD', auto('캐리어 최대외경 (mm)', shape?.outerD))}
+        ${num(carrier + '.innerD', auto('캐리어 내경 (mm)', shape?.innerD))}
+        ${num(pin + '.wall', '지지판 한 장 두께 (mm)')}
+        ${double ? num(carrier + '.groove', auto('중앙 홈 축방향 폭 (mm)', shape?.groove)) + num(carrier + '.pocket', auto('유성 안착부 폭 (mm)', shape?.pocket)) : num(carrier + '.axialClearance', '지지판·유성기어 사이 간격 (mm)', { min: 0 })}
+        ${num(carrier + '.bossD', auto('보스 외경 (mm)', shape?.bossD))}${num(carrier + '.bossT', '보스 두께 (mm, 0=없음)', { min: 0 })}
+        ${num(pin + '.d', '핀·조립홀 명목 지름 (mm)')}
+        ${sel(pin + '.holeMode', '핀 조립홀', [['through', '관통'], ['blind', '깊이 지정']])}
+        ${s.pin.holeMode === 'blind' ? num(pin + '.depth', auto('원통 깊이 (mm)', shape?.hole?.autoDepth)) : ''}
+        ${sel(pin + '.material', '핀 소재', [['SUJ2', 'SUJ2'], ['SCM440', 'SCM440'], ['S45C', 'S45C']])}
+        ${sel(carrier + '.material', '캐리어 소재', [['S45C', 'S45C'], ['SCM440', 'SCM440'], ['SUJ2', 'SUJ2']])}
+        ${num(pin + '.allow', '핀 허용 굽힘 (MPa)')}
+        ${double ? num(carrier + '.webW', '등가 기둥 원주 폭 (mm)') + num(carrier + '.webH', '등가 기둥 반경 두께 (mm)') : ''}
+      </div></div>`;
+    }).join('');
+    const header = head('10. 캐리어·핀', '유성기어 작용 중심거리에서 핀 PCD와 홀 좌표를 결정합니다. 같은 지지판·핀 치수를 3D, BOM, 굽힘·면압 계산에 사용합니다.');
+    if (!R?.ctx || R.errors?.length) return header + fields + errBox();
+    return header + fields + `
+       <div class="card scroll"><h3>조립·가공 치수 (mm)</h3>
+       <table><tr><th>단</th><th>핀 배치 PCD</th><th>캐리어 내 / 외경</th><th>중앙 홈 / 안착부</th><th>보스 외경 × 높이</th><th>홀 원통 길이</th><th>드릴 끝</th><th>핀 전체 길이</th><th>판 내 체결 길이</th><th>지지 스팬 / 외팔 길이</th></tr>
+       ${R.carrierPin.map(({ stage, geometry: g }) => `<tr><td>${stage}단</td><td>Ø${fmt(g.drivePCD, 3)}</td><td>Ø${fmt(g.innerD)} / Ø${fmt(g.outerD)}</td><td>${g.double ? fmt(g.groove) + ' / ' + fmt(g.pocket) : '—'}</td><td>${g.boss ? 'Ø' + fmt(g.bossD) + ' × ' + fmt(g.bossT) : '—'}</td><td>${fmt(g.hole.depth, 3)}</td><td>${g.hole.mode === 'blind' ? '118° · ' + fmt(Math.abs(g.hole.tip - g.hole.end), 3) : '관통'}</td><td>${fmt(g.pinLength, 3)}</td><td>${g.engagement.map(v => fmt(v, 3)).join(' / ')}</td><td>${fmt(g.span, 3)}</td></tr>`).join('')}
+       </table><p class="note">1단 보스는 입력측, 2단 보스는 출력측입니다. 핀 홀이 보스 안에 있으면 관통 길이에 보스 두께를 더합니다. 막힌 홀의 118° 끝은 핀 삽입 길이에서 제외합니다. 편단 핀 전체 길이에는 기어를 지나는 돌출부를 포함합니다.</p></div>
+       <div class="card"><div class="grid">${num('carrier.allowP', '캐리어 구멍 허용 면압 MPa')}${num('carrier.allowB', '캐리어 기둥 허용 굽힘 MPa')}</div></div>
        <div class="card scroll"><h3>캐리어 강성 (양단 지지 캐리어)</h3><table><tr><th>단</th><th>기둥 강성 N/mm</th><th>비틀림 와인드업 정격 µrad</th><th>핀 기울기 정격 µrad</th><th>fsh 기여 µm</th><th>기둥 굽힘 피크 MPa</th><th>안전율</th><th>캐리어 비틀림 강성 N·m/rad</th></tr>
        ${R.carrierPin.map((c, i) => { const r = c.car.rated, pk = c.car.peak; return r.double ? `<tr class="${c.Sweb < 1 ? 'bad' : ''}"><td>${c.stage}단</td><td>${fmt(r.kweb, 0)}</td><td>${fmt(r.windup * 1e6, 1)}</td><td>${fmt(r.slope * 1e6, 1)}</td><td>${fmt(R.rated.rows.find(x => x.stage === c.stage)?.f.fshCar, 2)}</td><td>${fmt(pk.sigma, 0)}</td><td>${fmt(c.Sweb, 2)}</td><td>${fmt(r.ktor, 0)}</td></tr>` : `<tr><td>${c.stage}단</td><td colspan="7" class="l note">편단 지지: 기둥 없음 · 핀 외팔보 처짐만 반영 (판은 강체)</td></tr>`; }).join('')}</table>
-       <p class="note">양단 지지 캐리어는 핀 하중의 절반이 반대쪽 판에서 기둥(유성 사이, 핀 PCD 위치, 길이 = 치폭 + 1 mm)을 거쳐 출력 판으로 갑니다. 기둥을 양단 고정 보(굽힘 + 전단)로 보고 두 판 사이 비틀림 와인드업을 구하며, 이것이 핀을 원주 방향으로 기울여 두 치합의 fsh에 더해집니다. 캐리어 비틀림 강성은 13단계 비틀림 강성에도 들어갑니다. 판 자체 굽힘은 포함하지 않습니다.</p></div>
+       <p class="note">양단 지지 캐리어는 핀 하중의 절반이 반대쪽 판에서 기둥(유성 사이, 핀 PCD 위치, 길이는 중앙 홈의 축방향 폭)을 거쳐 출력 판으로 갑니다. 중앙 연결부를 사용자 지정 등가 단면의 양단 고정 보(굽힘 + 전단)로 보고 두 판 사이 비틀림 와인드업을 구하며, 이것이 핀을 원주 방향으로 기울여 두 치합의 fsh에 더해집니다. 캐리어 비틀림 강성은 13단계 비틀림 강성에도 들어갑니다. 판 자체 굽힘은 포함하지 않습니다.</p></div>
        <div class="card scroll"><table><tr><th>단</th><th>조건</th><th>핀 하중 N</th><th>굽힘 σ MPa</th><th>전단 τ MPa</th><th>구멍 면압 MPa</th><th>처짐 µm</th><th>치폭 기울기 µm</th></tr>
        ${R.carrierPin.map(c => ['rated', 'peak', 'emerg'].map(k => `<tr class="${k !== 'rated' && (c[k].sigma > c.allow || c[k].p > c.carrierAllowP) ? 'bad' : ''}"><td>${c.stage}단</td><td>${{ rated: '정격', peak: '피크', emerg: '비상' }[k]}</td><td>${fmt(c[k].F, 0)}</td><td>${fmt(c[k].sigma, 0)}</td><td>${fmt(c[k].tau, 1)}</td><td>${fmt(c[k].p, 1)}</td><td>${k === 'rated' ? fmt(c.rated.defl, 2) : ''}</td><td>${k === 'rated' ? fmt(Math.abs(c.rated.tilt), 3) : ''}</td></tr>`).join('')).join('')}</table>
-       <p class="note">핀 지지 길이: 양단 = 치폭 + 0.6 + 벽, 편단 = 치폭(외팔보). 피크 기준 굽힘 안전율 ${R.carrierPin.map(c => fmt(c.Sbend, 2)).join(' / ')}, 구멍 면압 안전율 ${R.carrierPin.map(c => fmt(c.Spress, 2)).join(' / ')} (1단 / 2단). 피크 시 캐리어 전달 토크 ${R.carrierPin.map(c => fmt(c.carrierTorque, 1)).join(' / ')} N·m. 캐리어 판의 변형·비틀림은 이 버전에서 다루지 않습니다.</p></div>`;
+       <p class="note">핀 보 모델에는 위 표의 지지 스팬 또는 외팔 길이를 씁니다. 구멍 면압은 각 판 반력과 해당 원통 체결 길이로 구한 값 중 최대값입니다. 피크 기준 굽힘 안전율 ${R.carrierPin.map(c => fmt(c.Sbend, 2)).join(' / ')}, 구멍 면압 안전율 ${R.carrierPin.map(c => fmt(c.Spress, 2)).join(' / ')} (1단 / 2단). 피크 시 캐리어 전달 토크 ${R.carrierPin.map(c => fmt(c.carrierTorque, 1)).join(' / ')} N·m. 핀 지지판은 강체로 가정합니다.</p></div>`;
   },
   s10() {
     if (!R?.ctx || R.errors?.length) return head('13. 성능 예측', '') + errBox();
@@ -452,7 +474,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js');
+    if (!worker) worker = new Worker('worker.js?v=carrier-pin-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });
@@ -545,7 +567,13 @@ function bomHTML(sel) {
 function dimsHTML(id) {
   let rows = []; try { rows = PGD3D.partSchema(R, D, id); } catch (e) { }
   if (!rows.length) return '';
-  return `<table class="dims">${rows.map(r => `<tr><td>${esc(r.label)}${r.engine ? '' : ' <span class="tag 가정">형상</span>'}</td><td><input type="number" step="${r.step ?? 'any'}" data-p="${r.path}" data-t="num" value="${r.value ?? ''}" placeholder="${r.auto != null ? '자동 ' + fmt(r.auto, 2) : ''}" ${r.lock ? 'disabled' : ''}></td></tr>`).join('')}</table>
+  const field = r => {
+    if (r.readonly) return esc(r.value ?? '—');
+    if (r.options) return `<select data-p="${r.path}" data-t="str">${r.options.map(([value, label]) =>
+      `<option value="${esc(value)}" ${value === r.value ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select>`;
+    return `<input type="number" step="${r.step ?? 'any'}" data-p="${r.path}" data-t="num" value="${esc(r.value ?? '')}" placeholder="${r.auto != null ? '자동 ' + fmt(r.auto, 2) : ''}" ${r.lock ? 'disabled' : ''}>`;
+  };
+  return `<table class="dims">${rows.map(r => `<tr><td>${esc(r.label)}${r.engine ? '' : ' <span class="tag 가정">형상</span>'}</td><td>${field(r)}</td></tr>`).join('')}</table>
     <p class="note">빈칸 = 자동값. ${rows.some(r => r.engine) ? '태그 없는 항목은 강도 계산에도 들어갑니다.' : ''} '형상'은 3D·중량에만 쓰입니다.</p>`;
 }
 function partCardHTML(id) {
@@ -614,7 +642,7 @@ function housingView() {
   if (!R?.ctx || R.errors?.length) return head('11. 하우징–커버', '') + errBox();
   let L = null; try { L = PGD3D.layout(R, D); } catch (e) { }
   const bl = bomList(), w = id => bl.find(p => p.id === id);
-  return head('11. 하우징–커버 · 부품 형상', '하우징·커버·출력 플랜지와 모든 부품의 형상 입력입니다. 링 외경·출력 베어링 dp 등 기어·베어링 치수에서 나머지를 비례로 정하고, 3D 모델과 BOM에 반영합니다. 강도 계산 대상은 아니며 형상·중량 확인용입니다.') +
+  return head('11. 하우징–커버 · 부품 형상', '하우징·커버·출력 플랜지와 모든 부품의 형상 입력입니다. 링 외경·출력 베어링 dp 등 기어·베어링 치수에서 나머지를 비례로 정하고, 3D 모델과 BOM에 반영합니다. 캐리어·핀의 조립 치수는 10단계 강도 계산과 연동됩니다.') +
     `<div class="card"><div class="grid">${num('housing.wall', '하우징 벽 두께 mm')}${num('housing.coverT', '입력 커버 두께 mm')}${num('housing.flangeT', '출력 플랜지 두께 mm')}${num('housing.boltN', '볼트 수 (커버·플랜지 각각)', { step: 1 })}${num('housing.boltD', '볼트 호칭 지름 M')}</div></div>
      ${L ? `<div class="card scroll"><h3>계산된 치수</h3><table><tr><th class="l">항목</th><th>값</th><th class="l">근거</th></tr>
       <tr><td class="l">링 외경 (하우징 안지름)</td><td>Ø${fmt(L.ringOD, 2)}</td><td class="l note">5단계 링 외경 (빈칸이면 자동 림)</td></tr>
@@ -622,7 +650,7 @@ function housingView() {
       <tr><td class="l">출력부 플랜지 외경</td><td>Ø${fmt(L.flangeR * 2, 1)}</td><td class="l note">크로스 롤러 외륜 + 벽 + 1.5</td></tr>
       <tr><td class="l">크로스 롤러 내·외륜</td><td>Ø${fmt(L.raceIn * 2, 1)} / Ø${fmt(L.raceOut * 2, 1)}</td><td class="l note">dp ${L.dp} ± 1.1·Dw</td></tr>
       <tr><td class="l">중공 지름</td><td>Ø${fmt(L.hollowR * 2, 1)}</td><td class="l note">1단 썬 보어 − 3.6 (입력 중공축 두께 1.8)</td></tr>
-      <tr><td class="l">전체 길이 (커버 ~ 출력 플랜지)</td><td>${fmt(L.zFlange[1] - L.zIn, 1)} mm</td><td class="l note">캐리어 판 = 핀 끼워맞춤 두께</td></tr>
+      <tr><td class="l">전체 길이 (커버 ~ 출력 플랜지)</td><td>${fmt(L.zFlange[1] - L.zIn, 1)} mm</td><td class="l note">캐리어·핀·보스의 축방향 최대 범위 반영</td></tr>
       <tr><td class="l">하우징 · 커버 · 플랜지 중량</td><td>${fmt(w('housing')?.mass * 1000, 0)} · ${fmt(w('cover')?.mass * 1000, 0)} · ${fmt(w('oflange')?.mass * 1000, 0)} g</td><td class="l note">AL6061 2.7 g/cm³, 강 7.85 g/cm³</td></tr>
       <tr><td class="l">감속기 총중량 (추정)</td><td><b>${fmt(bl.reduce((s, p) => s + p.mass * p.qty, 0) * 1000, 0)} g</b></td><td class="l note">BOM 합계 · 형상 근사</td></tr></table></div>` : ''}
      <h3 style="margin:24px 0 8px">부품별 형상 치수</h3>

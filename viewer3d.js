@@ -61,6 +61,60 @@
   }
   function annulusMass(r1, r2, L, rho) { return Math.PI * (r2 * r2 - r1 * r1) * L * rho; }
 
+  function reverseFaces(geometry) {
+    const g = geometry.index ? geometry.toNonIndexed() : geometry;
+    if (g !== geometry) geometry.dispose();
+    for (const name of ['position', 'normal']) {
+      const { array, itemSize } = g.attributes[name];
+      for (let i = 0; i < array.length; i += 3 * itemSize) {
+        for (let j = 0; j < itemSize; j++) {
+          [array[i + itemSize + j], array[i + 2 * itemSize + j]] = [array[i + 2 * itemSize + j], array[i + itemSize + j]];
+        }
+      }
+      if (name === 'normal') for (let i = 0; i < array.length; i++) array[i] *= -1;
+    }
+    return g;
+  }
+  function carrierBody(shape) {
+    const TH = T(), positions = [], normals = [];
+    const add = (source, reversed = false) => {
+      const geometry = reversed ? reverseFaces(source) : (source.index ? source.toNonIndexed() : source);
+      for (const x of geometry.attributes.position.array) positions.push(x);
+      for (const x of geometry.attributes.normal.array) normals.push(x);
+      geometry.dispose();
+      if (!reversed && geometry !== source) source.dispose();
+    };
+    const wall = (r0, r1, [z0, z1], x, y, reversed, segments = 72) => add(
+      new TH.CylinderGeometry(r1, r0, z1 - z0, segments, 1, true)
+        .rotateX(Math.PI / 2).translate(x, y, (z0 + z1) / 2), reversed
+    );
+    for (const slab of shape.slabs) {
+      wall(slab.outer, slab.outer, slab.z, 0, 0, false);
+      wall(slab.inner, slab.inner, slab.z, 0, 0, true);
+      for (const high of [false, true]) {
+        const z = slab.z[+high], section = new TH.Shape();
+        section.absarc(0, 0, slab.outer, 0, Math.PI * 2, false);
+        const bore = new TH.Path(); bore.absarc(0, 0, slab.inner, 0, Math.PI * 2, true); section.holes.push(bore);
+        const band = slab.drilling.find(h => Math.abs(h.z[+high] - z) < 1e-8);
+        const radius = band ? (high ? band.r1 : band.r0) : 0;
+        if (radius > 1e-8) for (const pin of shape.pins) {
+          const hole = new TH.Path(); hole.absarc(pin.x, pin.y, radius, 0, Math.PI * 2, true); section.holes.push(hole);
+        }
+        add(new TH.ShapeGeometry(section, 36).translate(0, 0, z), !high);
+      }
+      for (const band of slab.drilling) for (const pin of shape.pins) wall(band.r0, band.r1, band.z, pin.x, pin.y, true, 72);
+    }
+    if (shape.web) for (const section of shape.web.sections) {
+      const profile = new TH.Shape(section.map(p => new TH.Vector2(p.x, p.y)));
+      const [z0, z1] = shape.web.z;
+      add(new TH.ExtrudeGeometry(profile, { depth: z1 - z0, bevelEnabled: false }).translate(0, 0, z0));
+    }
+    const geometry = new TH.BufferGeometry();
+    geometry.setAttribute('position', new TH.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new TH.Float32BufferAttribute(normals, 3));
+    return geometry;
+  }
+
   // ------------------------------------------------------------------ geometry model (dimensions only)
   function layout(R, D) {
     const stages = R.ctx.stages, sh = Object.assign({ wall: 3, coverT: 4, boltN: 8, boltD: 3, flangeT: 5 }, D.housing || {});
@@ -69,13 +123,16 @@
     const ov = (part, key, a) => { (auto[part] ||= {})[key] = a; const v = G[part]?.[key]; return Number.isFinite(v) && v > 0 ? v : a; };
     const S = stages.map(s => {
       const g = s.geo, st = s.st, rim = k => g.rims?.[k]?.diameter;
-      const a = g.meshes[0].center, t = st.pin.wall || 4;
-      const plateR = ov(`carrier${s.i + 1}`, 'plateD', 2 * Math.min(a + g.parts[1].da / 2 * .75, g.parts[2].da / 2 - .6)) / 2;
-      return { s, g, st, a, t, plateR, sunBore: rim(0), planetBore: rim(1), ringOD: rim(2), b: st.b };
+      const carrier = s.carrier;
+      return { s, g, st, carrier, a: carrier.orbit, plateR: carrier.outerD / 2, sunBore: rim(0), planetBore: rim(1), ringOD: rim(2), b: g.parts[1].width };
     });
-    // axial stack: [plate A][gears][plate B] per stage
+    // Stack each stage from its assembled gear, carrier, pin and boss extents.
     let z = 0; const zStart = [];
-    S.forEach((x, i) => { if (i) z += x.t + .9; zStart.push(z); x.z0 = z; x.zA = [z - .3 - x.t, z - .3]; x.zB = [z + x.b + .3, z + x.b + .3 + x.t]; z += x.b + .3 + x.t; });
+    S.forEach((x, i) => {
+      x.z0 = i ? z + .6 - x.carrier.axial[0] : 0;
+      zStart.push(x.z0);
+      z = x.z0 + x.carrier.axial[1];
+    });
     const gearEnd = S[S.length - 1].z0 + S[S.length - 1].b;
     const ob = D.outBearing || {}, dp = ob.dp || 60, Dw = ob.Dw || 4, Bw = ov('xroller', 'width', Dw * 1.5);
     const raceIn = dp / 2 - Dw * 1.1, raceOut = dp / 2 + Dw * 1.1;
@@ -89,7 +146,7 @@
     const hubR = ov('oflange', 'hubD', 2 * Math.min(raceIn + .4, S[S.length - 1].plateR)) / 2;
     const coverBoltR = ov('cover', 'boltPCD', 2 * ((shaftR + sealH + housR) / 2 + .5)) / 2;
     const flangeBoltR = ov('oflange', 'boltPCD', 2 * ((hollowR + raceIn) / 2 + 1)) / 2;
-    const zIn = S[0].zA[0] - .6 - sh.coverT;
+    const zIn = S[0].carrier.axial[0] - .6 - sh.coverT;
     return { S, zStart, gearEnd, zEnd: z, ob, dp, Dw, Bw, raceIn, raceOut, zBear, zFlange, ringOD, hollowR, shaftR, shaftExt, sealW, sealH, housR, flangeR, hubR, coverBoltR, flangeBoltR, zIn, sh, auto, shared: !!(D.config.sharedRing && S.length > 1) };
   }
 
@@ -113,14 +170,13 @@
         mass: annulusMass((g.parts[2].da + g.parts[2].df) / 4, L.ringOD / 2, L.shared ? L.gearEnd : g.parts[2].width, STEEL), step: 's3',
         verdict: (() => { const v = [gearVerdict(1, 2), L.shared ? gearVerdict(2, 2) : null].filter(Boolean); return v.length ? { ok: v.every(q => q.ok), text: v.map(q => q.text).join(' / ') } : null; })() });
       const cp = R.carrierPin[i];
-      out.push({ id: `pin${st}`, name: `${st}단 유성 핀`, qty: n, material: x.st.pin.material, heat: '담금질', mass: Math.PI / 4 * x.st.pin.d ** 2 * (x.b + 2 * x.t + .6) * STEEL, step: 'scar',
+      out.push({ id: `pin${st}`, name: `${st}단 유성 핀`, qty: n, material: x.st.pin.material, heat: '담금질', mass: Math.PI / 4 * x.carrier.diameter ** 2 * x.carrier.pinLength * STEEL, step: 'scar',
         verdict: cp ? { ok: Math.min(cp.Sbend, cp.Spress) >= 1, text: `굽힘 S ${fmt(cp.Sbend, 2)}` } : null });
       const br = R.bearings[i];
       out.push({ id: `needle${st}`, name: `${st}단 유성 베어링 (${x.st.bearing.name})`, qty: n * (x.st.bearing.count || 1), material: '베어링강', heat: '—', mass: annulusMass(x.st.pin.d / 2, (x.planetBore || x.st.pin.d + 3) / 2, x.b, STEEL) * .45, step: 's9',
         verdict: br ? { ok: br.L10h >= D.req.lifeH && br.s0peak >= D.req.s0, text: `L10 ${br.L10h >= 1e6 ? fmt(br.L10h / 1e6, 1) + 'M' : fmt(br.L10h / 1e3, 1) + 'k'} h · s0 ${fmt(br.s0peak, 2)}` } : null });
-      const webs = x.st.carrier || { webW: 4, webH: 3 };
-      out.push({ id: `carrier${st}`, name: `${st}단 캐리어`, qty: 1, material: webs.material || 'S45C', heat: '조질', step: 'scar',
-        mass: (annulusMass(g.parts[0].da / 2 + .6, x.plateR, x.t, STEEL) + annulusMass(Math.max(.6, (L.S[i + 1]?.sunBore || 2 * L.hollowR) / 2), x.plateR, x.t, STEEL) + n * webs.webW * webs.webH * (x.b + .6) * STEEL),
+      out.push({ id: `carrier${st}`, name: `${st}단 캐리어`, qty: 1, material: x.st.carrier?.material || 'S45C', heat: '조질', step: 'scar',
+        mass: x.carrier.materialVolume * STEEL,
         verdict: cp ? { ok: cp.Sweb >= 1, text: Number.isFinite(cp.Sweb) ? `기둥 S ${fmt(cp.Sweb, 2)}` : '편단 지지' } : null });
     });
     const ob = R.outBearing, roll = ob.roll;
@@ -229,31 +285,18 @@
       const pg = []; const pMat = mkMat('planet');
       const pGeo = gearGeometry(g.parts[1], at, b, -st.beta, false, x.planetBore);
       for (let j = 0; j < st.n; j++) { const pm = new TH.Mesh(pGeo, pMat); pm.position.z = zb; add(pm, `planet${sid}`, root, 1, dzStage); pg.push(pm); }
-      // carrier group (rotates with carrier): plates, webs, pins, needles
+      // Carrier holes and pin stock are positioned from the same resolved geometry.
       const car = new TH.Group(); car.userData.stage = i;
-      const plateIn = Math.max(x.sunBore || 0, g.parts[0].df * .55) / 2 + .4;
-      const carMat = mkMat('carrier');
-      if (full) {
-        // input-side plate clears the sun tip (sun is inserted through it); output-side plate carries the next sun / the flange
-        const next = L.S[i + 1];
-        const plateGeoA = ringSolid(g.parts[0].da / 2 + .6, x.plateR, x.zA[0], x.zA[1]);
-        const plateGeoB = ringSolid(next ? Math.max(.6, (next.sunBore || 0) / 2) : L.hollowR + .6, x.plateR, x.zB[0], x.zB[1]);
-        const pA = new TH.Mesh(plateGeoA, carMat), pB = new TH.Mesh(plateGeoB, carMat);
-        car.add(pA, pB);
-        const wb = st.carrier || { webW: 4, webH: 3 };
-        if (st.pin.type !== 'single') {
-          const wGeo = new TH.BoxGeometry(wb.webW, wb.webH, b + .6);
-          for (let j = 0; j < st.n; j++) {
-            const ang = 2 * Math.PI * (j + .5) / st.n, rw = Math.min(a, x.plateR - wb.webH / 2 - .3);
-            const w = new TH.Mesh(wGeo, carMat); w.position.set(rw * Math.cos(ang), rw * Math.sin(ang), zb + b / 2); w.rotation.z = ang + Math.PI / 2; car.add(w);
-          }
-        }
-      } else {
-        const disk = new TH.Mesh(ringSolid(plateIn, x.plateR, zb + b + .3, zb + b + 1.5), carMat); car.add(disk);
+      const shape = x.carrier;
+      const body = new TH.Mesh(carrierBody(shape).translate(0, 0, zb), mkMat('carrier'));
+      car.add(body);
+      const pinMat = mkMat('pin'), pinGeo = new TH.CylinderGeometry(shape.diameter / 2, shape.diameter / 2, shape.pinLength, 72).rotateX(Math.PI / 2);
+      const pins = new TH.Group(), pinZ = zb + (shape.stock[0] + shape.stock[1]) / 2;
+      for (const center of shape.pins) {
+        const pin = new TH.Mesh(pinGeo, pinMat);
+        pin.position.set(center.x, center.y, pinZ);
+        pins.add(pin);
       }
-      const pinMat = mkMat('pin'), pinGeo = new TH.CylinderGeometry(st.pin.d / 2, st.pin.d / 2, b + 2 * x.t + .6, 28).rotateX(Math.PI / 2);
-      const pins = new TH.Group();
-      for (let j = 0; j < st.n; j++) { const ang = 2 * Math.PI * j / st.n, pin = new TH.Mesh(pinGeo, pinMat); pin.position.set(a * Math.cos(ang), a * Math.sin(ang), zb + b / 2); pins.add(pin); }
       // needle rollers (instanced) between pin and planet bore
       let needles = null;
       if (full && x.planetBore > st.pin.d + .6) {
@@ -261,8 +304,9 @@
         const cnt = Math.max(6, Math.floor(2 * Math.PI * rc / (nd * 1.08)));
         needles = new TH.InstancedMesh(new TH.CylinderGeometry(nd / 2, nd / 2, b * .9, 10).rotateX(Math.PI / 2), mkMat('roller'), cnt * st.n);
         const m4 = new TH.Matrix4(); let k = 0;
-        for (let j = 0; j < st.n; j++) { const ang = 2 * Math.PI * j / st.n, cx = a * Math.cos(ang), cy = a * Math.sin(ang);
-          for (let q = 0; q < cnt; q++) { const t = 2 * Math.PI * q / cnt; m4.makeTranslation(cx + rc * Math.cos(t), cy + rc * Math.sin(t), zb + b / 2); needles.setMatrixAt(k++, m4); } }
+        for (const pin of shape.pins) {
+          for (let q = 0; q < cnt; q++) { const t = 2 * Math.PI * q / cnt; m4.makeTranslation(pin.x + rc * Math.cos(t), pin.y + rc * Math.sin(t), zb + b / 2); needles.setMatrixAt(k++, m4); }
+        }
       }
       root.add(car);
       if (needles) needles.frustumCulled = false;
@@ -591,9 +635,26 @@
       if (m[1] === 'sun') { E(`stages.${i}.s`, '잇수', s.s, { step: 1 }); E(`stages.${i}.m`, '모듈', s.m, { lock }); E(`stages.${i}.b`, '치폭', s.b); E(`stages.${i}.beta`, '비틀림각 °', s.beta, { lock }); E(`stages.${i}.xs`, '전위계수', s.xs); E(`stages.${i}.sunBore`, '보어 (0=중실)', s.sunBore, { auto: g?.rims?.[0]?.diameter }); }
       if (m[1] === 'planet') { E(`stages.${i}.p`, '잇수', s.p, { step: 1, lock }); E(`stages.${i}.n`, '개수', s.n, { step: 1 }); E(`stages.${i}.xp`, '전위계수', s.xp); E(`stages.${i}.planetBore`, '보어 (0=중실)', s.planetBore, { auto: g?.rims?.[1]?.diameter }); }
       if (m[1] === 'ring') { E('stages.0.ringOD', '외경', D.stages[0].ringOD, { auto: g?.rims?.[2]?.diameter }); E('stages.0.xr', '전위계수', D.stages[0].xr, { lock: D.stages[0].autoRingShift, note: D.stages[0].autoRingShift ? '자동 (4단계)' : '' }); }
-      if (m[1] === 'pin') { E(`stages.${i}.pin.d`, '지름', s.pin.d); E(`stages.${i}.pin.wall`, '캐리어 판 두께 (끼워맞춤)', s.pin.wall); }
+      const shape = R.ctx.stages[i]?.carrier;
+      if (m[1] === 'pin') {
+        E(`stages.${i}.pin.d`, '핀 지름 (mm)', s.pin.d);
+        E(`stages.${i}.pin.holeMode`, '홀 가공', s.pin.holeMode, { options: [['through', '관통'], ['blind', '깊이 지정']] });
+        if (s.pin.holeMode === 'blind') E(`stages.${i}.pin.depth`, '원통 깊이 (mm)', s.pin.depth, { auto: shape?.hole?.autoDepth });
+        E('', '핀 산출 길이 (mm)', shape?.pinLength?.toFixed(3), { readonly: true });
+      }
       if (m[1] === 'needle') { E(`stages.${i}.bearing.C`, '동정격 C N', s.bearing.C); E(`stages.${i}.bearing.C0`, '정정격 C0 N', s.bearing.C0); E(`stages.${i}.bearing.count`, '유성당 개수', s.bearing.count, { step: 1 }); }
-      if (m[1] === 'carrier') { E(`stages.${i}.carrier.webW`, '기둥 원주 폭', s.carrier?.webW); E(`stages.${i}.carrier.webH`, '기둥 반경 두께', s.carrier?.webH); E(`stages.${i}.pin.wall`, '판 두께', s.pin.wall); Gm(`carrier${i + 1}`, 'plateD', '판 외경'); }
+      if (m[1] === 'carrier') {
+        E(`stages.${i}.pin.type`, '지지 형식', s.pin.type, { options: [['double', '양단 지지'], ['single', '편단 지지']] });
+        E(`stages.${i}.pin.wall`, '지지판 한 장 두께 (mm)', s.pin.wall);
+        E(`stages.${i}.carrier.outerD`, '캐리어 최대외경 (mm)', s.carrier?.outerD, { auto: shape?.outerD });
+        E(`stages.${i}.carrier.innerD`, '캐리어 내경 (mm)', s.carrier?.innerD, { auto: shape?.innerD });
+        E(`stages.${i}.carrier.bossD`, '보스 외경 (mm)', s.carrier?.bossD, { auto: shape?.bossD });
+        E(`stages.${i}.carrier.bossT`, '보스 두께 (mm, 0=없음)', s.carrier?.bossT);
+        if (shape?.double) {
+          E(`stages.${i}.carrier.groove`, '양단 중앙 홈의 축방향 폭 (mm)', s.carrier?.groove, { auto: shape.groove });
+          E(`stages.${i}.carrier.pocket`, '유성 안착부 폭 (mm)', s.carrier?.pocket, { auto: shape.pocket });
+        } else E(`stages.${i}.carrier.axialClearance`, '지지판과 기어 사이 간격 (mm)', s.carrier?.axialClearance);
+      }
     } else if (id === 'xroller') {
       E('outBearing.dp', '롤러 피치원 dp', D.outBearing.dp); E('outBearing.Z', '롤러 수', D.outBearing.Z, { step: 1 }); E('outBearing.Dw', '롤러 지름', D.outBearing.Dw); E('outBearing.Lw', '롤러 길이', D.outBearing.Lw);
       E('outBearing.preload', '예압 µm', D.outBearing.preload); E('outBearing.C', 'C N', D.outBearing.C); E('outBearing.C0', 'C0 N', D.outBearing.C0); Gm('xroller', 'width', '궤도륜 폭');
@@ -606,5 +667,5 @@
     return out;
   }
 
-  globalThis.PGD3D = { mount, partsList, partSchema, layout, outline, gearGeometry };
+  globalThis.PGD3D = { mount, partsList, partSchema, layout, outline, gearGeometry, carrierBody };
 })();
