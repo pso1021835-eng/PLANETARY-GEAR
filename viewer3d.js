@@ -277,10 +277,10 @@
     const W0 = host.clientWidth, H0 = host.clientHeight;
     const mobile = Math.min(W0, window.innerWidth) < 760;
     const renderer = new TH.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false });
-    renderer.setPixelRatio(mobile ? 1 : Math.min(2, window.devicePixelRatio || 1));
+    const DPR = mobile ? 1 : Math.min(1.5, window.devicePixelRatio || 1); renderer.setPixelRatio(DPR);
     renderer.setSize(W0, H0);
     renderer.outputEncoding = TH.sRGBEncoding; renderer.toneMapping = TH.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0; renderer.setClearColor(0x000000, 0);
-    renderer.shadowMap.enabled = full && !mobile; renderer.shadowMap.type = TH.PCFSoftShadowMap;
+    renderer.shadowMap.enabled = full && !mobile; renderer.shadowMap.type = TH.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
     renderer.localClippingEnabled = true;
     host.prepend(renderer.domElement);
     const scene = new TH.Scene();
@@ -296,7 +296,7 @@
     const camera = new TH.PerspectiveCamera(30, W0 / H0, 1, 6000);
     const hemi = new TH.HemisphereLight(0xfffaf2, 0x6d6a64, .45); scene.add(hemi);
     const key = new TH.DirectionalLight(0xfff6ec, 2.2); key.castShadow = renderer.shadowMap.enabled;
-    key.shadow.mapSize.set(4096, 4096); key.shadow.bias = -.0004; key.shadow.radius = 9; scene.add(key); scene.add(key.target);
+    key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0004; key.shadow.radius = 9; scene.add(key); scene.add(key.target);
     const fill = new TH.DirectionalLight(0xe6ecf5, .55); scene.add(fill);
     const rim = new TH.DirectionalLight(0xffffff, .8); scene.add(rim);
 
@@ -311,9 +311,9 @@
       sun1: { color: 0x2f62b4, metalness: 1, roughness: .12, clearcoat: .8, clearcoatRoughness: .06 }, planet1: { color: 0x4a86d8, metalness: 1, roughness: .14, clearcoat: .8, clearcoatRoughness: .06 },
       sun2: { color: 0xc8901c, metalness: 1, roughness: .12, clearcoat: .8, clearcoatRoughness: .06 }, planet2: { color: 0xdaa636, metalness: 1, roughness: .14, clearcoat: .8, clearcoatRoughness: .06 },
       ring: { color: 0xd6d8dc, metalness: 1, roughness: .18 }, pin: { color: 0xf4f5f7, metalness: 1, roughness: .06 },
-      carrier: { color: 0x1a1c20, metalness: .9, roughness: .24, clearcoat: .6, clearcoatRoughness: .12 },
-      housing: { color: 0xdcd8cf, metalness: 0, roughness: .3, clearcoat: .9, clearcoatRoughness: .08, envMapIntensity: .8 },
-      flange: { color: 0xb8240a, metalness: .6, roughness: .26, clearcoat: .7, clearcoatRoughness: .1, envMapIntensity: .7 }, roller: { color: 0xf7f8fa, metalness: 1, roughness: .04 }, race: { color: 0xdadde1, metalness: 1, roughness: .1 },
+      carrier: { color: 0x1a1c20, metalness: .9, roughness: .24 },
+      housing: { color: 0xdcd8cf, metalness: 0, roughness: .26, envMapIntensity: .9 },
+      flange: { color: 0xb8240a, metalness: .6, roughness: .24, envMapIntensity: .75 }, roller: { color: 0xf7f8fa, metalness: 1, roughness: .04 }, race: { color: 0xdadde1, metalness: 1, roughness: .1 },
       bolt: { color: 0x1d1e21, metalness: 1, roughness: .22 }, seal: { color: 0xc4290a, metalness: 0, roughness: .55 }, shaft: { color: 0xdcdee2, metalness: 1, roughness: .12 }
     };
     // procedural surface finish (no image assets): turning marks for lathe parts, fine grain for the rest.
@@ -330,7 +330,7 @@
     const mkMat = k => {
       const m = new TH.MeshPhysicalMaterial(Object.assign({ envMapIntensity: 1.1 }, MAT[k]));
       const f = FIN[k];
-      if (f) { m.roughnessMap = finish[f]; m.bumpMap = finish[f]; m.bumpScale = f === 'turned' ? .012 : .004; m.roughness = Math.min(1, (MAT[k].roughness || .2) * 1.35); }
+      if (f) { m.roughnessMap = finish[f]; m.roughness = Math.min(1, (MAT[k].roughness || .2) * 1.35); }
       m.userData.base = Object.assign({}, MAT[k], f ? { roughness: m.roughness } : {}); mats.push(m); return m;
     };
     function add(obj, partId, parent = root, layer = 0, dz = 0) {
@@ -689,8 +689,16 @@
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let last = performance.now(), raf;
     const nLayers = 5, stagger = .12;
+    let onScreen = true, slowFrames = 0, shadowTick = 0, curDPR = DPR, wasActive = true;
+    const io = new IntersectionObserver(es => { onScreen = es[0].isIntersecting; }, { threshold: 0 }); io.observe(host);
     function frame(now) {
-      const dt = Math.min(.05, (now - last) / 1000); last = now;
+      raf = requestAnimationFrame(frame);
+      if (!onScreen || document.hidden) { last = now; return; }
+      const rawDt = (now - last) / 1000, dt = Math.min(.05, rawDt); last = now;
+      // adaptive resolution: drop pixel ratio when frames stay slow, restore when fast again
+      if (rawDt > .034) slowFrames++; else if (rawDt < .02) slowFrames = Math.max(0, slowFrames - 1);
+      if (slowFrames > 20 && curDPR > 1) { curDPR = Math.max(1, curDPR - .25); renderer.setPixelRatio(curDPR); slowFrames = 0; }
+      const moving = Math.abs(st.explodeTarget - st.explode) > 1e-4;
       if (st.playing && !reduce) st.theta += dt * (+D.anim.rpm || 0) * (+D.anim.slow || 0) * 2 * Math.PI / 60;
       // explode easing (0.8 s for the full travel, staggered by layer)
       const sp = dt / .8; st.explode += clamp(st.explodeTarget - st.explode, -sp, sp);
@@ -720,15 +728,17 @@
       if (outRot) outRot.rotation.z = sunAng; if (cage) cage.rotation.z = sunAng / 2;
       // section plane through the axis (world)
       if (st.section) { const a = st.secAngle * Math.PI / 180; plane.normal.set(-Math.cos(a), -Math.sin(a), 0); plane.constant = 0; plane.applyMatrix4(root.matrixWorld); }
+      const active = moving || st.playing;   // gear spin barely moves the shadow: refresh every 6th frame, once more on stop
+      if (renderer.shadowMap.enabled && (active ? ++shadowTick % 6 === 1 : wasActive)) renderer.shadowMap.needsUpdate = true;
+      wasActive = active;
       renderer.render(scene, camera);
       layoutLeaders();
-      raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
     const ro = new ResizeObserver(() => { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); });
     ro.observe(host);
     function dispose() {
-      cancelAnimationFrame(raf); ro.disconnect(); document.removeEventListener('pointerdown', onDocDown);
+      cancelAnimationFrame(raf); ro.disconnect(); io.disconnect(); document.removeEventListener('pointerdown', onDocDown);
       scene.traverse(o => { o.geometry?.dispose?.(); if (o.material) [].concat(o.material).forEach(m => m.dispose?.()); });
       scene.environment?.dispose?.(); renderer.dispose(); renderer.domElement.remove(); ui.remove();
     }
