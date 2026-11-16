@@ -296,7 +296,7 @@
     const camera = new TH.PerspectiveCamera(30, W0 / H0, 1, 6000);
     const hemi = new TH.HemisphereLight(0xfffaf2, 0x6d6a64, .45); scene.add(hemi);
     const key = new TH.DirectionalLight(0xfff6ec, 2.2); key.castShadow = renderer.shadowMap.enabled;
-    key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0004; key.shadow.radius = 9; scene.add(key); scene.add(key.target);
+    key.shadow.mapSize.set(4096, 4096); key.shadow.bias = -.0004; key.shadow.radius = 9; scene.add(key); scene.add(key.target);
     const fill = new TH.DirectionalLight(0xe6ecf5, .55); scene.add(fill);
     const rim = new TH.DirectionalLight(0xffffff, .8); scene.add(rim);
 
@@ -316,7 +316,23 @@
       flange: { color: 0xb8240a, metalness: .6, roughness: .26, clearcoat: .7, clearcoatRoughness: .1, envMapIntensity: .7 }, roller: { color: 0xf7f8fa, metalness: 1, roughness: .04 }, race: { color: 0xdadde1, metalness: 1, roughness: .1 },
       bolt: { color: 0x1d1e21, metalness: 1, roughness: .22 }, seal: { color: 0xc4290a, metalness: 0, roughness: .55 }, shaft: { color: 0xdcdee2, metalness: 1, roughness: .12 }
     };
-    const mkMat = k => { const m = new TH.MeshPhysicalMaterial(Object.assign({ envMapIntensity: 1.1 }, MAT[k])); m.userData.base = Object.assign({}, MAT[k]); mats.push(m); return m; };
+    // procedural surface finish (no image assets): turning marks for lathe parts, fine grain for the rest.
+    // Lathe/ring UVs run along the profile, so horizontal stripes become concentric marks on faces and
+    // circumferential lines on cylinders — the look of a real turned part.
+    const finish = (() => {
+      const mk = (draw, rep) => { const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'); draw(g); const tx = new TH.CanvasTexture(c); tx.wrapS = tx.wrapT = TH.RepeatWrapping; tx.repeat.set(...rep); tx.anisotropy = renderer.capabilities.getMaxAnisotropy?.() || 1; return tx; };
+      let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      const turned = mk(g => { for (let y = 0; y < 256; y++) { const v = 150 + (rnd() - .5) * 70 + 25 * Math.sin(y * .9); g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(0, y, 256, 1); } }, [1, 18]);
+      const grain = mk(g => { const im = g.createImageData(256, 256); for (let i = 0; i < im.data.length; i += 4) { const v = 140 + (rnd() - .5) * 90; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; } g.putImageData(im, 0, 0); }, [.08, .08]);
+      return { turned, grain };
+    })();
+    const FIN = { ring: 'turned', race: 'turned', shaft: 'turned', flange: 'turned', pin: 'turned', housing: 'grain', carrier: 'grain', bolt: 'grain', sun1: 'grain', planet1: 'grain', sun2: 'grain', planet2: 'grain', roller: 'turned' };
+    const mkMat = k => {
+      const m = new TH.MeshPhysicalMaterial(Object.assign({ envMapIntensity: 1.1 }, MAT[k]));
+      const f = FIN[k];
+      if (f) { m.roughnessMap = finish[f]; m.bumpMap = finish[f]; m.bumpScale = f === 'turned' ? .012 : .004; m.roughness = Math.min(1, (MAT[k].roughness || .2) * 1.35); }
+      m.userData.base = Object.assign({}, MAT[k], f ? { roughness: m.roughness } : {}); mats.push(m); return m;
+    };
     function add(obj, partId, parent = root, layer = 0, dz = 0) {
       parent.add(obj);
       obj.traverse(o => { if (o.isMesh) { o.userData.partId = partId; o.castShadow = o.receiveShadow = renderer.shadowMap.enabled; meshes.push(o); } });
