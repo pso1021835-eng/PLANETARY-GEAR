@@ -121,6 +121,20 @@ main.wide{max-width:none}
 @media(max-width:760px){.layout{grid-template-columns:1fr}nav.rail{position:static;display:flex;overflow-x:auto;border-right:0;border-bottom:1px solid var(--rule);max-height:none;padding:6px}nav.rail .grp{display:none}nav.rail button{width:auto;white-space:nowrap;flex:none}
  aside.verdict{order:-1}.hbar .lab{width:120px}table{font-size:13px}main h2{font-size:26px}#viewer{height:320px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+.comp{width:100%}.comp td,.comp th{text-align:center}.comp .l{text-align:left}.comp .sw{display:inline-flex;gap:4px;align-items:center;cursor:pointer}
+.dw-h{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}.dw-h h3{margin:0}.dw-h select{min-width:220px}
+.dw-body{position:relative}.dw-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:8px}
+.dw-v{margin:0;background:#f7f7f4;border:1px solid #d9d9d4;border-radius:4px;padding:6px}.dw-v figcaption{font-size:12px;color:#55575c;padding:2px 4px}
+.dw-svg{width:100%;height:auto;display:block;font:10.5px "Pretendard",system-ui,sans-serif}
+.dw-svg .ol{fill:none;stroke:#1f2328;stroke-width:1.1}.dw-svg .th{fill:none;stroke:#1f2328;stroke-width:.6}.dw-svg .cl,.dw-svg .axis{fill:none;stroke:#8a3b2e;stroke-width:.6;stroke-dasharray:9 2 2 2}
+.dw-svg .cut{fill:url(#hat);stroke:#1f2328;stroke-width:1.1}.dw-svg .tooth{fill:#e2e4e8;stroke:#1f2328;stroke-width:.6}.dw-svg .void{fill:#f7f7f4;stroke:#1f2328;stroke-width:.8}
+.dw-svg .roll{fill:#c9ccd2;stroke:#1f2328;stroke-width:.8}.dw-svg .hl{stroke:#3a3d42;stroke-width:.7}.dw-svg .cap{fill:#6b6e74}
+.dw-svg .dm line,.dw-svg .dm polyline{stroke:#55575c;stroke-width:.7;fill:none}.dw-svg .dm .ext{stroke-width:.4}.dw-svg .dm text{fill:#55575c}
+.dw-svg .dm .hit{stroke:transparent!important;stroke-width:9!important;pointer-events:stroke}.dw-svg .dm text{pointer-events:all}.dw-svg .dm.ed{cursor:pointer}.dw-svg .dm.ed line,.dw-svg .dm.ed polyline{stroke:#1d5fbf}.dw-svg .dm.ed text{fill:#1d5fbf;font-weight:600}
+.dw-svg .dm.ed:hover text,.dw-svg .dm.ed:focus text{text-decoration:underline}.dw-svg .dm.ed:focus{outline:none}.dw-svg .dm.lk text{fill:#9a9ca1}.dw-svg .dm.lk line{stroke:#b5b7bb}
+.dw-in{position:absolute;z-index:5;width:180px;padding:8px;background:#1c1c1d;border:1px solid #4a6fa5;border-radius:4px;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.dw-in label{display:flex;flex-direction:column;gap:4px}.dw-in input{background:#111;border:1px solid #444;color:var(--ink);padding:4px 6px;border-radius:3px;text-align:right}
+.dw-n{margin:8px 0 0}.dw-k{color:#8a8a8a}.dw-k.ed{color:#6f9fe0;font-weight:600}
 </style>
 </head>
 <body>
@@ -145,8 +159,9 @@ main.wide{max-width:none}
 </form></dialog>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="carrier-geometry.js"></script>
-<script src="engine.js?v=carrier-pin-1"></script>
-<script src="viewer3d.js?v=carrier-pin-1"></script>
-<script src="app.js?v=carrier-pin-1"></script>
+<script src="engine.js?v=pr6-1"></script>
+<script src="viewer3d.js?v=pr6-1"></script>
+<script src="drawings.js?v=pr6-1"></script>
+<script src="app.js?v=pr6-1"></script>
 </body>
 </html>

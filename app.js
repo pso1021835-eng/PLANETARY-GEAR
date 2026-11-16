@@ -163,6 +163,7 @@ const VIEWS = {
       `<div class="card"><div class="grid">${sel('config.stages', '단수', [[1, '1단'], [2, '2단']], { type: 'numsel' })}</div>
        ${chk('config.sharedRing', '1·2단 링기어 공유 (2단 유성 잇수·모듈·비틀림각은 1단 링 기준 자동)')}
 </div>
+       ${componentsHTML()}
        <div class="card"><h3>감속비</h3><table><tr><th>단</th><th>S / P / R</th><th>단 감속비</th></tr>
         ${st.map(s => `<tr><td>${s.i + 1}단</td><td>${s.st.s} / ${s.st.p} / ${s.geo.r}</td><td>${fmt(s.geo.ratio, 4)}</td></tr>`).join('')}
         <tr><td><b>총</b></td><td></td><td><b>${fmt(R?.ratio, 4)} : 1</b></td></tr></table></div>
@@ -462,7 +463,7 @@ const AFTER = {
     if (g) g.onclick = () => { ringOn = !ringOn; VIEW3D?.setOpacity(D.config.sharedRing ? 'ring' : null, 1); ['ring', 'ring1', 'ring2'].forEach(id => VIEW3D?.setVisible(id, ringOn)); g.textContent = ringOn ? '링 숨기기' : '링 보이기'; };
   },
   overview(m) { mountOverview(m); },
-  shous(m) { const b = m.querySelector('#geoReset'); if (b) b.onclick = () => { D.geom = {}; changed(); }; },
+  shous(m) { bindDrawing(m); const b = m.querySelector('#geoReset'); if (b) b.onclick = () => { D.geom = {}; changed(); }; },
   smat(m) { (AFTER.s6 || (() => { }))(m); (AFTER.slub || (() => { }))(m); },
   s11(m) {
     m.querySelector('#runMC').onclick = () => runJob('mc', r => { MC = r; renderVerdict(); renderRail(); if (view === 's11') m.querySelector('#mcOut').innerHTML = mcHTML(); });
@@ -490,6 +491,55 @@ function ensureD() {
   D.housing = Object.assign({}, HOUS_DEF, D.housing || {});
   D.view = D.view || {};
   D.anim = D.anim || { rpm: 1000, slow: .02 };
+  D.options = D.options || {};
+  for (const o of (window.PGD3D?.OPTIONS || [])) D.options[o.key] = Object.assign({ on: true, lock: false }, D.options[o.key] || {});
+}
+// ------------------------------------------------------------------ components & optional parts
+function componentsHTML() {
+  const n = R?.ctx?.stages?.length || D.config.stages, shared = D.config.sharedRing && n > 1;
+  const rows = Array.from({ length: n }, (_, i) => `<tr><td>${i + 1}단</td><td>S${i + 1} 썬기어</td><td>P${i + 1} 유성기어</td><td>${shared ? (i ? '〃 (공유)' : 'R1-2 링기어') : `R${i + 1} 링기어`}</td><td>C${i + 1} 캐리어${i === n - 1 ? ' (출력)' : ''}</td></tr>`).join('');
+  const opts = (window.PGD3D?.OPTIONS || []).filter(o => !(o.key === 's2brg' && n < 2)).map(o => `<tr><td class="l">${esc(o.label)}</td>
+    <td><label class="sw"><input type="checkbox" data-p="options.${o.key}.on" data-t="bool" ${D.options?.[o.key]?.on !== false ? 'checked' : ''}> 표시</label></td>
+    <td><label class="sw"><input type="checkbox" data-p="options.${o.key}.lock" data-t="bool" ${D.options?.[o.key]?.lock ? 'checked' : ''}> 잠금</label></td></tr>`).join('');
+  return `<div class="card"><h3>기본 구성요소</h3><p class="note" style="margin-top:0">링기어 고정 · 썬 입력 · 캐리어 출력. S·P·R은 4단계 기어 제원에서, C는 10단계 캐리어–핀에서 형상이 정해집니다.</p>
+    <table class="comp"><tr><th>단</th><th>썬</th><th>유성</th><th>링</th><th>캐리어</th></tr>${rows}</table></div>
+    <div class="card"><h3>옵션 부품</h3><p class="note" style="margin-top:0">표시를 끄면 3D·BOM·도면에서 빠집니다. 잠금은 치수 입력을 고정합니다. 강도 계산(유성 베어링·출력 베어링·핀 판정)은 표시 여부와 관계없이 그대로 수행합니다.</p>
+    <table class="comp opt"><tr><th class="l">부품</th><th>표시</th><th>잠금</th></tr>${opts}</table></div>`;
+}
+// ------------------------------------------------------------------ part drawings
+const DWSTATE = { id: null };
+function drawingHTML(sel) {
+  const bl = bomList(); if (!bl.length || !window.PGDDraw) return '';
+  const id = bl.some(p => p.id === sel) ? sel : bl.some(p => p.id === DWSTATE.id) ? DWSTATE.id : bl[0].id;
+  DWSTATE.id = id;
+  return `<div class="card dw" id="dwg"><div class="dw-h"><h3>부품 도면</h3><label class="f">부품<select id="dwSel">${bl.map(p => `<option value="${p.id}" ${p.id === id ? 'selected' : ''}>${p.no}. ${esc(p.name)}${p.locked ? ' 🔒' : ''}</option>`).join('')}</select></label></div>
+    <div class="dw-body">${PGDDraw.render(R, D, id)}</div></div>`;
+}
+function bindDrawing(root, onSel) {
+  const card = root.querySelector('#dwg'); if (!card) return;
+  card.querySelector('#dwSel').onchange = e => { DWSTATE.id = e.target.value; if (onSel) onSel(DWSTATE.id); else card.outerHTML = drawingHTML(DWSTATE.id), bindDrawing(root, onSel); };
+  const edit = g => {
+    if (g.classList.contains('lk')) return;
+    card.querySelector('.dw-in')?.remove();
+    const body = card.querySelector('.dw-body'), br = body.getBoundingClientRect(), gr = g.getBoundingClientRect();
+    const box = document.createElement('div'); box.className = 'dw-in';
+    box.style.left = Math.max(0, Math.min(br.width - 180, gr.left - br.left + gr.width / 2 - 90)) + 'px';
+    box.style.top = (gr.top - br.top + gr.height + 4) + 'px';
+    box.innerHTML = `<label>${esc(g.dataset.l)} (mm)<input type="number" step="any" value="${g.dataset.v}"></label><span class="note">Enter 적용 · Esc 취소 · 빈칸 = 자동</span>`;
+    body.appendChild(box);
+    const inp = box.querySelector('input'); inp.focus(); inp.select();
+    let done = false;
+    const apply = ok => {
+      if (done) return; done = true; box.remove();
+      if (!ok || inp.value === g.dataset.v) return;
+      const v = inp.value === '' ? null : Number(inp.value);
+      if (v != null && !(Number.isFinite(v) && v >= 0)) return;
+      set(g.dataset.p, v); changed();
+    };
+    inp.onkeydown = e => { if (e.key === 'Enter') apply(true); else if (e.key === 'Escape') apply(false); };
+    inp.onblur = () => apply(true);
+  };
+  card.querySelectorAll('.dm.ed').forEach(g => { g.onclick = () => edit(g); g.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); edit(g); } }; });
 }
 function partNames() { try { return Object.fromEntries(PGD3D.partsList(R, D).map(p => [p.id, p.name])); } catch (e) { return {}; } }
 function mountViewer(host, mode = 'gears', extra = {}) {
@@ -554,8 +604,9 @@ function overviewView() {
       <div class="v3-card" id="pcard" hidden></div>
       <div class="v3-pop" id="ipop" hidden></div>
     </div>
+    ${drawingHTML(OVSTATE.sel)}
     <div class="ov-sum">${issues.length ? `<div class="card"><h3>기준 미달·주의 ${issues.length}곳</h3><ol class="iss">${issues.map((g, k) => `<li class="${g.sev}"><button data-iss="${k}">${esc(g.title)}</button></li>`).join('')}</ol></div>` : '<div class="card"><h3 class="good">모든 항목이 기준을 만족합니다</h3></div>'}
-    ${VIEWS.overviewOld().replace(/^<h2>.*?<\/h2><p class="lead">.*?<\/p>/s, '')}</div>`;
+    ${VIEWS.overviewOld().replace(/^<h2>.*?<\/h2><p class="lead">.*?<\/p>/s, '')}${componentsHTML()}</div>`;
 }
 
 function bomHTML(sel) {
@@ -569,7 +620,7 @@ function dimsHTML(id) {
   if (!rows.length) return '';
   const field = r => {
     if (r.readonly) return esc(r.value ?? '—');
-    if (r.options) return `<select data-p="${r.path}" data-t="str">${r.options.map(([value, label]) =>
+    if (r.options) return `<select data-p="${r.path}" data-t="str" ${r.lock ? 'disabled' : ''}>${r.options.map(([value, label]) =>
       `<option value="${esc(value)}" ${value === r.value ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select>`;
     return `<input type="number" step="${r.step ?? 'any'}" data-p="${r.path}" data-t="num" value="${esc(r.value ?? '')}" placeholder="${r.auto != null ? '자동 ' + fmt(r.auto, 2) : ''}" ${r.lock ? 'disabled' : ''}>`;
   };
@@ -607,6 +658,7 @@ function mountOverview(m) {
   const showCard = id => {
     sel = id; bom.innerHTML = bomHTML(id); bindBom();
     OVSTATE.sel = id;
+    if (id && id !== DWSTATE.id) { const dw = m.querySelector('#dwg'); if (dw) { dw.outerHTML = drawingHTML(id); bindDrawing(m, onDwSel); } }
     if (!id) { card.hidden = true; return; }
     card.innerHTML = partCardHTML(id); card.hidden = false; bindInputs(card);
     card.querySelector('#pcX').onclick = () => { card.hidden = true; OVSTATE.sel = null; VIEW3D?.select(null); };
@@ -617,6 +669,8 @@ function mountOverview(m) {
     pop.querySelector('#ipX').onclick = () => { pop.hidden = true; };
     const b = pop.querySelector('#ipSens'); if (b) b.onclick = () => { b.disabled = true; b.textContent = '계산 중…'; runJob('sens', r => { SENS = r; if (!pop.hidden) showIssue(g); }); };
   };
+  const onDwSel = id => { VIEW3D?.select(id, true); showCard(id); const dw = m.querySelector('#dwg'); if (dw) { dw.outerHTML = drawingHTML(id); bindDrawing(m, onDwSel); } };
+  bindDrawing(m, onDwSel);
   const bindBom = () => bom.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { VIEW3D?.select(tr.dataset.id, true); showCard(tr.dataset.id); });
   bom.innerHTML = bomHTML(null); bindBom();
   mountViewer(host, 'full', { onPick: id => showCard(id), onIssue: g => showIssue(g) });
@@ -653,6 +707,8 @@ function housingView() {
       <tr><td class="l">전체 길이 (커버 ~ 출력 플랜지)</td><td>${fmt(L.zFlange[1] - L.zIn, 1)} mm</td><td class="l note">캐리어·핀·보스의 축방향 최대 범위 반영</td></tr>
       <tr><td class="l">하우징 · 커버 · 플랜지 중량</td><td>${fmt(w('housing')?.mass * 1000, 0)} · ${fmt(w('cover')?.mass * 1000, 0)} · ${fmt(w('oflange')?.mass * 1000, 0)} g</td><td class="l note">AL6061 2.7 g/cm³, 강 7.85 g/cm³</td></tr>
       <tr><td class="l">감속기 총중량 (추정)</td><td><b>${fmt(bl.reduce((s, p) => s + p.mass * p.qty, 0) * 1000, 0)} g</b></td><td class="l note">BOM 합계 · 형상 근사</td></tr></table></div>` : ''}
+     ${componentsHTML()}
+     ${drawingHTML(DWSTATE.id)}
      <h3 style="margin:24px 0 8px">부품별 형상 치수</h3>
      <p class="note" style="margin:0 0 12px">모든 부품의 형상을 정하는 치수입니다. 빈칸은 기어·베어링 치수에서 자동으로 정한 값이고, 값을 넣으면 그 값을 씁니다. '형상' 태그는 3D·중량에만, 나머지는 강도 계산에도 들어갑니다. 종합판정 3D에서 부품을 눌러도 같은 입력이 열립니다.</p>
      <div class="dimgrid">${bl.map(p => `<div class="card"><h3>${p.no}. ${esc(p.name)} <span class="note">× ${p.qty}</span></h3>${dimsHTML(p.id) || '<p class="note">치수 입력 없음</p>'}</div>`).join('')}</div>
