@@ -1,0 +1,13 @@
+const P=require('./engine.js');
+const D=P.defaultDesign();
+Object.assign(D.req,{rpm:3000,SH:1,SF:1.25});
+D.design.quality='ME';
+D.stages.forEach(s=>{s.grade=4;s.mod={crown:0,tip:0,verified:'none'};s.pin={d:10,type:'double',material:'SUJ2',wall:4,allow:1200};});
+D.materials.forEach(m=>{m.surfaceHRC=62;m.coreHRC=32;});
+D.outBearing.Z=0;D.loads={rigidCarrier:true,KA:1,kgMode:'agma',posError:10,floatFriction:0.03,fmaMode:'worst',carrierParallel:0,extraFsh:[0,0],reverse:false};
+D.lube={nu40:100,rzFlank:3,rzRoot:6};
+const ctx=P.prepare(D);console.log('errors',ctx.errors);
+const ev=P.evaluate(ctx,{Tout:9,rpm:3000,lifeOff:true});
+ev.rows.forEach(r=>console.log(r.id,r.H.toFixed(3),r.SH.toFixed(5),r.F.toFixed(3),r.SF.toFixed(5),r.f.KHb.toFixed(4),r.f.Kv.toFixed(4)));
+console.log('cap',P.capacity(ctx,{rpm:3000,lifeOff:true},{SH:1,SF:1.25}));
+console.log('static',P.capacity(ctx,{rpm:0,static:true},{SH:1,SF:1.25}));
