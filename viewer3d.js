@@ -252,14 +252,15 @@
   // ------------------------------------------------------------------ environment (code-generated soft boxes)
   function makeEnv(renderer) {
     const TH = T(), env = new TH.Scene();
-    const room = new TH.Mesh(new TH.BoxGeometry(40, 20, 40), new TH.MeshBasicMaterial({ color: 0x1a1b1d, side: TH.BackSide }));
+    const room = new TH.Mesh(new TH.BoxGeometry(40, 20, 40), new TH.MeshBasicMaterial({ color: 0x8c8a86, side: TH.BackSide }));
     env.add(room);
     const panel = (w, h, x, y, z, ry, rx, k) => { const m = new TH.Mesh(new TH.PlaneGeometry(w, h), new TH.MeshBasicMaterial({ color: new TH.Color(k, k, k), side: TH.DoubleSide })); m.position.set(x, y, z); m.rotation.set(rx || 0, ry || 0, 0); env.add(m); };
     panel(14, 3, 0, 9.5, 0, 0, Math.PI / 2, 6);         // top strip
     panel(8, 10, -19.5, 2, 4, Math.PI / 2, 0, 3.2);      // key softbox left
     panel(6, 8, 19.5, 1, -6, -Math.PI / 2, 0, 1.6);      // fill right
     panel(16, 2, 0, 3, -19.5, 0, 0, 2.4);                // rim back
-    panel(30, 6, 0, -9.5, 0, 0, -Math.PI / 2, .25);      // floor bounce
+    panel(30, 6, 0, -9.5, 0, 0, -Math.PI / 2, .9);       // warm floor bounce
+    panel(4, 14, 12, 4, 19.5, 0, 0, 3.5);                // front-side strip (crisp edge highlights)
     const pm = new TH.PMREMGenerator(renderer);
     const tex = pm.fromScene(env, .02).texture; pm.dispose();
     env.traverse(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
@@ -273,23 +274,28 @@
     const full = mode === 'full';
     const W0 = host.clientWidth, H0 = host.clientHeight;
     const mobile = Math.min(W0, window.innerWidth) < 760;
-    const renderer = new TH.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false });
+    const renderer = new TH.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false });
     renderer.setPixelRatio(mobile ? 1 : Math.min(2, window.devicePixelRatio || 1));
     renderer.setSize(W0, H0);
-    renderer.outputEncoding = TH.sRGBEncoding; renderer.toneMapping = TH.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
+    renderer.outputEncoding = TH.sRGBEncoding; renderer.toneMapping = TH.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.08; renderer.setClearColor(0x000000, 0);
     renderer.shadowMap.enabled = full && !mobile; renderer.shadowMap.type = TH.PCFSoftShadowMap;
     renderer.localClippingEnabled = true;
     host.prepend(renderer.domElement);
     const scene = new TH.Scene();
-    const prefs = Object.assign({ bg: '#e8eaed', shade: 'pbr', light: 1, lightAz: 35 }, D.view || {});
-    if (prefs.bg === '#17181a') prefs.bg = '#e8eaed'; // old dark default → new light default
-    scene.background = new TH.Color(prefs.bg);
+    const prefs = Object.assign({ bg: '#f3f0ea', shade: 'pbr', light: 1, lightAz: 35 }, D.view || {});
+    if (prefs.bg === '#17181a' || prefs.bg === '#e8eaed') prefs.bg = '#f3f0ea'; // older defaults → studio cream
+    // studio backdrop: soft radial light falling off to a slightly deeper tone of the chosen colour
+    const paintBg = () => {
+      const c = new TH.Color(prefs.bg), hi = c.clone().lerp(new TH.Color(0xffffff), .55), lo = c.clone().multiplyScalar(.9);
+      host.style.background = `radial-gradient(120% 90% at 58% 38%, #${hi.getHexString()} 0%, #${c.getHexString()} 48%, #${lo.getHexString()} 100%)`;
+    };
+    paintBg();
     scene.environment = makeEnv(renderer);
     const camera = new TH.PerspectiveCamera(30, W0 / H0, 1, 6000);
-    const hemi = new TH.HemisphereLight(0xdfe6ee, 0x101012, .25); scene.add(hemi);
-    const key = new TH.DirectionalLight(0xffffff, 1.6); key.castShadow = renderer.shadowMap.enabled;
-    key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0004; key.shadow.radius = 4; scene.add(key); scene.add(key.target);
-    const fill = new TH.DirectionalLight(0xcfd8e6, .45); scene.add(fill);
+    const hemi = new TH.HemisphereLight(0xfffaf2, 0x6d6a64, .45); scene.add(hemi);
+    const key = new TH.DirectionalLight(0xfff6ec, 1.5); key.castShadow = renderer.shadowMap.enabled;
+    key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -.0004; key.shadow.radius = 9; scene.add(key); scene.add(key.target);
+    const fill = new TH.DirectionalLight(0xe6ecf5, .55); scene.add(fill);
     const rim = new TH.DirectionalLight(0xffffff, .8); scene.add(rim);
 
     const L = layout(R, D);
@@ -302,10 +308,11 @@
       sun: { color: 0xc9ccd2, metalness: 1, roughness: .28 }, planet: { color: 0xb3b8bf, metalness: 1, roughness: .3 },
       sun1: { color: 0x3d6fb8, metalness: 1, roughness: .22, clearcoat: .4, clearcoatRoughness: .15 }, planet1: { color: 0x5b8fd6, metalness: 1, roughness: .24, clearcoat: .4, clearcoatRoughness: .15 },
       sun2: { color: 0xc99a2e, metalness: 1, roughness: .22, clearcoat: .4, clearcoatRoughness: .15 }, planet2: { color: 0xdcb04a, metalness: 1, roughness: .24, clearcoat: .4, clearcoatRoughness: .15 },
-      ring: { color: 0x9da2a9, metalness: 1, roughness: .38 }, pin: { color: 0xe3e5e9, metalness: 1, roughness: .15 },
-      carrier: { color: 0x8a9098, metalness: 1, roughness: .42 }, housing: { color: 0x050506, metalness: 0, roughness: .62, reflectivity: .08, clearcoat: .35, clearcoatRoughness: .18, envMapIntensity: .5 },
-      flange: { color: 0xa9aeb5, metalness: 1, roughness: .34 }, roller: { color: 0xeef0f3, metalness: 1, roughness: .1 }, race: { color: 0xc4c8ce, metalness: 1, roughness: .22 },
-      bolt: { color: 0x141414, metalness: .85, roughness: .42 }, seal: { color: 0x0b0b0c, metalness: 0, roughness: .85 }, shaft: { color: 0xb9bdc3, metalness: 1, roughness: .32 }
+      ring: { color: 0xd3d5d8, metalness: .9, roughness: .34 }, pin: { color: 0xf1f2f4, metalness: 1, roughness: .12 },
+      carrier: { color: 0x2c2e33, metalness: .55, roughness: .42, clearcoat: .3, clearcoatRoughness: .3 },
+      housing: { color: 0xf4f2ee, metalness: 0, roughness: .36, clearcoat: .55, clearcoatRoughness: .22, sheen: 0, envMapIntensity: .9 },
+      flange: { color: 0xe4612a, metalness: .25, roughness: .38, clearcoat: .6, clearcoatRoughness: .2 }, roller: { color: 0xf4f5f7, metalness: 1, roughness: .08 }, race: { color: 0xcfd2d6, metalness: 1, roughness: .2 },
+      bolt: { color: 0x1d1e21, metalness: .8, roughness: .38 }, seal: { color: 0xe4612a, metalness: 0, roughness: .55 }, shaft: { color: 0xd8dadd, metalness: 1, roughness: .26 }
     };
     const mkMat = k => { const m = new TH.MeshPhysicalMaterial(Object.assign({ envMapIntensity: 1.1 }, MAT[k])); m.userData.base = Object.assign({}, MAT[k]); mats.push(m); return m; };
     function add(obj, partId, parent = root, layer = 0, dz = 0) {
@@ -436,12 +443,32 @@
       mkBolts(sh.boltN, L.flangeBoltR, L.zFlange[1] + bd * .35, outRot, unit * 3.6);
     }
 
+    // ---- crisp feature edges (thin graphite lines) on non-gear solids
+    const edgeMats = [];
+    const EDGE = /^(housing|cover|ocover|oflange|carrier\d|xroller|inshaft|oshaft|pin\d|brgS\d|seal)$/;
+    meshes.slice().forEach(ms => {
+      if (ms.isInstancedMesh || !EDGE.test(ms.userData.partId || '')) return;
+      const n = ms.geometry.attributes.position?.count || 0; if (!n || n > 120000) return;
+      const dark = /^(carrier|bolt)/.test(ms.userData.partId);
+      const lm = new TH.LineBasicMaterial({ color: dark ? 0x6b6f76 : 0x2a2724, transparent: true, opacity: dark ? .5 : .42, toneMapped: false });
+      lm.userData.op = lm.opacity; edgeMats.push(lm);
+      const ln = new TH.LineSegments(new TH.EdgesGeometry(ms.geometry, 28), lm); ln.raycast = () => { }; ln.userData.edge = true; ms.add(ln);
+    });
     // ---- centre, ground, camera
     const box = new TH.Box3().setFromObject(root), ctr = box.getCenter(new TH.Vector3()), size = box.getSize(new TH.Vector3());
     root.position.sub(ctr);
     const maxR = Math.max(size.x, size.y) / 2, len = size.z;
-    const ground = new TH.Mesh(new TH.PlaneGeometry(maxR * 30, maxR * 30), new TH.ShadowMaterial({ opacity: .32 }));
-    ground.rotation.x = -Math.PI / 2; ground.position.y = -maxR - 1.5; ground.receiveShadow = true; ground.visible = renderer.shadowMap.enabled; scene.add(ground);
+    const ground = new TH.Mesh(new TH.PlaneGeometry(maxR * 30, maxR * 30), new TH.ShadowMaterial({ opacity: .14 }));
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -maxR * 1.35 - 2; ground.receiveShadow = true; ground.visible = renderer.shadowMap.enabled; scene.add(ground);
+    // soft contact shadow (works without shadow maps, e.g. on phones): radial gradient texture under the model
+    const blobTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'), gr = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+      gr.addColorStop(0, 'rgba(60,52,44,.42)'); gr.addColorStop(.45, 'rgba(60,52,44,.16)'); gr.addColorStop(1, 'rgba(60,52,44,0)'); g.fillStyle = gr; g.fillRect(0, 0, 256, 256); const tx = new TH.CanvasTexture(c); tx.encoding = TH.sRGBEncoding; return tx; })();
+    const blob = new TH.Mesh(new TH.PlaneGeometry(1, 1), new TH.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, toneMapped: false }));
+    blob.rotation.x = -Math.PI / 2; blob.position.y = ground.position.y + .05; blob.scale.set(maxR * 3.2, len * 1.3 + maxR, 1); blob.renderOrder = -1; scene.add(blob);
+    // construction axis: thin dash-dot centre line through the whole assembly (stretches with the explode)
+    const axisMat = new TH.LineDashedMaterial({ color: 0x8f8a82, dashSize: 3, gapSize: 1.6, transparent: true, opacity: .55, toneMapped: false });
+    const axisGeo = new TH.BufferGeometry().setFromPoints([new TH.Vector3(0, 0, box.min.z - ctr.z - unit * 6), new TH.Vector3(0, 0, box.max.z - ctr.z + unit * 6)]);
+    const axisLine = new TH.Line(axisGeo, axisMat); axisLine.computeLineDistances(); axisLine.raycast = () => { }; scene.add(axisLine);
     // world: reducer axis = z, y up. Part centres (local to root) for focus / leader anchors
     root.updateMatrixWorld(true);
     parts.forEach((p, id) => { const bb = new TH.Box3(); p.objs.forEach(o => bb.expandByObject(o)); p.center = bb.getCenter(new TH.Vector3()); p.radius = bb.getSize(new TH.Vector3()).length() / 2; });
@@ -482,16 +509,18 @@
     function setSection(on, angDeg) {
       st.section = on; if (angDeg != null) st.secAngle = angDeg;
       mats.forEach(m => { m.clippingPlanes = on ? [plane] : null; m.clipShadows = on; m.side = on ? TH.DoubleSide : TH.FrontSide; m.needsUpdate = true; });
+      edgeMats.forEach(m => { m.clippingPlanes = on ? [plane] : null; m.needsUpdate = true; });
       caps.splice(0).forEach(c => { c.parent?.remove(c); c.material.dispose(); });
       if (on) meshes.forEach(ms => {
         if (ms.isInstancedMesh || !ms.visible) return;
-        const cm = new TH.MeshBasicMaterial({ color: 0x6a2416, side: TH.BackSide, clippingPlanes: [plane] });
+        const cm = new TH.MeshBasicMaterial({ color: 0xe4612a, side: TH.BackSide, clippingPlanes: [plane], toneMapped: false });
         const c = new TH.Mesh(ms.geometry, cm); c.raycast = () => { }; c.renderOrder = 1; ms.add(c); caps.push(c);
       });
     }
     function setOpacity(id, v) {
       const list = id ? meshesOf(id) : meshes;
-      list.forEach(ms => { const m = ms.material; m.opacity = v; m.transparent = v < .999; m.depthWrite = v >= .95; m.needsUpdate = true; });
+      list.forEach(ms => { const m = ms.material; m.opacity = v; m.transparent = v < .999; m.depthWrite = v >= .95; m.needsUpdate = true;
+        ms.children.forEach(c => { if (c.userData.edge) c.material.opacity = c.material.userData.op * v; }); });
     }
     function meshesOf(id) { return meshes.filter(m => m.userData.partId === id); }
     function setVisible(id, v) { meshesOf(id).forEach(m => m.visible = v); }
@@ -501,7 +530,7 @@
     if (opt.initialView?.section) setSection(true);
 
     // ---- highlight
-    const HL = { hover: new TH.Color(0x23272d), sel: new TH.Color(0x3a2016) };
+    const HL = { hover: new TH.Color(0x1a1612), sel: new TH.Color(0x5c2208) };
     function paint() {
       meshes.forEach(ms => { const m = ms.material; if (!m.emissive) return; m.emissive.setRGB(0, 0, 0); });
       if (st.hover) meshesOf(st.hover).forEach(ms => ms.material.emissive?.copy(HL.hover));
@@ -603,7 +632,7 @@
           else if (a === 'all') { showAll(); closeMenu(); } else if (a === 'detail') { closeMenu(); opt.onDetail?.(id); }
           else if (a === 'rpm') { D.anim.rpm = Math.max(0, +v || 0); opt.save?.(); }
           else if (a === 'slow') { D.anim.slow = +v; opt.save?.(); }
-          else if (a === 'bg') { prefs.bg = v; scene.background.set(v); savePrefs(); }
+          else if (a === 'bg') { prefs.bg = v; paintBg(); savePrefs(); }
           else if (a === 'shade') { prefs.shade = v; applyShade(); savePrefs(); }
           else if (a === 'light') { prefs.light = +v; placeLights(); savePrefs(); }
           else if (a === 'lightAz') { prefs.lightAz = +v; placeLights(); savePrefs(); }
