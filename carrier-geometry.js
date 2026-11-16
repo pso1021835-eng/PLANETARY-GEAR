@@ -1,0 +1,111 @@
+/* Nominal carrier and planet-pin geometry. Millimetres, radians, stage-local +Z toward output. */
+(function (root) {
+  'use strict';
+  const EPS = 1e-8;
+  const positive = n => Number.isFinite(n) && n > 0;
+  const overlap = ([a, b], [c, d]) => Math.max(0, Math.min(b, d) - Math.max(a, c));
+  const midpoint = ([a, b]) => (a + b) / 2;
+  const interval = (a, b) => a <= b ? [a, b] : [b, a];
+  const area = points => Math.abs(points.reduce((sum, point, i) => {
+    const next = points[(i + 1) % points.length];
+    return sum + point.x * next.y - point.y * next.x;
+  }, 0)) / 2;
+
+  // The gap between neighbouring outward straight slots is bounded in polar
+  // coordinates by the central bore, outside circle and two slot edges.
+  function webSections(inner, outer, width, count) {
+    const half = width / 2, pitch = 2 * Math.PI / count;
+    const start = Math.asin(half / outer), end = pitch - start;
+    if (!Number.isFinite(start) || end <= start + EPS) return [];
+    const corner = inner > half ? Math.asin(half / inner) : Infinity;
+    const values = Array.from({ length: 33 }, (_, i) => start + (end - start) * i / 32);
+    for (const t of [corner, pitch / 2, pitch - corner]) if (t > start && t < end) values.push(t);
+    values.sort((a, b) => a - b);
+    return Array.from({ length: count }, (_, i) => {
+      const vec = (r, t) => ({ x: r * Math.cos(t + i * pitch), y: r * Math.sin(t + i * pitch) });
+      const inside = values.slice(1, -1).reverse().map(t => vec(Math.max(inner, half / Math.sin(Math.min(t, pitch - t))), t));
+      return [...values.map(t => vec(outer, t)), ...inside];
+    });
+  }
+
+  function holeBands(hole, z) {
+    const cylinder = hole.cylinder, lo = Math.max(z[0], cylinder[0]), hi = Math.min(z[1], cylinder[1]);
+    const out = hi > lo + EPS ? [{ z: [lo, hi], r0: hole.radius, r1: hole.radius }] : [];
+    if (hole.tip === hole.end) return out;
+    const taper = interval(hole.end, hole.tip), a = Math.max(z[0], taper[0]), b = Math.min(z[1], taper[1]);
+    const radius = at => hole.radius * Math.max(0, 1 - Math.abs(at - hole.end) / Math.abs(hole.tip - hole.end));
+    if (b > a + EPS) out.push({ z: [a, b], r0: radius(a), r1: radius(b) });
+    return out;
+  }
+
+  function resolve(stage, geo, i, legacyOD) {
+    const pin = stage.pin || {}, carrier = stage.carrier || {}, gear = geo.parts[1];
+    const errors = [], warnings = [], double = pin.type !== 'single', direction = i === 0 ? -1 : 1;
+    const b = gear.width, orbit = geo.meshes[0].center, count = stage.n;
+    const wall = pin.wall ?? 4, diameter = pin.d;
+    const gap = double ? (carrier.groove ?? b + .6) - b : carrier.axialClearance ?? 0;
+    const outerD = carrier.outerD ?? (positive(legacyOD) ? legacyOD : null) ?? 2 * Math.min(orbit + gear.da * .375, geo.parts[2].da / 2 - .6);
+    const innerD = carrier.innerD ?? geo.parts[0].da + 1.2;
+    const pocket = carrier.pocket ?? gear.da + 4;
+    const bossT = carrier.bossT ?? 4;
+    const bossD = carrier.bossD ?? Math.min(outerD, Math.max(innerD + .5, 2 * orbit - diameter - 2));
+    const radius = diameter / 2, ri = innerD / 2, ro = outerD / 2, rb = bossD / 2;
+    const holeMode = pin.holeMode ?? 'through';
+    if (![b, orbit, wall, diameter, outerD, innerD].every(positive) || outerD <= innerD || !Number.isInteger(count) || count < 2) {
+      return { errors: ['캐리어 내·외경, 판 두께, 핀 지름 및 유성 배치를 확인하세요.'], warnings };
+    }
+    if (!Number.isFinite(gap) || gap < 0) errors.push(double ? '양단 중앙 홈 폭은 유성 치폭 이상이어야 합니다.' : '편단 축방향 여유는 0 mm 이상이어야 합니다.');
+    if (!Number.isFinite(bossT) || bossT < 0 || (bossT > 0 && (!positive(bossD) || rb <= ri || rb > ro))) errors.push('돌출 보스 외경은 캐리어 내경보다 크고 최대외경 이하여야 합니다. 보스 두께는 0 mm 이상입니다.');
+    if (orbit - radius <= ri || orbit + radius >= ro) errors.push('핀 홀이 캐리어 내경 또는 외경과 겹칩니다.');
+    if (diameter >= 2 * orbit * Math.sin(Math.PI / count)) errors.push('인접 핀 홀이 서로 겹칩니다.');
+    if (double && (!positive(pocket) || pocket < Math.max(gear.da, diameter))) errors.push('유성기어 안착부 폭은 유성 이끝원경과 핀 지름 이상이어야 합니다.');
+    if (!['through', 'blind'].includes(holeMode)) errors.push('핀 조립홀의 관통/깊이 모드를 확인하세요.');
+    const bossCoversPin = bossT > 0 && rb >= orbit + radius - EPS;
+    if (bossT > 0 && rb > orbit - radius + EPS && !bossCoversPin) errors.push('보스 외경이 핀 홀을 부분적으로 가릅니다. 홀을 전부 덮거나 피하도록 보스 외경을 지정하세요.');
+    if (double && outerD >= geo.parts[2].da) warnings.push('캐리어 최대외경이 링 이끝 내경 이상입니다. 축방향 교차 구간을 확인하세요.');
+    if (geo.rims?.[1] && geo.rims[1].diameter <= diameter) warnings.push('유성 보어가 핀 지름 이하입니다. 니들 궤도면과 핀 조립을 확인하세요.');
+    const left = double ? [-gap / 2 - wall, -gap / 2] : direction < 0 ? [-gap - wall, -gap] : null;
+    const right = double ? [b + gap / 2, b + gap / 2 + wall] : direction > 0 ? [b + gap, b + gap + wall] : null;
+    const plates = [left, right].filter(Boolean);
+    const supportPlate = direction < 0 ? left : right;
+    const plateEnd = supportPlate[direction < 0 ? 0 : 1];
+    const boss = bossT > 0 ? interval(plateEnd, plateEnd + direction * bossT) : null;
+    const entry = double ? (direction < 0 ? right[1] : left[0]) : supportPlate[direction < 0 ? 1 : 0];
+    const fullDepth = (plateEnd - entry) * direction + (bossCoversPin ? bossT : 0);
+    const coneHeight = holeMode === 'blind' ? radius / Math.tan(59 * Math.PI / 180) : 0;
+    const depth = holeMode === 'blind' ? (pin.depth ?? fullDepth - coneHeight - .3) : fullDepth;
+    if (!positive(depth) || (holeMode === 'blind' && depth + coneHeight >= fullDepth - EPS)) errors.push('막힌 홀의 원통 깊이와 118° 끝을 합한 길이가 가공 가능 깊이를 넘거나 관통합니다.');
+    const end = entry + direction * depth, tip = end + direction * coneHeight;
+    const hole = { entry, end, tip, radius, cylinder: interval(entry, end), direction, mode: holeMode, depth, autoDepth: fullDepth - coneHeight - .3 };
+    // The cylindrical area supports the pin. The cone is drill clearance.
+    const engage = plates.map(z => overlap(z, hole.cylinder));
+    if (engage.some(v => v <= EPS)) errors.push('원통 홀 깊이가 지지판까지 닿지 않습니다.');
+    const stock = double ? hole.cylinder : interval(direction < 0 ? b : 0, end);
+    const loadInterval = [0, b];
+    if (overlap(stock, loadInterval) < b - EPS) errors.push('핀이 유성기어 지지 구간 전체를 덮지 않습니다.');
+
+    const web = double ? { z: [left[1], right[0]], sections: webSections(ri, ro, pocket, count) } : null;
+    if (web && !web.sections.length) errors.push('유성 안착 홈이 겹쳐 두 지지판을 연결할 재료가 남지 않습니다.');
+    const pins = Array.from({ length: count }, (_, j) => {
+      const angle = j * 2 * Math.PI / count;
+      return { x: orbit * Math.cos(angle), y: orbit * Math.sin(angle), angle };
+    });
+    const slabs = plates.map(z => ({ inner: ri, outer: ro, z, drilling: holeBands(hole, z) }));
+    if (boss) slabs.push({ inner: ri, outer: rb, z: boss, drilling: bossCoversPin ? holeBands(hole, boss) : [] });
+    slabs.sort((x, y) => x.z[0] - y.z[0]);
+    const materialVolume = slabs.reduce((sum, s) => sum + Math.PI * (s.outer ** 2 - s.inner ** 2) * (s.z[1] - s.z[0])
+      - count * s.drilling.reduce((v, h) => v + Math.PI * (h.z[1] - h.z[0]) * (h.r0 ** 2 + h.r0 * h.r1 + h.r1 ** 2) / 3, 0), 0)
+      + (web ? (web.z[1] - web.z[0]) * web.sections.reduce((v, points) => v + area(points), 0) : 0);
+    const firstSupport = midpoint([Math.max(left?.[0] ?? 0, stock[0]), left?.[1] ?? 0]);
+    const lastSupport = midpoint([right?.[0] ?? b, Math.min(right?.[1] ?? b, stock[1])]);
+    const span = double ? lastSupport - firstSupport : b + gap;
+    return { errors, warnings, double, diameter, outerD, innerD, wall, gap, groove: double ? b + gap : null, pocket: double ? pocket : null,
+      bossD, bossT, boss, bossCoversPin, drivePCD: orbit * 2, orbit, plates, pins, web, slabs, materialVolume,
+      hole, stock, pinLength: stock[1] - stock[0], engagement: engage, loadInterval, loadStart: double ? -firstSupport : gap,
+      span, axial: [Math.min(stock[0], slabs[0].z[0]), Math.max(stock[1], slabs.at(-1).z[1])] };
+  }
+
+  const api = { resolve, webSections };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.PGDCarrier = api;
+})(globalThis);

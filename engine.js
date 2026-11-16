@@ -284,12 +284,12 @@
     const cap = v <= 5 ? Infinity : (v <= 10 ? (face ? 25600 : 12800) : (face ? 12800 : 6400)) / mat.HlimISO;
     return Math.min((face ? 320 : 160) / mat.HlimISO * dev, cap, dev);
   }
+  const carrierGeometry = typeof module !== 'undefined' && module.exports ? require('./carrier-geometry.js') : root.PGDCarrier;
   const PIN_E = { SUJ2: 210000, SCM440: 206000, S45C: 206000 };
-  function pinModel(sup, b, force, moment) {
-    const E = PIN_E[sup.material] || 206000, d = sup.d, I = Math.PI * d ** 4 / 64;
-    const single = sup.type === 'single';
-    const L = single ? b : b + 0.6 + (sup.wall || 4);
-    const a = single ? 0 : (L - b) / 2, n = 24;
+  function pinModel(sup, shape, force, moment) {
+    const d = shape.diameter, E = PIN_E[sup.material] || 206000, I = Math.PI * d ** 4 / 64;
+    const single = !shape.double, [lo, hi] = shape.loadInterval, b = hi - lo;
+    const L = shape.span, a = shape.loadStart, n = 24;
     const green = (x, t) => { if (single) { const lo = Math.min(x, t), hi = Math.max(x, t); return lo ** 2 * (3 * hi - lo) / (6 * E * I); } return x <= t ? (L - t) * x * (L * L - (L - t) ** 2 - x * x) / (6 * L * E * I) : t * (L - x) * (L * L - t * t - (L - x) ** 2) / (6 * L * E * I); };
     const nodes = Array.from({ length: n }, (_, j) => a + b * (j + .5) / n), mid = a + b / 2;
     const mn = nodes.reduce((s, t) => s + (t - mid) ** 2, 0);
@@ -302,9 +302,15 @@
     const zm = zs.reduce((s, z) => s + z, 0) / zs.length, zz = zs.reduce((s, z) => s + (z - zm) ** 2, 0);
     const slope = k => { const m = ys.reduce((s, y) => s + y[k], 0) / ys.length; return zs.reduce((s, z, i) => s + (z - zm) * (ys[i][k] - m), 0) / zz; };
     const tilt = slope(0), mtilt = slope(1);
-    const meanDefl = force / (E * I) * (single ? b ** 3 / 20 : (L ** 3 - L * b * b) / 48 + b ** 3 / 120);
-    const Mmax = single ? force * b / 2 : force * (2 * L - b) / 8;
-    return { tilt, mtilt, meanDefl, compliance: meanDefl / Math.max(force, 1e-9), sigma: Math.hypot(Mmax, Math.abs(moment)) * 32 / (Math.PI * d ** 3), span: L };
+    const left = single ? 1 : 1 - mid / L, right = single ? 0 : mid / L;
+    const c = L - a - b, m0 = left * a, k = -1 / (2 * b);
+    // Integrate the squared unit-load bending moment for mean compliance.
+    // Double support can be asymmetric when the blind hole stops in the far plate.
+    const energy = single ? a ** 3 / 3 + a ** 2 * b / 2 + a * b ** 2 / 4 + b ** 3 / 20 :
+      left ** 2 * a ** 3 / 3 + right ** 2 * c ** 3 / 3 + m0 ** 2 * b + m0 * left * b ** 2
+      + (left ** 2 + 2 * m0 * k) * b ** 3 / 3 + left * k * b ** 4 / 2 + k ** 2 * b ** 5 / 5;
+    const compliance = energy / (E * I), Mmax = force * (single ? mid : m0 + b * left ** 2 / 2);
+    return { tilt, mtilt, meanDefl: force * compliance, compliance, sigma: Math.hypot(Mmax, Math.abs(moment)) * 32 / (Math.PI * d ** 3), span: L, reactions: single ? [1] : [left, right] };
   }
 
   // ------------------------------------------------------------ preparation
@@ -327,7 +333,10 @@
       geo.errors.forEach(e => errors.push(`${i + 1}단 ${e}`));
       geo.warns.forEach(e => warns.push(`${i + 1}단 ${e}`));
       mats.forEach((mt, k) => mt.warnings.forEach(w => warns.push(`${i + 1}단 ${NAMES[k]}: ${w}`)));
-      return { i, st, geo, mats };
+      const carrier = geo.parts.length && geo.meshes[0] ? carrierGeometry.resolve(st, geo, i, D.geom?.['carrier' + (i + 1)]?.plateD) : null;
+      carrier?.errors.forEach(msg => errors.push(`${i + 1}단 ${msg}`));
+      carrier?.warnings.forEach(msg => warns.push(`${i + 1}단 ${msg}`));
+      return { i, st, geo, mats, carrier };
     }).filter(Boolean);
     const ratio = stages.reduce((v, s) => v * (s.geo.ratio || NaN), 1);
     return { D, stages, ratio, errors, warns };
@@ -402,7 +411,7 @@
       const pre0 = geo.meshes.map((ms, j) => meshStiffness(ms, mats[j ? 1 : 0], mats[j ? 2 : 1], Math.max(Ft / ms.b, 1e-6)));
       // planet tangential stiffness (planet free to spin): 4·(k_sp ⊕ k_pr), in series with pin bending; N/µm
       const kser = 1 / (1 / (pre0[0].cg * geo.meshes[0].b) + 1 / (pre0[1].cg * geo.meshes[1].b));
-      const cPin = pinModel(st.pin, planet.width, 1, 0).compliance * 1000; // µm/N
+      const cPin = pinModel(st.pin, stg.carrier, 1, 0).compliance * 1000; // µm/N
       const ktan = 1 / (1 / (4 * kser) + cPin + (st.bearing.clearanceCompliance || 0));
       const kpath = ktan / 2; // mesh-load change per µm of planet position error
       const kg = kgamma(stg, D, Ft, kpath, op.sample);
@@ -430,7 +439,7 @@
       const tilting = -Ft * Math.tan(Math.abs(st.beta) * rad) * planet.d;
       const pathT = geo.meshes.reduce((s, ms) => s + Math.cos(ms.aw) / Math.cos(ms.at), 0) * Ft;
       const pinForce = pathT * KA * Kg * Kvmax;
-      const pin = pinModel(st.pin, planet.width, pinForce, tilting * KA * Kg * Kvmax);
+      const pin = pinModel(st.pin, stg.carrier, pinForce, tilting * KA * Kg * Kvmax);
       const car = carrierModel(stg, D, Tin * ratio * KA);
       const lastStage = stg.i === ctx.stages.length - 1;
       geo.meshes.forEach((ms, j) => {
@@ -704,14 +713,13 @@
   // Far plate carries half the pin loads; it is tied to the output plate by n webs (fixed–guided beams in the tangential
   // direction). Windup between plates tilts each pin in the tangential plane → helix misalignment fsh on both meshes.
   function carrierModel(stg, D, Tcar) {
-    const st = stg.st, cg = st.carrier || {}, n = st.n, a = stg.geo.meshes[0].center;
-    const double = st.pin.type !== 'single';
+    const st = stg.st, cg = st.carrier || {}, n = st.n, a = stg.carrier.orbit;
+    const { double, span, groove } = stg.carrier;
+    if (!double || D.loads.rigidCarrier) return { double, kweb: NaN, windup: 0, slope: 0, ktor: Infinity, sigma: 0, span };
     const E = PIN_E[cg.material] || 206000, G = E / 2.6;
-    const w = cg.webW || 4, h = cg.webH || 3, Lw = stg.geo.parts[1].width + 1, rw = a;     // web between planets on the pin PCD
+    const w = cg.webW || 4, h = cg.webH || 3, Lw = groove, rw = a;     // web between planets on the pin PCD
     const I = h * w ** 3 / 12, A = w * h;
     const kweb = 1 / (Lw ** 3 / (12 * E * I) + 1.2 * Lw / (G * A));                        // N/mm tangential
-    const span = double ? stg.geo.parts[1].width + .6 + (st.pin.wall || 4) : stg.geo.parts[1].width;
-    if (!double || D.loads.rigidCarrier) return { double, kweb: NaN, windup: 0, slope: 0, ktor: Infinity, sigma: 0, span };
     const Fweb = Tcar * 1000 / 2 / (n * rw);                                               // N per web
     const windup = Fweb / kweb / rw;                                                       // rad (far plate vs output plate)
     const slope = windup * a / span;                                                       // pin tangential slope
@@ -759,11 +767,10 @@
       const rr = evaluate(ctx, { Tout: D.req.Trated, rpm: D.req.rpm, cycles: () => 1e8 }).stages[stg.i];
       const pk = at(D.req.Tpeak), em = at(D.req.Temerg);
       const A = Math.PI * pin.d ** 2 / 4;
-      const single = pin.type === 'single';
-      const shear = F => 4 / 3 * (single ? F : F / 2) / A;
-      const fit = pin.wall || 4;
-      const press = F => (single ? F : F / 2) / (pin.d * fit);
-      const out = { stage: stg.i + 1, d: pin.d, type: pin.type, span: rr.pin.span, fit,
+      const engagement = stg.carrier.engagement, fit = Math.min(...engagement), reactions = pk.pin.reactions;
+      const shear = F => 4 / 3 * F * Math.max(...reactions) / A;
+      const press = F => Math.max(...engagement.map((length, i) => F * reactions[i] / (pin.d * length)));
+      const out = { stage: stg.i + 1, d: pin.d, type: pin.type, span: rr.pin.span, fit, geometry: stg.carrier,
         rated: { F: rr.pinForce, sigma: rr.pin.sigma, tau: shear(rr.pinForce), defl: rr.pin.meanDefl * 1000, tilt: rr.pin.tilt * b * 1000, p: press(rr.pinForce) },
         peak: { F: pk.pinForce, sigma: pk.pin.sigma, tau: shear(pk.pinForce), p: press(pk.pinForce) },
         emerg: { F: em.pinForce, sigma: em.pin.sigma, tau: shear(em.pinForce), p: press(em.pinForce) },
@@ -1028,8 +1035,8 @@
     const mat = () => ({ family: 'NV', surfaceHRC: 60, coreHRC: 28, depth: 0.10 });
     const stage = b => ({ s: 46, p: 23, n: 3, m: 0.6, beta: 12, alpha: 20, b, xs: 0, xp: 0, xr: 0, autoRingShift: true, grade: 4,
       mod: { crown: 2, tip: 0, verified: 'none' }, sunBore: null, planetBore: null, ringOD: null,
-      pin: { d: 4, type: 'double', material: 'SUJ2', wall: 4, allow: 1200 },
-      bearing: { name: '니들 케이지 4×7×7 (예시값)', C: 1600, C0: 1500, count: 1 }, jt: [20, 25], carrier: { webW: 4, webH: 3, material: 'S45C' } });
+      pin: { d: 4, type: 'double', material: 'SUJ2', wall: 4, allow: 1200, holeMode: 'through', depth: null },
+      bearing: { name: '니들 케이지 4×7×7 (예시값)', C: 1600, C0: 1500, count: 1 }, jt: [20, 25], carrier: { webW: 4, webH: 3, material: 'S45C', outerD: null, innerD: null, groove: null, pocket: null, axialClearance: 0, bossD: null, bossT: 4 } });
     return {
       schema: 'pgd/1', name: '9:1 2단 유성감속기 (예제)',
       req: { case: 'custom', ext: { Fr: 135, Fa: 45, M: 7.2 }, Trated: 9, Tpeak: 28, Temerg: 40, rpm: 1000, lifeH: 5000, SH: 1.0, SF: 1.4, SHstat: 1.0, SFstat: 1.2, s0: 1.0, SBmin: 1.5, effMin: 85, backlashMax: 15,
