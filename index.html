@@ -135,6 +135,28 @@ main.wide{max-width:none}
 .dw-in{position:absolute;z-index:5;width:180px;padding:8px;background:#1c1c1d;border:1px solid #4a6fa5;border-radius:4px;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.35)}
 .dw-in label{display:flex;flex-direction:column;gap:4px}.dw-in input{background:#111;border:1px solid #444;color:var(--ink);padding:4px 6px;border-radius:3px;text-align:right}
 .dw-n{margin:8px 0 0}.dw-k{color:#8a8a8a}.dw-k.ed{color:#6f9fe0;font-weight:600}
+
+/* ---- studio look for the 3D viewer (light glass UI over a cream backdrop) */
+#viewer{background:#f3f0ea;border-color:#e2ddd3}
+#viewer{--ink:#1c1b1a;--text:#2b2927;--mute:#8a847b;--rule:#ebe6dd;--panel:#fff;--soft:#f6f3ee;--brick:#e4612a;color:var(--text)}
+#viewer .v3-bom,#viewer .v3-card,#viewer .v3-pop,#viewer .v3-menu,#viewer .v3-bar{background:rgba(255,253,250,.82);border:1px solid rgba(40,34,28,.09);border-radius:10px;box-shadow:0 1px 2px rgba(40,30,20,.05),0 12px 32px -12px rgba(40,30,20,.22);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);color:var(--text)}
+#viewer .bom-h b,#viewer .pc-h b,#viewer .v3-menu .h{color:var(--ink);letter-spacing:-.01em}
+#viewer .v3-bom th{color:var(--mute);font-weight:500;font-size:11px;text-transform:none}
+#viewer .v3-bom tr[data-id]:hover td{background:rgba(228,97,42,.06)}#viewer .v3-bom tr.sel td{background:rgba(228,97,42,.12);color:var(--ink)}
+#viewer .v3-bom td,#viewer .v3-card td,#viewer .v3-pop td{border-color:var(--rule)}
+#viewer .btn{background:rgba(255,255,255,.7);border:1px solid rgba(40,34,28,.12);color:var(--ink);border-radius:7px}
+#viewer .btn:hover{background:#fff;border-color:rgba(40,34,28,.22)}#viewer .btn.on{border-color:var(--brick);color:var(--brick);background:rgba(228,97,42,.08)}
+#viewer .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}#viewer .btn.primary:hover{background:#000}
+#viewer .v3-bar{border-radius:12px;padding:8px 10px;gap:10px}#viewer .v3-bar .sep{background:rgba(40,34,28,.12)}
+#viewer input[type=range]{accent-color:var(--brick)}
+#viewer .dims input,#viewer .v3-menu input,#viewer .v3-menu select{background:#fff;border:1px solid rgba(40,34,28,.14);color:var(--ink)}
+#viewer .dims input:disabled{background:rgba(255,255,255,.4)}#viewer .dims input::placeholder{color:#b0a99f}
+#viewer .v3-menu button{color:var(--text)}#viewer .v3-menu button:hover{background:rgba(228,97,42,.08)}
+#viewer .v3-lab{background:rgba(255,253,250,.9);border:1px solid rgba(40,34,28,.1);border-radius:999px;color:var(--ink);box-shadow:0 6px 18px -8px rgba(40,30,20,.3);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+#viewer .v3-lab:hover{border-color:var(--brick)}#viewer .v3-lab b{background:var(--brick)}
+#viewer .v3-lead polyline{stroke:#4a443d;stroke-width:.8;opacity:.6}#viewer .v3-lead circle{fill:var(--brick);stroke:#fff;stroke-width:1.5}
+#viewer .v3-tip{background:rgba(28,27,26,.88);border:0;border-radius:6px;color:#fff}
+#viewer .x{color:var(--mute)}#viewer .good{color:#2e8b57}#viewer .bad{color:#c8371e}#viewer .note{color:var(--mute)}
 </style>
 </head>
 <body>
@@ -159,9 +181,9 @@ main.wide{max-width:none}
 </form></dialog>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="carrier-geometry.js"></script>
-<script src="engine.js?v=pr6-1"></script>
-<script src="viewer3d.js?v=pr6-1"></script>
-<script src="drawings.js?v=pr6-1"></script>
-<script src="app.js?v=pr6-1"></script>
+<script src="engine.js?v=pr7-1"></script>
+<script src="viewer3d.js?v=pr7-1"></script>
+<script src="drawings.js?v=pr7-1"></script>
+<script src="app.js?v=pr7-1"></script>
 </body>
 </html>
