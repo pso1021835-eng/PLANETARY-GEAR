@@ -232,22 +232,67 @@ main.pg-enter{animation:pgIn .32s cubic-bezier(.2,.7,.2,1)}@keyframes pgIn{from{
 #viewer .v3-lead polyline{stroke:#4a443d;stroke-width:.8;opacity:.6}#viewer .v3-lead circle{fill:var(--brick);stroke:#fff;stroke-width:1.5}
 #viewer .v3-tip{background:rgba(28,27,26,.88);border:0;border-radius:6px;color:#fff}
 #viewer .x{color:var(--mute)}#viewer .good{color:#2e8b57}#viewer .bad{color:#c8371e}#viewer .note{color:var(--mute)}
+
+/* ================= PR13 redesign: one light theme, map-first layout, fewer panels ================= */
+:root{color-scheme:light;--bg:#f4f7fb;--panel:#fff;--ink:#1f3044;--text:#2d4763;--mute:#6f849c;--rule:#dde6ef;--brick:#d24a36;--ok:#2e8b57;--okt:#23794a;--soft:#eef3f8;--accent2:#4f7fb5;--warn:#b9851c;--acc:#e4612a}
+body{background:var(--bg);color:var(--text)}
+header{background:#fff;position:sticky;top:0;z-index:30;padding:8px 18px;gap:8px 14px;box-shadow:0 1px 0 var(--rule)}header h1{color:var(--ink);white-space:nowrap}
+header .name{flex:1 1 160px;max-width:320px}header .name input{color:var(--mute);border-bottom-color:transparent}header .name input:hover,header .name input:focus{border-bottom-color:var(--rule)}
+.tabs{display:flex;gap:2px;background:var(--soft);padding:3px;border-radius:10px}.tabs button{border:0;background:none;padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13.5px;color:var(--mute);white-space:nowrap;transition:background .2s,color .2s}
+.tabs button:hover{color:var(--ink)}.tabs button[aria-current=true]{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(31,48,68,.14)}
+.vchip{margin-left:auto;display:flex;align-items:center;gap:10px;border:1px solid var(--rule);background:#fff;border-radius:999px;padding:6px 12px 6px 14px;cursor:pointer;font-size:13px;color:var(--text);white-space:nowrap}.vchip:hover{border-color:#b9cbdd}
+.vchip .vb{padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600}.vchip .vb.bad{background:#fbe6e1;color:var(--brick)}.vchip .vb.good{background:#dff1e6;color:var(--okt)}.vchip i{font-style:normal;color:var(--mute)}
+.more{position:relative}.moremenu{position:absolute;right:0;top:calc(100% + 6px);display:flex;flex-direction:column;gap:6px;padding:10px;background:#fff;border:1px solid var(--rule);border-radius:10px;box-shadow:0 14px 34px -12px rgba(31,48,68,.3);min-width:200px;z-index:40}.moremenu[hidden]{display:none}.moremenu a{font-size:12.5px;color:var(--accent2);padding:4px 2px}
+.btn{background:#fff;border-color:#cfdbe7;color:var(--text);border-radius:7px}.btn:hover{background:var(--soft);border-color:#b9cbdd}.btn.primary{background:var(--accent2);border-color:var(--accent2);color:#fff}.btn.primary:hover{background:#3f6c9f}.btn.on{color:var(--acc);border-color:var(--acc)}
+.btn:focus-visible,input:focus-visible,select:focus-visible{outline-color:var(--accent2)}
+.layout{grid-template-columns:minmax(0,1fr);min-height:calc(100vh - 58px)}body.has-rail .layout{grid-template-columns:250px minmax(0,1fr)}nav.rail{display:none;background:#fff;top:58px;max-height:calc(100vh - 58px)}body.has-rail nav.rail{display:block}
+nav.rail button{color:var(--text)}nav.rail button:hover{background:var(--soft)}nav.rail button[aria-current=true]{background:var(--soft);color:var(--ink);box-shadow:inset 3px 0 0 var(--acc)}nav.rail .dot{background:#c6d3e0}
+nav.rail button.stg .sn{background:var(--soft);color:var(--mute)}nav.rail button.it{color:var(--mute)}nav.rail button.it.on,nav.rail button.it:hover{color:var(--ink)}
+main{margin:0 auto;width:100%;max-width:1180px;padding:24px max(2vw,18px) 70px}main.wide{max-width:1500px}main h2{color:var(--ink)}
+.card{border-radius:10px;border-color:var(--rule);box-shadow:0 1px 2px rgba(31,48,68,.04)}.card h3{color:var(--ink)}
+label.f input,label.f select{background:#fff;border-color:#cfdbe7;color:var(--ink);border-radius:6px}label.f input:disabled,label.f select:disabled{background:var(--soft);color:var(--mute)}
+aside.verdict{display:none;position:fixed;top:60px;right:14px;width:330px;max-height:calc(100vh - 80px);z-index:35;background:#fff;border:1px solid var(--rule);border-radius:12px;box-shadow:0 20px 50px -18px rgba(31,48,68,.4)}body.vopen aside.verdict{display:block;animation:sideIn .25s ease}
+dialog{background:#fff;color:var(--text);border:1px solid var(--rule);border-radius:12px}dialog textarea{background:var(--soft);color:var(--ink);border:1px solid var(--rule)}
+.plist li:hover,.snav li button:hover,.snav li button:focus-visible{background:var(--soft)}.pgate{background:var(--soft)}.pgate.ok{color:var(--okt)}.pgate.bad{color:var(--brick)}
+.k-none{background:#c9d3de;color:#3d4f63}.kchip{color:#16324d}.pbar{color:#16324d}
+pre.code{background:var(--soft);color:var(--ink)}.shead .snum{background:var(--acc)}.dw-in{background:#fff;border-color:var(--accent2);color:var(--text)}.dw-in input{background:#fff;border-color:#cfdbe7}
+.pstrip{display:none}
+/* map as the home screen */
+body.mapmode .layout{grid-template-columns:minmax(0,1fr)}
+body.mapmode main{max-width:none;padding:12px 14px 14px}.maphost{height:calc(100vh - 84px);min-height:480px;border-radius:14px;border-color:var(--rule)}
+.mp.fl .mp-ui{box-shadow:0 6px 20px -10px rgba(31,48,68,.25);border-radius:12px;padding:8px 12px}
+.mp-legend{position:absolute;left:14px;bottom:14px;display:flex;gap:14px;font-size:12px;color:var(--mute);background:rgba(255,255,255,.85);border:1px solid var(--rule);padding:6px 12px;border-radius:999px}
+.mp-legend .lg{display:inline-block;width:10px;height:10px;border-radius:50%;background:#9fb3c8;margin-right:5px;vertical-align:-1px}.mp-legend .lg.ok{background:#3f9d68}.mp-legend .lg.bad{background:#d24a36}.mp-legend .lg.rel{border-radius:2px;height:3px;width:16px;background:var(--acc);vertical-align:3px}
+.mp.fl .mp-side{width:340px;top:14px;right:14px;bottom:14px;padding:16px;border-radius:14px;box-shadow:0 20px 50px -20px rgba(31,48,68,.35);transition:width .3s cubic-bezier(.2,.7,.2,1)}.mp.fl .mp-side.wide{width:min(600px,48%)}
+.mp-x{position:absolute;right:10px;top:8px;border:0;background:none;font-size:22px;line-height:1;color:var(--mute);cursor:pointer;padding:4px 8px;border-radius:6px}.mp-x:hover{background:var(--soft);color:var(--ink)}
+.mp-sh{padding-right:30px}.mp-sh b{color:var(--ink);font-size:15px}
+.mp-detail{margin:12px 0 4px}.mp-detail:empty{display:none}.mp-detail .card{box-shadow:none;background:#fafcfe}.mp-detail h2{font-size:18px;margin:0 0 4px}.mp-detail .lead{font-size:12.5px;margin-bottom:12px}.mp-detail section.vw{border:0;margin:0;padding:0}
+.mp-detail .grid.g4,.mp-detail .grid{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}.mp-detail .pcx .ph h3 .pid{display:none}
+.mp.fl .stt{font-size:27px}.mp.fl .stp{font-size:18px}.mp.fl .gtt{font-size:20px}.mp.fl .gts{font-size:18px}.mp.fl .mp-yn{font-size:17px;fill:#7fa0c4}.mp.fl .mp-pill text{font-size:24px}
+.mp.fl .mp-stage.rel .stb{stroke:var(--acc);stroke-width:4;stroke-dasharray:10 6}
+.mp-rels2{margin:10px 0 2px;display:flex;flex-direction:column;gap:6px}.mp-rels2>div{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.mp-rels2 .rl{font-size:11.5px;color:var(--mute);min-width:52px}.mp-rels2 .rc{border:1px solid #f1c9b6;background:#fff6f1;color:#b3491c;border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer}.mp-rels2 .rc:hover{background:#ffe9de}
+.mp.fl .stb{rx:10px}.mp.fl .mp-back{fill:#9aaec4;font-size:15px}.mp.fl .mp-backp{stroke:var(--acc);stroke-width:2.6;stroke-dasharray:10 7;fill:none;pointer-events:none}
 </style>
 </head>
 <body>
 <header>
  <h1>유성감속기 설계실</h1>
+ <nav id="tabs" class="tabs" aria-label="화면"></nav>
  <div class="name"><input id="dname" aria-label="설계명"></div>
- <a href="https://claude.ai/artifact/GzYL6kmHD4MWNbaFMETX1J" style="color:var(--mute);font-size:13px">절차 화이트보드</a>
- <button class="btn" id="bExample">예제로 초기화</button>
- <button class="btn" id="bExport">설계 JSON 복사</button>
- <button class="btn" id="bImport">JSON 불러오기</button>
+ <button id="vchip" class="vchip" aria-label="판정 요약 열기"></button>
+ <div class="more"><button class="btn" id="bMore" aria-label="파일 메뉴">파일 ▾</button>
+  <div id="moreMenu" class="moremenu" hidden>
+   <button class="btn" id="bExample">예제로 초기화</button>
+   <button class="btn" id="bExport">설계 JSON 복사</button>
+   <button class="btn" id="bImport">JSON 불러오기</button>
+   <a href="https://claude.ai/artifact/UPQ16z5xqNfS2ZKaHnyG9V" target="_blank" rel="noopener">설계 프로세스 화이트보드</a>
+  </div></div>
 </header>
 <div class="layout">
- <nav class="rail" id="rail" aria-label="설계 절차"></nav>
+ <nav class="rail" id="rail" aria-label="설계 단계"></nav>
  <main id="main"></main>
- <aside class="verdict" id="verdict" aria-label="판정"></aside>
 </div>
+<aside class="verdict" id="verdict" aria-label="판정"></aside>
 <dialog id="dlg"><form method="dialog">
  <h3 id="dlgTitle" style="margin-top:0"></h3>
  <textarea id="dlgText" spellcheck="false"></textarea>
@@ -261,7 +306,7 @@ main.pg-enter{animation:pgIn .32s cubic-bezier(.2,.7,.2,1)}@keyframes pgIn{from{
 <script src="drawings.js?v=pr8-1"></script>
 <script src="checks.js?v=pr9-1"></script>
 <script src="process.js?v=pr9-1"></script>
-<script src="map.js?v=pr12-1"></script>
-<script src="app.js?v=pr12-1"></script>
+<script src="map.js?v=pr13-1"></script>
+<script src="app.js?v=pr13-1"></script>
 </body>
 </html>
