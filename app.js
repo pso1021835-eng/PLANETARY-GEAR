@@ -6,7 +6,7 @@ const fmt = (x, n = 2) => Number.isFinite(x) ? x.toFixed(n) : (x === Infinity ? 
 const fmtH = h => !Number.isFinite(h) ? (h === Infinity ? '∞' : '—') : h >= 1e6 ? (h / 1e6).toFixed(1) + 'M' : h >= 1e4 ? (h / 1e3).toFixed(0) + 'k' : h.toFixed(0);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const KEY = 'pgd-design-v1';
-let D = load(), R = null, MC = null, SENS = null, view = 'overview', worker = null, jobId = 0;
+let D = load(), R = null, MC = null, SENS = null, view = 'map', worker = null, jobId = 0;
 
 function fillMissing(dst, src) { for (const k in src) { if (dst[k] === undefined || dst[k] === null && src[k] !== null && typeof src[k] === 'object') dst[k] = JSON.parse(JSON.stringify(src[k])); else if (Array.isArray(src[k]) && Array.isArray(dst[k])) { dst[k].forEach((v, i) => { if (v && typeof v === 'object' && src[k][i] && typeof src[k][i] === 'object' && !Array.isArray(v)) fillMissing(v, src[k][i]); }); } else if (src[k] && typeof src[k] === 'object' && dst[k] && typeof dst[k] === 'object') fillMissing(dst[k], src[k]); } return dst; }
 function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.schema === 'pgd/1') { s.config.floatingSun = false; return fillMissing(s, E.defaultDesign()); } } catch (e) { } return E.defaultDesign(); }
@@ -89,7 +89,10 @@ let ANCHOR = null;
 function renderRail() {
   const E = procEval(), cur = view.startsWith('st-') ? view.slice(3) : null;
   const top = (id, t) => `<button data-v="${id}" aria-current="${view === id}"><span class="dot ${status(id)}"></span>${t}</button>`;
-  $('#rail').innerHTML = top('overview', '종합판정') + top('map', '설계 지도') + top('proc', '설계 공정 전체') + '<div class="grp">설계 단계</div>' +
+  const tab = (id, t, on) => `<button data-v="${id}" aria-current="${on}">${t}</button>`;
+  $('#tabs').innerHTML = tab('map', '설계 지도', view === 'map') + tab('st-' + LASTSTAGE, '단계 작업', !!cur) + tab('overview', '3D · 종합판정', view === 'overview') + tab('proc', '체크리스트', view === 'proc');
+  $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.v));
+  $('#rail').innerHTML = '<div class="grp">설계 단계</div>' +
     E.map(g => { const k = String(g.n), open = k === cur;
       return `<button data-v="st-${k}" class="stg" aria-current="${open}" aria-expanded="${open}"><span class="dot ${gateCls(g.gate.ok)}"></span><span class="sn">${k === 'D' ? 'D' : k}</span>${esc(k === 'D' ? '가공·원가' : g.name)}<small>${g.done}/${g.total}</small></button>` +
         (open ? `<div class="its">${g.items.map(i => `<button data-v="st-${k}" data-a="${i.id}" class="it ${ANCHOR === i.id ? 'on' : ''}"><span class="dot ${i.ok === true ? 'ok' : i.ok === false ? 'bad' : i.kind === 'none' ? '' : 'in'}"></span><span class="iid">${i.id}</span>${esc(i.t)}</button>`).join('')}</div>` : ''); }).join('');
@@ -118,7 +121,11 @@ function scrollToAnchor() {
   el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1400);
 }
 function renderVerdict() {
-  const el = $('#verdict');
+  const el = $('#verdict'), chip = $('#vchip');
+  if (chip) {
+    if (!R || R.errors?.length) chip.innerHTML = '<b class="bad">계산 불가</b>';
+    else { const nb = R.verdict.filter(x => !x.ok).length; chip.innerHTML = `<span>정격 <b class="${R.reducerCap < D.req.Trated ? 'bad' : 'good'}">${fmt(R.reducerCap, 1)}</b> / 목표 ${D.req.Trated} N·m</span><span class="vb ${nb ? 'bad' : 'good'}">${nb ? nb + '개 미달' : '전 항목 충족'}</span><i>▾</i>`; }
+  }
   if (!R || R.errors?.length) { el.innerHTML = `<div class="kpi"><div class="label">계산 불가</div></div><ul class="warns">${(R?.errors || []).map(e => `<li>${esc(e)}</li>`).join('')}</ul>`; return; }
   const ok = R.verdict.every(x => x.ok);
   el.innerHTML = `
@@ -135,6 +142,9 @@ function render(keepScroll) {
   const y = window.scrollY;
   if (VIEW3D) { if (VIEW3D.full) OVSTATE.view = VIEW3D.getView(); VIEW3D.dispose(); VIEW3D = null; }
   if (MAPV) { MAPSTATE = MAPV.state(); MAPV.dispose(); MAPV = null; }
+  MAPKEEP = !!keepScroll && view === 'map';
+  if (view.startsWith('st-')) LASTSTAGE = view.slice(3);
+  document.body.classList.toggle('has-rail', view.startsWith('st-'));
   m.className = view === 'overview' || view === 'map' ? 'wide' : '';
   document.body.classList.toggle('mapmode', view === 'map');
   if (!keepScroll) { void m.offsetWidth; m.classList.add('pg-enter'); }
@@ -282,7 +292,7 @@ const VIEWS = {
   shous() { return housingView(); },
   overview() { return overviewView(); },
   proc() { return procView(); },
-  map() { return `<div class="maphead"><h2>설계 지도</h2><p class="lead">설계 순서를 순서도로 보여줍니다. 단계 → 게이트 → 통과면 다음 단계, 미달이면 돌아갈 단계로. 단계를 누르면 세부 항목이 가지처럼 펼쳐지고, 항목을 누르면 연관 항목이 주황 선으로 이어집니다.</p></div><div id="mapHost" class="maphost"></div>`; },
+  map() { return `<div id="mapHost" class="maphost"></div>`; },
   outLegacy() { return head('출력물 · 가공 · 원가', '12단계 출력물과 가공·원가 병행 트랙(D1~D6)입니다. 원가는 가정 단가로 계산한 추정치이며, 실제 견적 단가로 바꿔 넣으면 그대로 반영됩니다.'); },
   overviewOld() {
     if (!R || R.errors?.length) return head('종합 판정', '입력에 오류가 있어 계산하지 못했습니다.') + errBox();
@@ -338,7 +348,7 @@ const VIEWS = {
   },
   s2() {
     const st = R?.ctx?.stages || [];
-    return head('3. 구성·감속비', '단수와 링 공유를 정합니다. 썬은 축에 고정(플로팅 아님)으로 보며, 유성 간 하중분배(Kγ)는 7단계에서 유성 위치 공차와 강성으로 계산합니다.') +
+    return head('구성·감속비', '단수와 링 공유를 정합니다. 썬은 축에 고정(플로팅 아님)으로 보며, 유성 간 하중분배(Kγ)는 7단계에서 유성 위치 공차와 강성으로 계산합니다.') +
       `<div class="card"><div class="grid">${sel('config.stages', '단수', [[1, '1단'], [2, '2단']], { type: 'numsel' })}</div>
        ${chk('config.sharedRing', '1·2단 링기어 공유 (2단 유성 잇수·모듈·비틀림각은 1단 링 기준 자동)')}
 </div>
@@ -604,12 +614,27 @@ function sensHTML() {
 }
 
 // ------------------------------------------------------------------ after-render hooks
-let MAPV = null, MAPSTATE = null;
+let MAPV = null, MAPSTATE = null, MAPKEEP = false, LASTSTAGE = '1';
+// the selected item's inputs and results, shown in the map's drawer so the design can be edited without leaving the map
+function mapDetail(id) {
+  if (VIEW3D) { VIEW3D.dispose(); VIEW3D = null; }
+  if (!R || R.errors?.length) return '';
+  if (window.PGDChecks?.FORMS?.[id]) return procCard(id);
+  const it = procEval().flatMap(g => g.items).find(i => i.id === id), v = it?.view;
+  if (v && VIEWS[v] && VIEW_STAGE[v]) return `<section class="vw" data-v="${v}">${VIEWS[v]().replace(/<h2>\s*\d+\.\s*/g, '<h2>')}</section>`;
+  return '';
+}
+function bindMapDetail(el) {
+  if (!el) return;
+  bindInputs(el); bindProcCards(el);
+  const v = el.querySelector('section.vw')?.dataset.v;
+  if (v && AFTER[v]) try { AFTER[v](el); } catch (e) { console.error(e); }
+}
 const AFTER = {
   map(m) {
     if (!window.PGDMap) return;
     const E = procEval(); if (!E.length) return;
-    MAPV = PGDMap.mount(m.querySelector('#mapHost'), { E, focus: ANCHOR || MAPSTATE?.sel || MAPSTATE?.focus, onOpen: (st, a) => go(st, a) });
+    MAPV = PGDMap.mount(m.querySelector('#mapHost'), { E, restore: MAPKEEP ? MAPSTATE : null, focus: ANCHOR || MAPSTATE?.sel || MAPSTATE?.focus, onOpen: (st, a) => go(st, a), detail: mapDetail, bindDetail: bindMapDetail });
   },
   proc(m) { m.querySelectorAll('[data-go]').forEach(li => { const g = () => go('st-' + itemStage(li.dataset.id), li.dataset.id); li.onclick = g; li.onkeydown = e => { if (e.key === 'Enter') g(); }; }); },
   s1(m) {
@@ -771,7 +796,7 @@ function buildIssues() {
 }
 
 function overviewView() {
-  if (!R || R.errors?.length) return head('1. 종합판정', '입력에 오류가 있어 계산하지 못했습니다.') + errBox();
+  if (!R || R.errors?.length) return head('3D · 종합판정', '입력에 오류가 있어 계산하지 못했습니다.') + errBox();
   const issues = buildIssues();
   return `<div class="ov-head"><h2>1. 종합판정</h2><p class="lead">실측값 없이 규격식·물리 모델·명시된 가정으로 계산한 감속기입니다. 붉은 번호는 기준 미달 부위, 노란 번호는 주의 부위입니다. 부품을 누르면 상세가, 번호를 누르면 원인과 대책이 열립니다. 드래그 회전 · Shift+드래그 이동 · 휠 확대 · 더블클릭 기본 시점 · 우클릭 메뉴(배경: 보기 설정 / 부품: 투명·분해·단면·숨기기).</p></div>
     <div id="viewer" class="full">
@@ -920,5 +945,10 @@ function dlg(title, text, note, okLabel, onOk) {
 const validView = h => STEPS.some(s => s[0] === h) || (h.startsWith('st-') && STAGE_KEYS.includes(h.slice(3)));
 window.addEventListener('hashchange', () => { const [h, a] = location.hash.slice(1).split('/'); if (validView(h) && (h !== view || (a || null) !== ANCHOR)) go(h, a); });
 { const [h0, a0] = location.hash.slice(1).split('/'); if (validView(h0)) { if (VIEW_STAGE[h0]) { view = 'st-' + VIEW_STAGE[h0]; ANCHOR = 'vw-' + h0; } else { view = h0; ANCHOR = a0 || null; } } }
+$('#vchip').onclick = () => document.body.classList.toggle('vopen');
+document.addEventListener('click', e => { if (document.body.classList.contains('vopen') && !e.target.closest('#verdict,#vchip')) document.body.classList.remove('vopen'); });
+$('#bMore').onclick = e => { e.stopPropagation(); $('#moreMenu').hidden = !$('#moreMenu').hidden; };
+document.addEventListener('click', e => { if (!e.target.closest('#moreMenu')) $('#moreMenu').hidden = true; });
+window.PGDApp = { go, view: () => view, mapSelect: id => MAPV?.select(id), mapState: () => MAPV?.state(), items: () => procEval().flatMap(g => g.items.map(i => i.id)) };
 compute(); renderRail(); renderVerdict(); render();
 }

@@ -27,14 +27,15 @@
   ];
   const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
-  const BW = 230, BH = 92, DW = 150, DH = 104, STEP = 270, ROWH = 330, PER = 3;
+  const BW = 290, BH = 104, DW = 160, DH = 116, STEP = 310, ROWH = 310, PER = 4;
   // 미달(No) 시 돌아가는 단계 — 마스터플랜 검증 루프 기준
   const BACK = { 4: '3', 5: '3', 7: '6', 10: '2', 11: '2' };
 
   function mount(host, opt) {
     const E = opt.E, onOpen = opt.onOpen || (() => { });
     host.innerHTML = `<div class="mp fl"><svg class="mp-svg"></svg>
-      <div class="mp-ui"><button data-a="all" class="btn">전체 보기</button><label class="sw"><input type="checkbox" data-a="rel" checked> 상호작용</label><span class="x">단계를 누르면 세부 항목이 가지로 펼쳐집니다 · 끌어서 이동 · 휠 확대</span></div>
+      <div class="mp-ui"><button data-a="all" class="btn">전체 보기</button><label class="sw"><input type="checkbox" data-a="rel" checked> 연관 표시</label><span class="x">① 단계를 누르면 항목이 펼쳐집니다  ② 항목을 누르면 오른쪽에서 바로 입력·확인</span></div>
+      <div class="mp-legend"><span><i class="lg ok"></i>통과</span><span><i class="lg bad"></i>미달</span><span><i class="lg"></i>판정 없음</span><span><i class="lg rel"></i>연관</span></div>
       <aside class="mp-side" hidden></aside></div>`;
     const svg = host.querySelector('svg'), side = host.querySelector('.mp-side'), ui = host.querySelector('.mp-ui');
     el('defs', {}, svg).innerHTML = `<marker id="mpA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1L10,5L0,9Z" fill="#6a93c2"/></marker>
@@ -76,25 +77,22 @@
         if (n.r === s.r) arrow(`M${s.dx + s.dir * DW / 2},${s.y} H${n.x - s.dir * (BW / 2 + 2)}`, 'mp-ar', '통과', (s.dx + n.x) / 2, s.y - 10);
         else arrow(`M${s.dx},${s.y + DH / 2} V${n.y - ROWH / 2 + 20} H${n.x} V${n.y - BH / 2 - 2}`, 'mp-ar', '통과', s.dx + 26, s.y + DH / 2 + 26);
       } else arrow(`M${s.dx + s.dir * DW / 2},${s.y} H${end.x - s.dir * 82}`, 'mp-ar', '통과', (s.dx + end.x) / 2, s.y - 10);
-      // gate No → back
-      const back = BACK[s.key] ? stages.find(x => x.key === BACK[s.key]) : s;
-      if (back === s) arrow(`M${s.dx},${s.y - DH / 2} V${s.y - BH / 2 - 44} H${s.x} V${s.y - BH / 2 - 2}`, 'mp-ar no', '미달', (s.x + s.dx) / 2, s.y - BH / 2 - 52);
-      else {   // long return: down to the channel, out to the left margin, up to just under the target row, into the target box from below
-        const j = Object.keys(BACK).indexOf(s.key), ch = s.y + ROWH / 2 - 14 - j * 6, mx = Math.min(...stages.map(q => q.dx), end.x - 120) - DW / 2 - 50 - j * 22, uy = back.y + BH / 2 + 34 + j * 8;
-        arrow(`M${s.dx},${s.y + DH / 2} V${ch} H${mx} V${uy} H${back.x - 30 + j * 12} V${back.y + BH / 2 + 2}`, 'mp-ar no long', `미달 → ${back.key}단계`, s.dx + (mx - s.dx) * .5, ch - 8);
-      }
+      // gate No: a small label under the diamond; the return path itself is drawn only while the stage is open
+      const back = BACK[s.key] ? stages.find(x => x.key === BACK[s.key]) : null;
+      const bl = el('text', { x: s.dx, y: s.y - DH / 2 - 12, class: 'mp-back', 'text-anchor': 'middle' }, gFlow); bl.textContent = back ? `미달 → ${back.key}단계로` : '미달 → 재검토';
+      if (back) { const ax = s.dx, ay = s.y - DH / 2, bx = back.x, by = back.y + BH / 2 + 4, cx = (ax + bx) / 2 - (by - ay) * .25, cy = (ay + by) / 2 + (bx - ax) * .25;
+        s.backP = el('path', { d: `M${ax},${ay} Q${cx},${cy} ${bx},${by}`, class: 'mp-backp', 'marker-end': 'url(#mpR)' }, gRel); s.backP.style.display = 'none'; }
     });
     pill(end.x, end.y, '출시');
     // 가공·원가 병행 트랙: a lane box beside the flow
     const minX = Math.min(...stages.map(s => Math.min(s.x, s.dx))) - BW, maxX = Math.max(...stages.map(s => Math.max(s.x, s.dx))) + BW;
     if (dfm) {
-      const dx = maxX + 240, dy = ROWH * 1.5, g = el('g', { class: 'mp-n mp-stage mp-dfm', tabindex: 0, role: 'button' }, gBox);
+      const dx = -STEP, dy = 2 * ROWH, g = el('g', { class: 'mp-n mp-stage mp-dfm', tabindex: 0, role: 'button' }, gBox);
       const s = { key: 'D', g: dfm, name: '가공·원가 (병행)', x: dx, y: dy, dir: 1, gEl: g, r: -1 };
       el('rect', { x: dx - BW / 2, y: dy - BH / 2 - 30, width: BW, height: BH + 60, rx: 6, class: 'stb dfm' }, g);
       const t1 = el('text', { x: dx, y: dy - 18, 'text-anchor': 'middle', class: 'stt' }, g); t1.textContent = 'D. 가공·원가';
       const t2 = el('text', { x: dx, y: dy + 10, 'text-anchor': 'middle', class: 'stp' }, g); t2.textContent = '설계 단계와 병행';
       const t3 = el('text', { x: dx, y: dy + 34, 'text-anchor': 'middle', class: 'stp' }, g); t3.textContent = `세부 ${dfm.total}개`;
-      el('path', { d: `M${dx - BW / 2},${dy} H${maxX + 20}`, class: 'mp-ar par' }, gFlow);
       stages.push(s);
     }
     // ---------- items (hidden until their stage opens): mind-map branches under the box
@@ -122,7 +120,7 @@
         } else { m.tx = s.x - 125; m.ty = s.y; m.ta = 0; }
       });
       gDim.classList.toggle('on', !!focus);
-      stages.forEach(s => s.gEl.classList.toggle('sel', focus === s.key));
+      stages.forEach(s => { s.gEl.classList.toggle('sel', focus === s.key); if (s.backP) s.backP.style.display = focus === s.key ? '' : 'none'; });
     }
     // ---------- camera
     const view = { x: 0, y: 0, k: .3 }; let tween = null;
@@ -131,10 +129,10 @@
     function flyTo(x, y, k, ms = 750) { tween = { a: { ...view }, b: { x, y, k }, t0: performance.now(), ms }; kick(); }
     function fitPts(pts, padX, padY, kMax, ms) {
       const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), w = Math.max(...xs) - Math.min(...xs) + padX, h = Math.max(...ys) - Math.min(...ys) + padY;
-      const panel = side.hidden ? 0 : 344, k = Math.min(kMax, (W() - panel) / w, H() / h);
+      const panel = side.hidden ? 0 : side.offsetWidth + 24, k = Math.min(kMax, (W() - panel) / w, H() / h);
       flyTo((Math.max(...xs) + Math.min(...xs)) / 2 + panel / 2 / k, (Math.max(...ys) + Math.min(...ys)) / 2, k, ms);
     }
-    const fitAll = ms => fitPts([[Math.min(minX, end.x) - 300, -ROWH * .6], [maxX + 380, (Math.ceil(12 / PER) - 1) * ROWH + ROWH * .6]], 80, 80, 1, ms);
+    const fitAll = ms => fitPts([[-STEP - BW / 2, -BH], [Math.max(maxX - BW + DW / 2, end.x + 80), (Math.ceil(12 / PER) - 1) * ROWH + BH]], 90, 150, 1.1, ms);
     const fitStage = s => fitPts([[s.x - BW, s.y - BH], [s.x + BW, s.y + BH / 2 + 80 + Math.ceil(s.items.length / (s.items.length > 7 ? 2 : 1)) * 52]], 160, 120, 1.25);
 
     // ---------- per-frame
@@ -151,11 +149,13 @@
       rels.forEach(r => {
         const on = sel && (r.a === sel || r.b === sel);
         if (!r.p) { r.p = el('path', { class: 'mp-rel', 'marker-end': 'url(#mpR)' }, gRel); r.lab = el('text', { class: 'mp-rl', 'text-anchor': 'middle' }, gRel); r.lab.textContent = r.t; }
-        r.p.style.display = r.lab.style.display = on && relOn ? '' : 'none'; if (!on || !relOn) return;
-        const P = m => m.a > .5 ? { x: m.x + (m.side < 0 ? 0 : 250), y: m.y } : { x: m.s.x, y: m.s.y };
+        const vis = on && relOn && r.a.a > .5 && r.b.a > .5;
+        r.p.style.display = r.lab.style.display = vis ? '' : 'none'; if (!vis) return;
+        const P = m => ({ x: m.x + (m.side < 0 ? 0 : 250), y: m.y });
         const A = P(r.a), B = P(r.b), mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2, cx = mx - (B.y - A.y) * .2, cy = my + (B.x - A.x) * .2;
         r.p.setAttribute('d', `M${A.x},${A.y} Q${cx},${cy} ${B.x},${B.y}`); r.lab.setAttribute('x', (A.x + 2 * cx + B.x) / 4); r.lab.setAttribute('y', (A.y + 2 * cy + B.y) / 4 - 6);
       });
+      stages.forEach(s => s.gEl.classList.toggle('rel', !!sel && relOn && s !== sel.s && rels.some(r => (r.a === sel && r.b.s === s) || (r.b === sel && r.a.s === s))));
       applyCam();
     }
     let raf = 0, relOn = true;
@@ -171,7 +171,7 @@
     const KIND = globalThis.PGDProc?.KIND || {};
     function showSide(x) {
       if (!x) { side.hidden = true; return; }
-      side.hidden = false;
+      side.hidden = false; side.classList.toggle('wide', !x.items); side.scrollTop = 0;
       if (x.items) {
         side.innerHTML = `<div class="mp-sh"><span class="snum">${x.key}</span><b>${esc(x.name)}</b></div>
           <div class="pgate ${x.g.gate.ok === true ? 'ok' : x.g.gate.ok === false ? 'bad' : ''}">게이트 · ${esc(x.g.gate.t)} — ${x.g.gate.ok === true ? '통과' : x.g.gate.ok === false ? '미달' : '기준 없음'}</div>
@@ -182,10 +182,13 @@
         side.innerHTML = `<div class="mp-sh"><span class="snum">${esc(x.s.key)}</span><b>${it.id} ${esc(it.t)}</b></div>
           <p><span class="kchip k-${it.kind}">${KIND[it.kind] || ''}</span> ${it.ok === true ? '<b class="good">✓ 통과</b>' : it.ok === false ? '<b class="bad">✗ 미달</b>' : ''}</p>
           <p class="mp-val">${esc(it.val ?? '—')}</p>
-          ${out.length ? `<h4>이 항목이 바꾸는 것</h4><ul class="mp-list">${out.map(r => `<li data-id="${r.b.id}"><span class="pid">${r.b.id}</span>${esc(r.b.it.t)}<small>${esc(r.t)}</small></li>`).join('')}</ul>` : ''}
-          ${inn.length ? `<h4>이 항목을 바꾸는 것</h4><ul class="mp-list">${inn.map(r => `<li data-id="${r.a.id}"><span class="pid">${r.a.id}</span>${esc(r.a.it.t)}<small>${esc(r.t)}</small></li>`).join('')}</ul>` : ''}
-          <button class="btn primary" data-open="st-${x.s.key}" data-anchor="${it.id}">이 항목 열기 →</button>`;
+          ${out.length || inn.length ? `<div class="mp-rels2">${inn.length ? `<div><span class="rl">영향 받음</span>${inn.map(r => `<button class="rc" data-id="${r.a.id}" title="${esc(r.t)}">← ${r.a.id} ${esc(r.a.it.t)}</button>`).join('')}</div>` : ''}${out.length ? `<div><span class="rl">영향 줌</span>${out.map(r => `<button class="rc" data-id="${r.b.id}" title="${esc(r.t)}">→ ${r.b.id} ${esc(r.b.it.t)}</button>`).join('')}</div>` : ''}</div>` : ''}
+          <div class="mp-detail">${opt.detail ? opt.detail(it.id) : ''}</div>
+          <button class="btn" data-open="st-${x.s.key}" data-anchor="${it.id}">단계 페이지에서 크게 보기 →</button>`;
+        if (opt.bindDetail) opt.bindDetail(side.querySelector('.mp-detail'), it.id);
       }
+      side.insertAdjacentHTML('afterbegin', '<button class="mp-x" aria-label="닫기">×</button>');
+      side.querySelector('.mp-x').onclick = () => { if (sel) { sel = null; showSide(stages.find(s => s.key === focus)); } else { focus = null; layout(); showSide(null); fitAll(); } kick(); };
       side.querySelectorAll('[data-id]').forEach(li => li.onclick = () => selectItem(byId[li.dataset.id]));
       side.querySelectorAll('[data-open]').forEach(b => b.onclick = () => open(b.dataset.open, b.dataset.anchor));
     }
@@ -218,10 +221,17 @@
     ui.querySelector('[data-a="rel"]').onchange = e => { relOn = e.target.checked; kick(); };
     const ro = new ResizeObserver(() => kick()); ro.observe(svg);
 
+    if (opt.restore) {   // re-mounted after an input change: same camera, same open stage/item, no intro
+      const r = opt.restore; Object.assign(view, r.view); focus = r.focus; sel = r.sel ? byId[r.sel] : null; layout();
+      items.forEach(m => { m.x = m.tx; m.y = m.ty; m.a = m.ta; });
+      showSide(sel || stages.find(s => s.key === focus) || null); side.scrollTop = r.scroll || 0; kick();
+      return api();
+    }
     layout(); view.k = .15; fitAll(900);
     if (opt.focus) { const x = byId[opt.focus] || stages.find(s => s.key === String(opt.focus).replace('st-', '')); if (x) setTimeout(() => x.items ? selectStage(x) : selectItem(x), 700); }
     kick();
-    return { dispose() { cancelAnimationFrame(raf); ro.disconnect(); host.innerHTML = ''; }, state: () => ({ focus, sel: sel?.id }) };
+    return api();
+    function api() { return { dispose() { cancelAnimationFrame(raf); ro.disconnect(); host.innerHTML = ''; }, state: () => ({ focus, sel: sel?.id, view: { ...view }, scroll: side.scrollTop }), select: id => { const m = byId[id]; if (m) selectItem(m); } }; }
   }
   globalThis.PGDMap = { mount, REL };
 })();
