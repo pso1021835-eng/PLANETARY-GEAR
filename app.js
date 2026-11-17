@@ -282,7 +282,7 @@ const VIEWS = {
   shous() { return housingView(); },
   overview() { return overviewView(); },
   proc() { return procView(); },
-  map() { return `<div class="maphead"><h2>설계 지도</h2><p class="lead">모든 단계와 세부 항목을 한 평면에 펼쳤습니다. 단계를 누르면 항목이 펼쳐지고, 항목을 누르면 연관 항목이 이어집니다. 주황 화살표 = 상호작용, 회색 = 단계 흐름.</p></div><div id="mapHost" class="maphost"></div>`; },
+  map() { return `<div class="maphead"><h2>설계 지도</h2><p class="lead">설계 순서를 순서도로 보여줍니다. 단계 → 게이트 → 통과면 다음 단계, 미달이면 돌아갈 단계로. 단계를 누르면 세부 항목이 가지처럼 펼쳐지고, 항목을 누르면 연관 항목이 주황 선으로 이어집니다.</p></div><div id="mapHost" class="maphost"></div>`; },
   outLegacy() { return head('출력물 · 가공 · 원가', '12단계 출력물과 가공·원가 병행 트랙(D1~D6)입니다. 원가는 가정 단가로 계산한 추정치이며, 실제 견적 단가로 바꿔 넣으면 그대로 반영됩니다.'); },
   overviewOld() {
     if (!R || R.errors?.length) return head('종합 판정', '입력에 오류가 있어 계산하지 못했습니다.') + errBox();

@@ -1,4 +1,4 @@
-/* 유성감속기 설계실 — 설계 지도 (globalThis.PGDMap)
+/* 유성감속기 설계실 — 설계 지도 (globalThis.PGDMap): 순서도 + 마인드맵 펼침
    모든 단계·세부 항목을 한 평면에 마인드맵처럼 배치한다. 끌어서 이동, 휠로 확대, 단계를 누르면 카메라가
    날아가 그 단계의 항목이 펼쳐지고, 항목을 누르면 연관 항목이 강조된다. 모든 전환은 보간 애니메이션.
    데이터는 PGDProc.evaluate 결과(E)와 아래 REL(항목 간 상호작용, 화이트보드 표 기준). */
@@ -27,181 +27,199 @@
   ];
   const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const BW = 230, BH = 92, DW = 150, DH = 104, STEP = 270, ROWH = 330, PER = 3;
+  // 미달(No) 시 돌아가는 단계 — 마스터플랜 검증 루프 기준
+  const BACK = { 4: '3', 5: '3', 7: '6', 10: '2', 11: '2' };
 
   function mount(host, opt) {
     const E = opt.E, onOpen = opt.onOpen || (() => { });
-    host.innerHTML = `<div class="mp"><svg class="mp-svg"></svg>
-      <div class="mp-ui"><button data-a="all" class="btn">전체 보기</button><label class="sw"><input type="checkbox" data-a="flow" checked> 단계 흐름</label><label class="sw"><input type="checkbox" data-a="rel" checked> 상호작용</label><span class="x">끌어서 이동 · 휠로 확대 · 단계·항목을 누르세요</span></div>
+    host.innerHTML = `<div class="mp fl"><svg class="mp-svg"></svg>
+      <div class="mp-ui"><button data-a="all" class="btn">전체 보기</button><label class="sw"><input type="checkbox" data-a="rel" checked> 상호작용</label><span class="x">단계를 누르면 세부 항목이 가지로 펼쳐집니다 · 끌어서 이동 · 휠 확대</span></div>
       <aside class="mp-side" hidden></aside></div>`;
     const svg = host.querySelector('svg'), side = host.querySelector('.mp-side'), ui = host.querySelector('.mp-ui');
-    const defs = el('defs', {}, svg);
-    defs.innerHTML = `<marker id="mpA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1L10,5L0,9Z" fill="#e4612a"/></marker>
-      <marker id="mpF" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1L10,5L0,9Z" fill="#8a8a8a"/></marker>
-      <radialGradient id="mpGlow"><stop offset="0" stop-color="#e4612a" stop-opacity=".35"/><stop offset="1" stop-color="#e4612a" stop-opacity="0"/></radialGradient>`;
-    const cam = el('g', {}, svg), gEdge = el('g', { class: 'mp-edges' }, cam), gRel = el('g', { class: 'mp-rels' }, cam), gNode = el('g', { class: 'mp-nodes' }, cam);
+    el('defs', {}, svg).innerHTML = `<marker id="mpA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1L10,5L0,9Z" fill="#6a93c2"/></marker>
+      <marker id="mpR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1L10,5L0,9Z" fill="#e4612a"/></marker>
+      <filter id="mpSh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#2b4a6b" flood-opacity=".18"/></filter>`;
+    const cam = el('g', {}, svg), gFlow = el('g', {}, cam), gBox = el('g', {}, cam), gDim = el('rect', { class: 'mp-dim', x: -5000, y: -5000, width: 20000, height: 20000 }, cam), gBr = el('g', {}, cam), gItem = el('g', {}, cam), gRel = el('g', { class: 'mp-rels' }, cam);
 
-    // ---- graph
-    const stages = E.map((g, si) => ({ key: String(g.n), g, si, name: g.n === 'D' ? '가공·원가' : g.name }));
-    const N = stages.length, RING = 980;
-    const nodes = [], byId = {};
-    const hub = { id: 'hub', type: 'hub', label: '유성감속기 설계', x: 0, y: 0, tx: 0, ty: 0, r: 70 };
-    nodes.push(hub);
+    // ---------- process layout: snake rows of [stage box → gate diamond]
+    const stages = E.filter(g => g.n !== 'D').map((g, i) => ({ key: String(g.n), g, i, name: g.name }));
+    const dfm = E.find(g => g.n === 'D');
+    const pos = i => { const r = Math.floor(i / PER), c = i % PER, dir = r % 2 ? -1 : 1, col = dir > 0 ? c : PER - 1 - c; return { r, dir, bx: col * 2 * STEP, y: r * ROWH }; };
+    stages.forEach(s => { const p = pos(s.i); s.r = p.r; s.dir = p.dir; s.x = p.bx; s.y = p.y; s.dx = p.bx + p.dir * STEP; });
+    const byId = {}, items = [];
+    const start = { x: stages[0].x - STEP * .9, y: 0 }, last = stages.at(-1), end = { x: last.dx + last.dir * STEP * .9, y: last.y };
+    const col = ok => ok === true ? '#3f9d68' : ok === false ? '#d24a36' : '#9fb3c8';
+
+    // ---------- draw static flow
+    const pill = (x, y, txt, cls) => { const g = el('g', { class: 'mp-pill ' + (cls || '') }, gBox); el('rect', { x: x - 80, y: y - 34, width: 160, height: 68, rx: 34 }, g); const t = el('text', { x, y: y + 7, 'text-anchor': 'middle' }, g); t.textContent = txt; return g; };
+    const arrow = (d, cls = 'mp-ar', lab, lx, ly) => { el('path', { d, class: cls, 'marker-end': 'url(#mpA)' }, gFlow); if (lab) { const t = el('text', { x: lx, y: ly, class: 'mp-yn', 'text-anchor': 'middle' }, gFlow); t.textContent = lab; } };
+    pill(start.x, start.y, '시작');
+    arrow(`M${start.x + 80},0 H${stages[0].x - BW / 2 - 2}`);
+    stages.forEach((s, i) => {
+      // stage box
+      const g = el('g', { class: 'mp-n mp-stage', tabindex: 0, role: 'button' }, gBox); s.gEl = g;
+      s.rect = el('rect', { x: s.x - BW / 2, y: s.y - BH / 2, width: BW, height: BH, rx: 6, class: 'stb' }, g);
+      el('circle', { cx: s.x + BW / 2 - 14, cy: s.y - BH / 2 + 14, r: 6, fill: col(s.g.gate.ok) }, g);
+      const t1 = el('text', { x: s.x, y: s.y - 8, 'text-anchor': 'middle', class: 'stt' }, g); t1.textContent = `${s.key}. ${s.name}`;
+      const t2 = el('text', { x: s.x, y: s.y + 22, 'text-anchor': 'middle', class: 'stp' }, g); t2.textContent = `세부 ${s.g.total}개 · 처리 ${s.g.done}`;
+      // gate diamond
+      const dg = el('g', { class: 'mp-n mp-gate', tabindex: 0, role: 'button' }, gBox); s.dEl = dg;
+      el('polygon', { points: `${s.dx},${s.y - DH / 2} ${s.dx + DW / 2},${s.y} ${s.dx},${s.y + DH / 2} ${s.dx - DW / 2},${s.y}`, class: 'gtd ' + (s.g.gate.ok === true ? 'ok' : s.g.gate.ok === false ? 'bad' : '') }, dg);
+      const gt = el('text', { x: s.dx, y: s.y - 4, 'text-anchor': 'middle', class: 'gtt' }, dg); gt.textContent = '게이트';
+      const gs = el('text', { x: s.dx, y: s.y + 18, 'text-anchor': 'middle', class: 'gts' }, dg); gs.textContent = s.g.gate.ok === true ? '통과' : s.g.gate.ok === false ? '미달' : '기준 없음';
+      // box → gate
+      arrow(`M${s.x + s.dir * (BW / 2)},${s.y} H${s.dx - s.dir * (DW / 2 + 2)}`);
+      // gate → next (Yes)
+      const n = stages[i + 1];
+      if (n) {
+        if (n.r === s.r) arrow(`M${s.dx + s.dir * DW / 2},${s.y} H${n.x - s.dir * (BW / 2 + 2)}`, 'mp-ar', '통과', (s.dx + n.x) / 2, s.y - 10);
+        else arrow(`M${s.dx},${s.y + DH / 2} V${n.y - ROWH / 2 + 20} H${n.x} V${n.y - BH / 2 - 2}`, 'mp-ar', '통과', s.dx + 26, s.y + DH / 2 + 26);
+      } else arrow(`M${s.dx + s.dir * DW / 2},${s.y} H${end.x - s.dir * 82}`, 'mp-ar', '통과', (s.dx + end.x) / 2, s.y - 10);
+      // gate No → back
+      const back = BACK[s.key] ? stages.find(x => x.key === BACK[s.key]) : s;
+      if (back === s) arrow(`M${s.dx},${s.y - DH / 2} V${s.y - BH / 2 - 44} H${s.x} V${s.y - BH / 2 - 2}`, 'mp-ar no', '미달', (s.x + s.dx) / 2, s.y - BH / 2 - 52);
+      else {   // long return: down to the channel, out to the left margin, up to just under the target row, into the target box from below
+        const j = Object.keys(BACK).indexOf(s.key), ch = s.y + ROWH / 2 - 14 - j * 6, mx = Math.min(...stages.map(q => q.dx), end.x - 120) - DW / 2 - 50 - j * 22, uy = back.y + BH / 2 + 34 + j * 8;
+        arrow(`M${s.dx},${s.y + DH / 2} V${ch} H${mx} V${uy} H${back.x - 30 + j * 12} V${back.y + BH / 2 + 2}`, 'mp-ar no long', `미달 → ${back.key}단계`, s.dx + (mx - s.dx) * .5, ch - 8);
+      }
+    });
+    pill(end.x, end.y, '출시');
+    // 가공·원가 병행 트랙: a lane box beside the flow
+    const minX = Math.min(...stages.map(s => Math.min(s.x, s.dx))) - BW, maxX = Math.max(...stages.map(s => Math.max(s.x, s.dx))) + BW;
+    if (dfm) {
+      const dx = maxX + 240, dy = ROWH * 1.5, g = el('g', { class: 'mp-n mp-stage mp-dfm', tabindex: 0, role: 'button' }, gBox);
+      const s = { key: 'D', g: dfm, name: '가공·원가 (병행)', x: dx, y: dy, dir: 1, gEl: g, r: -1 };
+      el('rect', { x: dx - BW / 2, y: dy - BH / 2 - 30, width: BW, height: BH + 60, rx: 6, class: 'stb dfm' }, g);
+      const t1 = el('text', { x: dx, y: dy - 18, 'text-anchor': 'middle', class: 'stt' }, g); t1.textContent = 'D. 가공·원가';
+      const t2 = el('text', { x: dx, y: dy + 10, 'text-anchor': 'middle', class: 'stp' }, g); t2.textContent = '설계 단계와 병행';
+      const t3 = el('text', { x: dx, y: dy + 34, 'text-anchor': 'middle', class: 'stp' }, g); t3.textContent = `세부 ${dfm.total}개`;
+      el('path', { d: `M${dx - BW / 2},${dy} H${maxX + 20}`, class: 'mp-ar par' }, gFlow);
+      stages.push(s);
+    }
+    // ---------- items (hidden until their stage opens): mind-map branches under the box
     stages.forEach(s => {
-      const a = -Math.PI / 2 + 2 * Math.PI * s.si / N;
-      s.a = a; s.cx = RING * Math.cos(a); s.cy = RING * Math.sin(a); s.side = Math.cos(a) >= -.01 ? 1 : -1;
-      const n = { id: 'st-' + s.key, type: 'stage', s, label: (s.key === 'D' ? 'D ' : s.key + ' ') + s.name, x: s.cx * .2, y: s.cy * .2, tx: s.cx, ty: s.cy, r: 46, ok: s.g.gate.ok };
-      nodes.push(n); byId[n.id] = n; s.node = n;
-      s.items = s.g.items.map((it, k) => { const m = { id: it.id, type: 'item', it, s, k, x: n.x, y: n.y, tx: s.cx, ty: s.cy, r: 11, ok: it.ok, kind: it.kind }; nodes.push(m); byId[it.id] = m; return m; });
+      s.items = s.g.items.map((it, k) => {
+        const g = el('g', { class: 'mp-n mp-item', tabindex: 0, role: 'button' }, gItem);
+        const r = el('rect', { x: 0, y: -19, width: 250, height: 38, rx: 6, class: 'itb', stroke: col(it.ok) }, g);
+        const t = el('text', { x: 12, y: 5, class: 'itt' }, g); t.textContent = `${it.id}  ${it.t}`;
+        const br = el('path', { class: 'mp-br' }, gBr);
+        const m = { id: it.id, it, s, k, g, br, x: s.x, y: s.y, tx: s.x, ty: s.y, a: 0, ta: 0 };
+        byId[it.id] = m; items.push(m); return m;
+      });
     });
     const rels = REL.filter(([a, b]) => byId[a] && byId[b]).map(([a, b, t]) => ({ a: byId[a], b: byId[b], t }));
 
-    // ---- layout: collapsed clusters, focused stage fans its items out
+    // ---------- state + layout of the open stage
     let focus = null, sel = null;
     function layout() {
-      stages.forEach(s => {
-        const open = focus === s.key, n = s.items.length, side = s.side;
-        s.items.forEach((m, k) => {
-          if (open) {   // mind-map branch: a column of items on the outward side, slightly bowed
-            const u = k - (n - 1) / 2;
-            m.tx = s.cx + side * (190 + 26 * Math.abs(u) ** 1.2); m.ty = s.cy + u * 58;
-          } else {      // collapsed: a tight arc of dots
-            const t = n > 1 ? k / (n - 1) - .5 : 0, ang = s.a + t * Math.min(Math.PI * .9, n * .14);
-            m.tx = s.cx + 120 * Math.cos(ang); m.ty = s.cy + 120 * Math.sin(ang);
-          }
-          m.open = open;
-        });
+      items.forEach(m => {
+        const open = focus === m.s.key, s = m.s, n = s.items.length;
+        if (open) {   // branches fan out below the box (mind-map), two columns when long
+          const cols = n > 7 ? 2 : 1, per = Math.ceil(n / cols), c = Math.floor(m.k / per), k = m.k % per;
+          m.side = cols === 2 && c === 0 ? -1 : 1;
+          m.tx = m.side < 0 ? s.x - 34 - 250 : s.x + 34; m.ty = s.y + BH / 2 + 70 + k * 52; m.ta = 1;
+        } else { m.tx = s.x - 125; m.ty = s.y; m.ta = 0; }
       });
+      gDim.classList.toggle('on', !!focus);
+      stages.forEach(s => s.gEl.classList.toggle('sel', focus === s.key));
     }
-    // ---- camera
+    // ---------- camera
     const view = { x: 0, y: 0, k: .3 }; let tween = null;
     const W = () => svg.clientWidth || 1000, H = () => svg.clientHeight || 700;
     const applyCam = () => cam.setAttribute('transform', `translate(${W() / 2 - view.x * view.k},${H() / 2 - view.y * view.k}) scale(${view.k})`);
-    function flyTo(x, y, k, ms = 700) { const a = { ...view }, b = { x, y, k }, t0 = performance.now(); tween = { a, b, t0, ms }; kick(); }
-    function fitAll(ms) { flyTo(0, 0, Math.min(W(), H()) / (2 * RING + 700), ms); }
-    // frame a set of world points, keeping clear of the side panel on the right
+    function flyTo(x, y, k, ms = 750) { tween = { a: { ...view }, b: { x, y, k }, t0: performance.now(), ms }; kick(); }
     function fitPts(pts, padX, padY, kMax, ms) {
       const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), w = Math.max(...xs) - Math.min(...xs) + padX, h = Math.max(...ys) - Math.min(...ys) + padY;
-      const panel = 344, k = Math.min(kMax, Math.min((W() - panel) / w, H() / h));
+      const panel = side.hidden ? 0 : 344, k = Math.min(kMax, (W() - panel) / w, H() / h);
       flyTo((Math.max(...xs) + Math.min(...xs)) / 2 + panel / 2 / k, (Math.max(...ys) + Math.min(...ys)) / 2, k, ms);
     }
-    function fitStage(s, ms) { fitPts([s.node, ...s.items].map(m => [m.tx + (m === s.node ? 0 : s.side * 300), m.ty]).concat([[s.cx, s.cy]]), 260, 200, 1.1, ms); }
+    const fitAll = ms => fitPts([[Math.min(minX, end.x) - 300, -ROWH * .6], [maxX + 380, (Math.ceil(12 / PER) - 1) * ROWH + ROWH * .6]], 80, 80, 1, ms);
+    const fitStage = s => fitPts([[s.x - BW, s.y - BH], [s.x + BW, s.y + BH / 2 + 80 + Math.ceil(s.items.length / (s.items.length > 7 ? 2 : 1)) * 52]], 160, 120, 1.25);
 
-    // ---- drawing (DOM created once, attributes updated per frame)
-    const col = ok => ok === true ? '#3fae6e' : ok === false ? '#d9493a' : '#8a8f97';
-    const kindCol = { calc: '#7fb69a', in: '#9db8d9', man: '#e0c27a', none: '#5a5a5c' };
-    nodes.forEach(n => {
-      const g = el('g', { class: 'mp-n mp-' + n.type, tabindex: 0, role: 'button' }, gNode); n.g = g;
-      if (n.type === 'hub') { el('circle', { r: 120, fill: 'url(#mpGlow)' }, g); n.c = el('circle', { r: n.r, class: 'hubc' }, g); n.t = el('text', { class: 'mp-t hubt', 'text-anchor': 'middle', y: 6 }, g); n.t.textContent = n.label; }
-      else if (n.type === 'stage') { n.c = el('circle', { r: n.r, class: 'stc', stroke: col(n.ok) }, g); n.t = el('text', { class: 'mp-t stt', 'text-anchor': 'middle', y: n.r + 30 }, g); n.t.textContent = n.label; n.num = el('text', { class: 'mp-t stn', 'text-anchor': 'middle', y: 10 }, g); n.num.textContent = n.s.key; n.prog = el('text', { class: 'mp-t stp', 'text-anchor': 'middle', y: n.r + 54 }, g); n.prog.textContent = `${n.s.g.done}/${n.s.g.total}`; }
-      else { const sd = n.s.side, an = sd > 0 ? 'start' : 'end'; n.c = el('circle', { r: n.r, class: 'itc', fill: kindCol[n.kind] || '#666', stroke: col(n.ok) }, g); n.t = el('text', { class: 'mp-t itt', x: sd * 20, y: 6, 'text-anchor': an }, g); n.t.textContent = n.id + '  ' + n.it.t; n.t2 = el('text', { class: 'mp-t itn', x: sd * 20, y: 26, 'text-anchor': an }, g); n.t2.textContent = n.it.val != null ? String(n.it.val).slice(0, 46) : ''; }
-    });
-    // tree + flow edges
-    const tree = [], flow = [];
-    stages.forEach((s, i) => { tree.push([hub, s.node, el('path', { class: 'mp-tree' }, gEdge)]); s.items.forEach(m => tree.push([s.node, m, el('path', { class: 'mp-tree it' }, gEdge)])); if (i < N - 2) flow.push([s.node, stages[i + 1].node, el('path', { class: 'mp-flow', 'marker-end': 'url(#mpF)' }, gEdge)]); });
-    rels.forEach(r => { r.p = el('path', { class: 'mp-rel', 'marker-end': 'url(#mpA)' }, gRel); r.lab = el('text', { class: 'mp-rl', 'text-anchor': 'middle' }, gRel); r.lab.textContent = r.t; });
-
-    const curve = (a, b, bend = .18) => { const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y; const cx = mx - dy * bend, cy = my + dx * bend; return { d: `M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}`, cx, cy }; };
-    const trim = (a, b, ra, rb) => { const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1; return [{ x: a.x + dx / L * ra, y: a.y + dy / L * ra }, { x: b.x - dx / L * rb, y: b.y - dy / L * rb }]; };
+    // ---------- per-frame
     function draw() {
-      const k = view.k, showName = k > .55;
-      nodes.forEach(n => {
-        n.g.setAttribute('transform', `translate(${n.x},${n.y})`);
-        if (n.type === 'item') {
-          const hl = sel && (sel === n || rels.some(r => (r.a === sel && r.b === n) || (r.b === sel && r.a === n)));
-          n.t.style.opacity = n.open || hl || n.peek ? 1 : 0; n.t2.style.opacity = (n.open && showName) || sel === n ? 1 : 0;
-          n.g.classList.toggle('hl', !!hl); n.g.classList.toggle('dim', !!sel && !hl && sel.type === 'item');
-          n.g.classList.toggle('sel', sel === n);
-        }
-        if (n.type === 'stage') n.g.classList.toggle('sel', focus === n.s.key);
+      items.forEach(m => {
+        m.g.setAttribute('transform', `translate(${m.x},${m.y})`); m.g.style.opacity = m.a; m.g.style.pointerEvents = m.a > .5 ? '' : 'none';
+        const s = m.s, sx = s.x, sy = s.y + BH / 2 + (s.key === 'D' ? 30 : 0), ex = m.x, ey = m.y;
+        const tip = m.side < 0 ? ex + 250 : ex, sg = m.side < 0 ? -1 : 1;   // trunk down the box centre, then a rounded branch to the item
+        m.br.setAttribute('d', `M${sx},${sy} V${ey - 14} Q${sx},${ey} ${sx + sg * 14},${ey} H${tip}`); m.br.style.opacity = m.a;
+        const hl = sel && (sel === m || rels.some(r => (r.a === sel && r.b === m) || (r.b === sel && r.a === m)));
+        m.g.classList.toggle('sel', sel === m); m.g.classList.toggle('hl', !!hl && sel !== m);
       });
-      tree.forEach(([a, b, p]) => p.setAttribute('d', `M${a.x},${a.y} L${b.x},${b.y}`));
-      flow.forEach(([a, b, p]) => { const [p1, p2] = trim(a, b, a.r + 8, b.r + 10); p.setAttribute('d', curve(p1, p2, -.12).d); });
+      // relations of the selected item: to the related item if its stage is open, else to that stage's box
       rels.forEach(r => {
-        const [p1, p2] = trim(r.a, r.b, r.a.r + 4, r.b.r + 6), c = curve(p1, p2, .22);
-        r.p.setAttribute('d', c.d);
-        const on = sel && (r.a === sel || r.b === sel); r.p.classList.toggle('on', !!on); r.p.classList.toggle('dim', !!sel && !on);
-        r.lab.setAttribute('x', (p1.x + 2 * c.cx + p2.x) / 4); r.lab.setAttribute('y', (p1.y + 2 * c.cy + p2.y) / 4); r.lab.style.opacity = on ? 1 : 0;
+        const on = sel && (r.a === sel || r.b === sel);
+        if (!r.p) { r.p = el('path', { class: 'mp-rel', 'marker-end': 'url(#mpR)' }, gRel); r.lab = el('text', { class: 'mp-rl', 'text-anchor': 'middle' }, gRel); r.lab.textContent = r.t; }
+        r.p.style.display = r.lab.style.display = on && relOn ? '' : 'none'; if (!on || !relOn) return;
+        const P = m => m.a > .5 ? { x: m.x + (m.side < 0 ? 0 : 250), y: m.y } : { x: m.s.x, y: m.s.y };
+        const A = P(r.a), B = P(r.b), mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2, cx = mx - (B.y - A.y) * .2, cy = my + (B.x - A.x) * .2;
+        r.p.setAttribute('d', `M${A.x},${A.y} Q${cx},${cy} ${B.x},${B.y}`); r.lab.setAttribute('x', (A.x + 2 * cx + B.x) / 4); r.lab.setAttribute('y', (A.y + 2 * cy + B.y) / 4 - 6);
       });
       applyCam();
     }
-    // ---- animation loop: nodes ease toward targets, camera tweens
-    let raf = 0;
+    let raf = 0, relOn = true;
     function frame(now) {
       raf = 0; let moving = false;
-      nodes.forEach(n => { const dx = n.tx - n.x, dy = n.ty - n.y; if (Math.abs(dx) + Math.abs(dy) > .3) { n.x += dx * .16; n.y += dy * .16; moving = true; } else { n.x = n.tx; n.y = n.ty; } });
+      items.forEach(m => { const dx = m.tx - m.x, dy = m.ty - m.y, da = m.ta - m.a; if (Math.abs(dx) + Math.abs(dy) > .3 || Math.abs(da) > .01) { m.x += dx * .18; m.y += dy * .18; m.a += da * .2; moving = true; } else { m.x = m.tx; m.y = m.ty; m.a = m.ta; } });
       if (tween) { const t = Math.min(1, (now - tween.t0) / tween.ms), e = ease(t); view.x = tween.a.x + (tween.b.x - tween.a.x) * e; view.y = tween.a.y + (tween.b.y - tween.a.y) * e; view.k = tween.a.k * Math.pow(tween.b.k / tween.a.k, e); if (t >= 1) tween = null; moving = true; }
-      draw();
-      if (moving) kick();
+      draw(); if (moving) kick();
     }
     const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };
 
-    // ---- side panel
+    // ---------- side panel
     const KIND = globalThis.PGDProc?.KIND || {};
-    function showSide(n) {
-      if (!n) { side.hidden = true; return; }
+    function showSide(x) {
+      if (!x) { side.hidden = true; return; }
       side.hidden = false;
-      if (n.type === 'stage') {
-        const s = n.s;
-        side.innerHTML = `<div class="mp-sh"><span class="snum">${s.key}</span><b>${esc(s.name)}</b></div>
-          <div class="pgate ${s.g.gate.ok === true ? 'ok' : s.g.gate.ok === false ? 'bad' : ''}">게이트 · ${esc(s.g.gate.t)} — ${s.g.gate.ok === true ? '통과' : s.g.gate.ok === false ? '미달' : '기준 없음'}</div>
-          <ul class="mp-list">${s.items.map(m => `<li data-id="${m.id}"><span class="pid">${m.id}</span>${esc(m.it.t)}<i class="d" style="background:${col(m.ok)}"></i></li>`).join('')}</ul>
-          <button class="btn primary" data-open="st-${s.key}">단계 페이지 열기 →</button>`;
+      if (x.items) {
+        side.innerHTML = `<div class="mp-sh"><span class="snum">${x.key}</span><b>${esc(x.name)}</b></div>
+          <div class="pgate ${x.g.gate.ok === true ? 'ok' : x.g.gate.ok === false ? 'bad' : ''}">게이트 · ${esc(x.g.gate.t)} — ${x.g.gate.ok === true ? '통과' : x.g.gate.ok === false ? '미달' : '기준 없음'}</div>
+          <ul class="mp-list">${x.items.map(m => `<li data-id="${m.id}"><span class="pid">${m.id}</span>${esc(m.it.t)}<i class="d" style="background:${col(m.it.ok)}"></i></li>`).join('')}</ul>
+          <button class="btn primary" data-open="st-${x.key}">단계 페이지 열기 →</button>`;
       } else {
-        const it = n.it, out = rels.filter(r => r.a === n), inn = rels.filter(r => r.b === n);
-        side.innerHTML = `<div class="mp-sh"><span class="snum">${esc(n.s.key)}</span><b>${it.id} ${esc(it.t)}</b></div>
+        const it = x.it, out = rels.filter(r => r.a === x), inn = rels.filter(r => r.b === x);
+        side.innerHTML = `<div class="mp-sh"><span class="snum">${esc(x.s.key)}</span><b>${it.id} ${esc(it.t)}</b></div>
           <p><span class="kchip k-${it.kind}">${KIND[it.kind] || ''}</span> ${it.ok === true ? '<b class="good">✓ 통과</b>' : it.ok === false ? '<b class="bad">✗ 미달</b>' : ''}</p>
           <p class="mp-val">${esc(it.val ?? '—')}</p>
           ${out.length ? `<h4>이 항목이 바꾸는 것</h4><ul class="mp-list">${out.map(r => `<li data-id="${r.b.id}"><span class="pid">${r.b.id}</span>${esc(r.b.it.t)}<small>${esc(r.t)}</small></li>`).join('')}</ul>` : ''}
           ${inn.length ? `<h4>이 항목을 바꾸는 것</h4><ul class="mp-list">${inn.map(r => `<li data-id="${r.a.id}"><span class="pid">${r.a.id}</span>${esc(r.a.it.t)}<small>${esc(r.t)}</small></li>`).join('')}</ul>` : ''}
-          <button class="btn primary" data-open="st-${n.s.key}" data-anchor="${it.id}">이 항목 열기 →</button>`;
+          <button class="btn primary" data-open="st-${x.s.key}" data-anchor="${it.id}">이 항목 열기 →</button>`;
       }
       side.querySelectorAll('[data-id]').forEach(li => li.onclick = () => selectItem(byId[li.dataset.id]));
       side.querySelectorAll('[data-open]').forEach(b => b.onclick = () => open(b.dataset.open, b.dataset.anchor));
     }
-    function selectStage(s) { focus = s.key; sel = null; layout(); fitStage(s); showSide(s.node); kick(); }
-    function selectItem(n) {
-      if (focus !== n.s.key) { focus = n.s.key; layout(); }
-      sel = n; showSide(n);
-      // frame the item together with its related items
-      const rel = rels.filter(r => r.a === n || r.b === n).map(r => r.a === n ? r.b : r.a);
-      fitPts([n.s.node, n, ...rel].map(m => [m.tx + (m.type === 'item' ? m.s.side * 220 : 0), m.ty]), 360, 260, 1.1);
+    function selectStage(s) { if (focus === s.key && !sel) { focus = null; layout(); showSide(null); fitAll(); kick(); return; } focus = s.key; sel = null; layout(); showSide(s); fitStage(s); kick(); }
+    function selectItem(m) {
+      const changed = focus !== m.s.key; focus = m.s.key; sel = m; layout(); showSide(m);
+      if (changed) fitStage(m.s); kick();
     }
-    function open(stageId, anchor) {
-      const n = anchor ? byId[anchor] : byId[stageId];
-      if (n) flyTo(n.x, n.y, Math.min(3, view.k * 2.6), 380);
-      host.querySelector('.mp').classList.add('leaving');
-      setTimeout(() => onOpen(stageId, anchor), 360);
-    }
+    function open(stageId, anchor) { host.querySelector('.mp').classList.add('leaving'); flyTo(view.x, view.y, view.k * 1.6, 380); setTimeout(() => onOpen(stageId, anchor), 340); }
 
-    // ---- input: click, drag, wheel, keys
+    // ---------- input
     let drag = null, moved = false;
+    const hit = t => { const g = t.closest?.('.mp-n'); if (!g) return null; const it = items.find(m => m.g === g); if (it) return it; return stages.find(s => s.gEl === g || s.dEl === g) || null; };
     svg.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, target: e.target }; moved = false; svg.setPointerCapture(e.pointerId); });
     svg.addEventListener('pointermove', e => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 4) moved = true; if (moved) { tween = null; view.x = drag.vx - dx / view.k; view.y = drag.vy - dy / view.k; kick(); } });
-    svg.addEventListener('pointerup', e => {
+    svg.addEventListener('pointerup', () => {
       const was = drag; drag = null; if (!was || moved) return;
-      const g = was.target.closest?.('.mp-n'); const n = g && nodes.find(x => x.g === g);
-      if (!n) { sel = null; showSide(focus ? byId['st-' + focus] : null); kick(); return; }
-      if (n.type === 'hub') { focus = null; sel = null; layout(); fitAll(); showSide(null); }
-      else if (n.type === 'stage') selectStage(n.s); else selectItem(n);
-      kick();
+      const x = hit(was.target);
+      if (!x) { if (sel) { sel = null; showSide(stages.find(s => s.key === focus)); } else if (focus) { focus = null; layout(); showSide(null); fitAll(); } kick(); return; }
+      if (x.items) selectStage(x); else selectItem(x);
     });
     svg.addEventListener('wheel', e => {
       e.preventDefault(); tween = null;
       const r = svg.getBoundingClientRect(), mx = e.clientX - r.left - W() / 2, my = e.clientY - r.top - H() / 2;
-      const wx = view.x + mx / view.k, wy = view.y + my / view.k, k2 = Math.max(.08, Math.min(3, view.k * Math.exp(-e.deltaY * .0015)));
+      const wx = view.x + mx / view.k, wy = view.y + my / view.k, k2 = Math.max(.1, Math.min(3, view.k * Math.exp(-e.deltaY * .0015)));
       view.k = k2; view.x = wx - mx / k2; view.y = wy - my / k2; kick();
     }, { passive: false });
-    gNode.addEventListener('keydown', e => { if (e.key !== 'Enter') return; const n = nodes.find(x => x.g === e.target); if (n?.type === 'stage') selectStage(n.s); else if (n?.type === 'item') selectItem(n); });
-    gNode.addEventListener('pointerover', e => { const g = e.target.closest?.('.mp-item'); const n = g && nodes.find(x => x.g === g); if (n && !sel) { rels.forEach(r => { const on = r.a === n || r.b === n; r.p.classList.toggle('peek', on); r.lab.style.opacity = on ? 1 : 0; }); n.peek = true; kick(); } });
-    gNode.addEventListener('pointerout', () => { nodes.forEach(n => n.peek = false); if (!sel) rels.forEach(r => { r.p.classList.remove('peek'); r.lab.style.opacity = 0; }); kick(); });
-    ui.querySelector('[data-a="all"]').onclick = () => { focus = null; sel = null; layout(); fitAll(); showSide(null); kick(); };
-    ui.querySelector('[data-a="flow"]').onchange = e => gEdge.classList.toggle('noflow', !e.target.checked);
-    ui.querySelector('[data-a="rel"]').onchange = e => gRel.style.display = e.target.checked ? '' : 'none';
+    cam.addEventListener('keydown', e => { if (e.key !== 'Enter') return; const x = hit(e.target); if (x) x.items ? selectStage(x) : selectItem(x); });
+    ui.querySelector('[data-a="all"]').onclick = () => { focus = null; sel = null; layout(); showSide(null); fitAll(); kick(); };
+    ui.querySelector('[data-a="rel"]').onchange = e => { relOn = e.target.checked; kick(); };
     const ro = new ResizeObserver(() => kick()); ro.observe(svg);
 
-    // ---- start: burst out from the hub, then fit
-    layout(); view.k = .12; fitAll(900);
-    if (opt.focus) { const n = byId[opt.focus] || byId['st-' + opt.focus]; if (n) setTimeout(() => n.type === 'item' ? selectItem(n) : selectStage(n.s), 650); }
+    layout(); view.k = .15; fitAll(900);
+    if (opt.focus) { const x = byId[opt.focus] || stages.find(s => s.key === String(opt.focus).replace('st-', '')); if (x) setTimeout(() => x.items ? selectStage(x) : selectItem(x), 700); }
     kick();
     return { dispose() { cancelAnimationFrame(raf); ro.disconnect(); host.innerHTML = ''; }, state: () => ({ focus, sel: sel?.id }) };
   }
