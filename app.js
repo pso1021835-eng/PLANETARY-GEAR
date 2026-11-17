@@ -80,22 +80,50 @@ function procExtra() {
 }
 function procEval() { return window.PGDProc ? PGDProc.evaluate(R, D, procExtra()) : []; }
 const gateCls = ok => ok === true ? 'ok' : ok === false ? 'bad' : '';
+// one page per process stage: the stage's input/result screens + its item cards, items in order
+const STAGE_VIEWS = { 1: ['s1'], 2: ['s2'], 3: ['s3'], 4: ['s4', 's5'], 5: ['s7', 's8'], 6: ['scar'], 7: ['s9'], 8: ['shous'], 9: ['smat'], 10: ['s10'], 11: ['s11', 'reg'], 12: [], D: [] };
+const VIEW_STAGE = Object.fromEntries(Object.entries(STAGE_VIEWS).flatMap(([k, vs]) => vs.map(v => [v, k])));
+const STAGE_KEYS = Object.keys(STAGE_VIEWS);
+const itemStage = id => id.startsWith('D') ? 'D' : id.split('-')[0];
+let ANCHOR = null;
 function renderRail() {
-  const E = procEval();
-  const btn = (id, t, sub) => `<button data-v="${id}" aria-current="${view === id}" class="${sub ? 'sub' : ''}"><span class="dot ${status(id)}"></span>${t}</button>`;
-  $('#rail').innerHTML = btn('overview', '종합판정') + btn('proc', '설계 공정 체크리스트') +
-    E.filter(g => g.views.length && g.n !== 'D').map(g => `<div class="grp pg"><span class="dot ${gateCls(g.gate.ok)}"></span>${g.n} ${esc(g.name)}<small>${g.done}/${g.total}</small></div>` +
-      g.views.map(v => btn(v, VIEW_TITLE[v] || v, true)).join('')).join('');
-  $('#rail').querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.v));
+  const E = procEval(), cur = view.startsWith('st-') ? view.slice(3) : null;
+  const top = (id, t) => `<button data-v="${id}" aria-current="${view === id}"><span class="dot ${status(id)}"></span>${t}</button>`;
+  $('#rail').innerHTML = top('overview', '종합판정') + top('proc', '설계 공정 전체') + '<div class="grp">설계 단계</div>' +
+    E.map(g => { const k = String(g.n), open = k === cur;
+      return `<button data-v="st-${k}" class="stg" aria-current="${open}" aria-expanded="${open}"><span class="dot ${gateCls(g.gate.ok)}"></span><span class="sn">${k === 'D' ? 'D' : k}</span>${esc(k === 'D' ? '가공·원가' : g.name)}<small>${g.done}/${g.total}</small></button>` +
+        (open ? `<div class="its">${g.items.map(i => `<button data-v="st-${k}" data-a="${i.id}" class="it ${ANCHOR === i.id ? 'on' : ''}"><span class="dot ${i.ok === true ? 'ok' : i.ok === false ? 'bad' : i.kind === 'none' ? '' : 'in'}"></span><span class="iid">${i.id}</span>${esc(i.t)}</button>`).join('')}</div>` : ''); }).join('');
+  const items = Object.fromEntries(E.flatMap(g => g.items).map(i => [i.id, i]));
+  $('#rail').querySelectorAll('button').forEach(b => b.onclick = () => {
+    const a = b.dataset.a, it = a && items[a], k = b.dataset.v.slice(3);
+    // an item whose content lives on another stage's screen opens that screen (e.g. 5-9 scuffing → 9 소재)
+    if (it && !window.PGDChecks?.FORMS?.[a] && !(STAGE_VIEWS[k] || []).includes(it.view) && it.view) return go(it.view, VIEW_STAGE[it.view] ? a : undefined);
+    go(b.dataset.v, a);
+  });
 }
-function go(id) { view = id; try { history.replaceState(null, '', '#' + id); } catch (e) { } renderRail(); render(); window.scrollTo(0, 0); }
+// legacy screen ids (s1…reg) open their stage page at that screen
+function go(id, anchor) {
+  if (id === 'out') id = 'st-12';
+  if (VIEW_STAGE[id]) { anchor = anchor || 'vw-' + id; id = 'st-' + VIEW_STAGE[id]; }
+  view = id; ANCHOR = anchor || null;
+  try { history.replaceState(null, '', '#' + id + (anchor ? '/' + anchor : '')); } catch (e) { }
+  renderRail(); render(); scrollToAnchor();
+}
+function scrollToAnchor() {
+  if (!ANCHOR) { window.scrollTo(0, 0); return; }
+  let el = document.getElementById(ANCHOR.startsWith('vw-') ? ANCHOR : 'it-' + ANCHOR);
+  if (!el && !ANCHOR.startsWith('vw-')) { const it = procEval().flatMap(g => g.items).find(i => i.id === ANCHOR); if (it) el = document.getElementById('vw-' + it.view); }
+  if (!el) { window.scrollTo(0, 0); return; }
+  el.scrollIntoView({ block: 'start' }); window.scrollBy(0, -12);
+  el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1400);
+}
 function renderVerdict() {
   const el = $('#verdict');
   if (!R || R.errors?.length) { el.innerHTML = `<div class="kpi"><div class="label">계산 불가</div></div><ul class="warns">${(R?.errors || []).map(e => `<li>${esc(e)}</li>`).join('')}</ul>`; return; }
   const ok = R.verdict.every(x => x.ok);
   el.innerHTML = `
    <div class="kpi"><div class="label">감속기 한계 · ISO 설계 판정 (${D.req.lifeH} h)</div><div class="big ${R.reducerCap < D.req.Trated ? 'bad' : ''}">${fmt(R.reducerCap, 1)}<small> N·m</small></div><div class="note">${esc(R.reducerGov)}</div></div>
-   ${MC ? `<div class="kpi"><div class="label">현실 예측 · 중앙값 (P10–P90)</div><div class="big">${fmt(MC.capacity.p50, 1)}<small> N·m</small></div><div class="note">${fmt(MC.capacity.p10, 1)} – ${fmt(MC.capacity.p90, 1)} N·m · 몬테카를로 ${MC.n}회</div></div>` : `<div class="kpi"><div class="label">현실 예측</div><div class="note">14단계에서 가상 검증을 실행하면 표시됩니다.</div></div>`}
+   ${MC ? `<div class="kpi"><div class="label">현실 예측 · 중앙값 (P10–P90)</div><div class="big">${fmt(MC.capacity.p50, 1)}<small> N·m</small></div><div class="note">${fmt(MC.capacity.p10, 1)} – ${fmt(MC.capacity.p90, 1)} N·m · 몬테카를로 ${MC.n}회</div></div>` : `<div class="kpi"><div class="label">현실 예측</div><div class="note">11단계 검증에서 가상 검증을 실행하면 표시됩니다.</div></div>`}
    <div class="kpi"><div class="label">목표 정격 ${D.req.Trated} N·m · 판정</div><div class="big ${ok ? 'good' : 'bad'}" style="font-size:28px">${ok ? '전 항목 충족' : R.verdict.filter(x => !x.ok).length + '개 항목 미달'}</div></div>
    <ul>${R.verdict.map(x => `<li><span>${esc(x.k)}</span><b class="${x.ok ? 'good' : 'bad'}">${x.ok ? '✓' : '✗'} ${fmtV(x)}</b></li>`).join('')}</ul>`;
 }
@@ -107,9 +135,15 @@ function render(keepScroll) {
   const y = window.scrollY;
   if (VIEW3D) { if (VIEW3D.full) OVSTATE.view = VIEW3D.getView(); VIEW3D.dispose(); VIEW3D = null; }
   m.className = view === 'overview' ? 'wide' : '';
+  if (view.startsWith('st-')) {
+    const k = view.slice(3);
+    m.innerHTML = stagePage(k);
+    bindInputs(m); bindProcCards(m); bindStagePage(m);
+    (STAGE_VIEWS[k] || []).forEach(v => (AFTER[v] || (() => { }))(m));
+    if (keepScroll) window.scrollTo(0, y);
+    return;
+  }
   m.innerHTML = (VIEWS[view] || VIEWS.overview)();
-  if (view !== 'proc' && view !== 'overview') { const s = procStrip(view); if (s) m.insertAdjacentHTML('afterbegin', s); }
-  if (view !== 'proc') { const c = procCards(view); if (c) { m.insertAdjacentHTML('beforeend', c); bindProcCards(m); } }
   bindInputs(m);
   (AFTER[view] || (() => { }))(m);
   if (keepScroll) window.scrollTo(0, y);
@@ -140,14 +174,15 @@ function procCards(v) {
   const ids = Object.keys(F).filter(id => F[id].view === v);
   if (!ids.length) return '';
   const nst = R.ctx.stages.length;
-  const card = id => {
-    const fm = F[id], it = items[id] || {}, ck = CK[id] || {};
-    const fields = fm.stage ? Array.from({ length: nst }, (_, i) => fm.f.map(x => fldHTML(x, i)).join('')).join('') : fm.f.map(x => fldHTML(x, 0)).join('');
-    return `<div class="card pcx" id="pc-${id}"><div class="ph"><h3><span class="pid">${id}</span> ${esc(fm.title)}</h3><span>${it.kind ? `<span class="kchip ${KIND_CLS[it.kind]}">${PGDProc.KIND[it.kind]}</span>` : ''} ${okMark(it.ok ?? ck.ok)}</span></div>
-      ${fields ? `<div class="grid g4">${fields}</div>` : ''}
-      <p class="pres">${esc(ck.val ?? it.val ?? '—')}</p>${ck.html || ''}${extraHTML(id, ck)}</div>`;
-  };
-  return `<h3 style="margin:28px 0 8px">설계 공정 항목 (이 화면)</h3>` + ids.map(card).join('');
+  return `<h3 style="margin:28px 0 8px">설계 공정 항목 (이 화면)</h3>` + ids.map(id => procCard(id)).join('');
+}
+function procCard(id) {
+  const F = PGDChecks.FORMS, X = procExtra(), CK = X.CK || {}, E = PGDProc.evaluate(R, D, X);
+  const it = E.flatMap(g => g.items).find(i => i.id === id) || {}, fm = F[id], ck = CK[id] || {}, nst = R.ctx.stages.length;
+  const fields = fm.stage ? Array.from({ length: nst }, (_, i) => fm.f.map(x => fldHTML(x, i)).join('')).join('') : fm.f.map(x => fldHTML(x, 0)).join('');
+  return `<div class="card pcx" id="it-${id}"><div class="ph"><h3><span class="pid">${id}</span> ${esc(fm.title)}</h3><span>${it.kind ? `<span class="kchip ${KIND_CLS[it.kind]}">${PGDProc.KIND[it.kind]}</span>` : ''} ${okMark(it.ok ?? ck.ok)}</span></div>
+    ${fields ? `<div class="grid g4">${fields}</div>` : ''}
+    <p class="pres">${esc(ck.val ?? it.val ?? '—')}</p>${ck.html || ''}${extraHTML(id, ck)}</div>`;
 }
 function extraHTML(id, ck) {
   const tbl = (head, rows) => `<table class="ptbl"><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</table>`;
@@ -195,13 +230,42 @@ function bindProcCards(m) {
   });
   m.querySelectorAll('.pcx [data-p]').forEach(elm => { if (!elm.dataset.bound) { elm.dataset.bound = 1; } });
 }
+function stagePage(k) {
+  const E = procEval(), g = E.find(x => String(x.n) === k);
+  if (!g) return head('설계 단계', '단계를 찾을 수 없습니다.');
+  const idx = STAGE_KEYS.indexOf(k), prev = STAGE_KEYS[idx - 1], next = STAGE_KEYS[idx + 1];
+  const nameOf = key => { const x = E.find(y => String(y.n) === key); return key === 'D' ? '가공·원가' : x?.name || ''; };
+  const F = window.PGDChecks?.FORMS || {}, views = STAGE_VIEWS[k] || [];
+  // where each item is shown on this page: its own card, or the screen block that holds it
+  const target = i => F[i.id] ? 'it-' + i.id : views.includes(i.view) ? 'vw-' + i.view : null;
+  const nav = `<div class="card snav"><ol>${g.items.map(i => { const tg = target(i), ext = !tg && i.view ? i.view : '', extName = ext === 'overview' ? '종합판정' : VIEW_STAGE[ext] ? VIEW_STAGE[ext] + '단계' : '';
+      return `<li><button data-jump="${tg || ''}" data-ext="${ext ? i.view : ''}" data-id="${i.id}"><span class="pid">${i.id}</span><span class="pt">${esc(i.t)}</span><span class="kchip ${KIND_CLS[i.kind]}">${PGDProc.KIND[i.kind]}</span><span class="pval">${i.val != null ? esc(String(i.val)) : ''}${extName ? ` <i class="x">→ ${extName}</i>` : ''}</span>${okMark(i.ok)}</button></li>`; }).join('')}</ol>
+    <div class="pgate ${gateCls(g.gate.ok)}">게이트 · ${esc(g.gate.t)} — ${g.gate.ok === true ? '통과' : g.gate.ok === false ? '미달' : '판정 기준 없음'}</div></div>`;
+  const legacy = views.map(v => `<section class="vw" id="vw-${v}">${(VIEWS[v] ? VIEWS[v]() : '').replace(/<h2>\s*\d+\.\s*/g, '<h2>')}</section>`).join('');
+  const cards = stageCards(k);
+  const pager = `<div class="pager">${prev ? `<button class="btn" data-v="st-${prev}">← ${prev === 'D' ? 'D' : prev} ${esc(nameOf(prev))}</button>` : '<span></span>'}${next ? `<button class="btn primary" data-v="st-${next}">${next === 'D' ? 'D' : next} ${esc(nameOf(next))} →</button>` : ''}</div>`;
+  return `<div class="shead"><span class="snum">${k === 'D' ? 'D' : k}</span><div><h2>${esc(k === 'D' ? '가공·원가 (병행 트랙)' : g.name)}</h2><p class="lead">세부 항목 ${g.total}개 · 사이트 처리 ${g.done}개 · 항목을 누르면 해당 위치로 이동합니다.</p></div></div>${nav}${legacy}${cards}${pager}`;
+}
+function stageCards(k) {
+  if (!window.PGDChecks || !R || R.errors?.length) return '';
+  const ids = Object.keys(PGDChecks.FORMS).filter(id => itemStage(id) === k);
+  if (!ids.length) return '';
+  return `<h3 class="cardsh">설계 공정 항목</h3>` + ids.map(id => procCard(id)).join('');
+}
+function bindStagePage(m) {
+  m.querySelectorAll('.snav [data-id]').forEach(b => b.onclick = () => {
+    if (b.dataset.jump) { ANCHOR = b.dataset.jump.startsWith('vw-') ? b.dataset.jump : b.dataset.id; try { history.replaceState(null, '', '#' + view + '/' + ANCHOR); } catch (e) { } scrollToAnchor(); renderRail(); }
+    else if (b.dataset.ext) go(b.dataset.ext, VIEW_STAGE[b.dataset.ext] ? b.dataset.id : undefined);
+  });
+  m.querySelectorAll('.pager [data-v]').forEach(b => b.onclick = () => go(b.dataset.v));
+}
 function procView() {
   const E = procEval();
   if (!E.length) return head('설계 공정', '공정 데이터를 불러오지 못했습니다.');
   const all = E.flatMap(g => g.items), cnt = k => all.filter(i => i.kind === k).length;
   const bar = ['calc', 'in', 'man', 'none'].map(k => `<span class="pbar ${KIND_CLS[k]}" style="flex:${cnt(k)}">${PGDProc.KIND[k]} ${cnt(k)}</span>`).join('');
   const card = g => `<div class="card pcard"><div class="ph"><h3>${g.n} ${esc(g.name)}</h3><span class="x">${g.done}/${g.total}</span></div>
-    <ul class="plist">${g.items.map(i => `<li data-go="${i.view}" tabindex="0" role="button" title="${esc(VIEW_TITLE[i.view] || '종합판정')} 화면으로"><span class="pid">${i.id}</span><span class="pt">${esc(i.t)}</span><span class="kchip ${KIND_CLS[i.kind]}">${PGDProc.KIND[i.kind]}</span><span class="pval">${i.val != null ? esc(String(i.val)) : ''}</span>${okMark(i.ok)}</li>`).join('')}</ul>
+    <ul class="plist">${g.items.map(i => `<li data-go="1" data-id="${i.id}" tabindex="0" role="button" title="${i.id} 항목으로"><span class="pid">${i.id}</span><span class="pt">${esc(i.t)}</span><span class="kchip ${KIND_CLS[i.kind]}">${PGDProc.KIND[i.kind]}</span><span class="pval">${i.val != null ? esc(String(i.val)) : ''}</span>${okMark(i.ok)}</li>`).join('')}</ul>
     <div class="pgate ${gateCls(g.gate.ok)}">게이트 · ${esc(g.gate.t)} ${g.gate.ok === true ? '통과' : g.gate.ok === false ? '미달' : '판정 기준 없음'}</div></div>`;
   return head('설계 공정 체크리스트', '화이트보드의 설계 순서(12단계 · 세부 항목)를 그대로 따릅니다. 항목을 누르면 해당 화면으로 갑니다. 상태: <b>계산</b> = 사이트가 계산·검사, <b>입력</b> = 값을 넣는 곳만 있음, <b>판단</b> = 사람이 정함, <b>미구현</b> = 아직 사이트에 없음.') +
     `<div class="pbars">${bar}</div><div class="pgrid">${E.map(card).join('')}</div>`;
@@ -215,7 +279,7 @@ const VIEWS = {
   shous() { return housingView(); },
   overview() { return overviewView(); },
   proc() { return procView(); },
-  out() { return head('출력물 · 가공 · 원가', '12단계 출력물과 가공·원가 병행 트랙(D1~D6)입니다. 원가는 가정 단가로 계산한 추정치이며, 실제 견적 단가로 바꿔 넣으면 그대로 반영됩니다.'); },
+  outLegacy() { return head('출력물 · 가공 · 원가', '12단계 출력물과 가공·원가 병행 트랙(D1~D6)입니다. 원가는 가정 단가로 계산한 추정치이며, 실제 견적 단가로 바꿔 넣으면 그대로 반영됩니다.'); },
   overviewOld() {
     if (!R || R.errors?.length) return head('종합 판정', '입력에 오류가 있어 계산하지 못했습니다.') + errBox();
     const tgt = D.req.Trated, cap = R.capacityLife;
@@ -537,7 +601,7 @@ function sensHTML() {
 
 // ------------------------------------------------------------------ after-render hooks
 const AFTER = {
-  proc(m) { m.querySelectorAll('[data-go]').forEach(li => { const g = () => go(li.dataset.go); li.onclick = g; li.onkeydown = e => { if (e.key === 'Enter') g(); }; }); },
+  proc(m) { m.querySelectorAll('[data-go]').forEach(li => { const g = () => go('st-' + itemStage(li.dataset.id), li.dataset.id); li.onclick = g; li.onkeydown = e => { if (e.key === 'Enter') g(); }; }); },
   s1(m) {
     m.querySelector('#cApply').onclick = () => { E.applyCase(D, m.querySelector('#cPos').value + '-' + m.querySelector('#cAxis').value, R?.ratio); D.anim.rpm = D.req.rpm; changed(); };
     m.querySelector('#addDuty').onclick = () => { D.req.duty.push({ torque: 50, time: 10, rpm: 0 }); changed(); };
@@ -578,8 +642,8 @@ const AFTER = {
   shous(m) { bindDrawing(m); const b = m.querySelector('#geoReset'); if (b) b.onclick = () => { D.geom = {}; changed(); }; },
   smat(m) { (AFTER.s6 || (() => { }))(m); (AFTER.slub || (() => { }))(m); },
   s11(m) {
-    m.querySelector('#runMC').onclick = () => runJob('mc', r => { MC = r; renderVerdict(); renderRail(); if (view === 's11') m.querySelector('#mcOut').innerHTML = mcHTML(); });
-    m.querySelector('#runSens').onclick = () => runJob('sens', r => { SENS = r; if (view === 's11') m.querySelector('#sensOut').innerHTML = sensHTML(); });
+    m.querySelector('#runMC').onclick = () => runJob('mc', r => { MC = r; renderVerdict(); renderRail(); const o = m.querySelector('#mcOut'); if (o) o.innerHTML = mcHTML(); });
+    m.querySelector('#runSens').onclick = () => runJob('sens', r => { SENS = r; const o = m.querySelector('#sensOut'); if (o) o.innerHTML = sensHTML(); });
   }
 };
 function runJob(type, done) {
@@ -843,7 +907,8 @@ function dlg(title, text, note, okLabel, onOk) {
   $('#dlgOk').onclick = async e => { e.preventDefault(); const msg = await onOk(); if (msg) $('#dlgNote').textContent = msg; };
   $('#dlg').showModal();
 }
-window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (STEPS.some(s => s[0] === h) && h !== view) go(h); });
-const h0 = location.hash.slice(1); if (STEPS.some(s => s[0] === h0)) view = h0;
+const validView = h => STEPS.some(s => s[0] === h) || (h.startsWith('st-') && STAGE_KEYS.includes(h.slice(3)));
+window.addEventListener('hashchange', () => { const [h, a] = location.hash.slice(1).split('/'); if (validView(h) && (h !== view || (a || null) !== ANCHOR)) go(h, a); });
+{ const [h0, a0] = location.hash.slice(1).split('/'); if (validView(h0)) { if (VIEW_STAGE[h0]) { view = 'st-' + VIEW_STAGE[h0]; ANCHOR = 'vw-' + h0; } else { view = h0; ANCHOR = a0 || null; } } }
 compute(); renderRail(); renderVerdict(); render();
 }

@@ -156,6 +156,18 @@ nav.rail button.sub{padding-left:22px;font-size:13px}
 .sug{margin:8px 0 0;padding-left:18px;font-size:13px}.sug li{margin:4px 0}.asm{margin:8px 0 0;padding-left:20px;font-size:13px}.asm li{margin:3px 0}
 .lpath{margin-top:8px;font-size:13px}.lp{display:grid;grid-template-columns:90px 1fr;gap:8px;padding:5px 0;border-top:1px solid var(--rule)}.lp i{color:var(--mute);font-style:normal;margin:0 6px}
 pre.code{max-height:240px;overflow:auto;font-size:12px;background:rgba(0,0,0,.25);padding:10px;border-radius:6px}
+
+/* ---- stage pages (PR10) */
+nav.rail button.stg{display:flex;align-items:center;gap:6px;font-weight:600}nav.rail button.stg .sn{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:5px;background:rgba(255,255,255,.08);font-size:11.5px;color:var(--mute)}
+nav.rail button.stg small{margin-left:auto;font-weight:400;color:var(--mute)}nav.rail button.stg[aria-current="true"] .sn{background:#e4612a;color:#fff}
+nav.rail .its{margin:2px 0 8px 10px;border-left:1px solid var(--rule)}nav.rail button.it{font-size:12.5px;padding:4px 8px 4px 12px;display:flex;align-items:center;gap:6px;color:var(--mute)}
+nav.rail button.it .iid{min-width:30px;font-variant-numeric:tabular-nums}nav.rail button.it.on,nav.rail button.it:hover{color:var(--ink)}nav.rail .dot.in{background:#6f9fe0}
+.shead{display:flex;gap:16px;align-items:flex-start;margin-bottom:6px}.shead .snum{display:grid;place-items:center;width:52px;height:52px;border-radius:12px;background:#e4612a;color:#fff;font-size:24px;font-weight:700;flex:none}.shead h2{margin:0}
+.snav ol{list-style:none;margin:0;padding:0}.snav li button{all:unset;box-sizing:border-box;width:100%;display:grid;grid-template-columns:48px 1fr auto 20px;grid-template-areas:"id t k ok" "id v v ok";column-gap:10px;padding:7px 6px;border-top:1px solid var(--rule);cursor:pointer;font-size:13.5px}
+.snav li:first-child button{border-top:0}.snav li button:hover,.snav li button:focus-visible{background:rgba(255,255,255,.05)}.snav .pid{grid-area:id;color:var(--mute)}.snav .pt{grid-area:t}.snav .kchip{grid-area:k}.snav .pval{grid-area:v;color:var(--mute);font-size:12px}.snav li button>b,.snav li button>.x{grid-area:ok;justify-self:end;align-self:center}
+section.vw{margin-top:22px;padding-top:6px;border-top:1px dashed var(--rule)}.cardsh{margin:30px 0 10px}
+.pager{display:flex;justify-content:space-between;margin:28px 0 8px}
+.flash{animation:flash 1.4s ease}@keyframes flash{0%{box-shadow:0 0 0 3px #e4612a}100%{box-shadow:0 0 0 0 transparent}}
 /* ---- studio look for the 3D viewer (light glass UI over a cream backdrop) */
 #viewer{background:#f3f0ea;border-color:#e2ddd3}
 #viewer{--ink:#1c1b1a;--text:#2b2927;--mute:#8a847b;--rule:#ebe6dd;--panel:#fff;--soft:#f6f3ee;--brick:#e4612a;color:var(--text)}
@@ -206,6 +218,6 @@ pre.code{max-height:240px;overflow:auto;font-size:12px;background:rgba(0,0,0,.25
 <script src="drawings.js?v=pr8-1"></script>
 <script src="checks.js?v=pr9-1"></script>
 <script src="process.js?v=pr9-1"></script>
-<script src="app.js?v=pr9-1"></script>
+<script src="app.js?v=pr10-1"></script>
 </body>
 </html>
