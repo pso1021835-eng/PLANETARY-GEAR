@@ -8,7 +8,7 @@
 (function (root) {
   'use strict';
   const rad = Math.PI / 180, inv = a => Math.tan(a) - a;
-  const fin = Number.isFinite, pos = x => fin(x) && x > 0;
+  const fin = Number.isFinite, pos = x => fin(x) && x > 0, nonnegative = x => fin(x) && x >= 0;
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const TOOL = { hfp: 1.25, hap: 1 };
   const NAMES = ['썬', '유성', '링'];
@@ -317,9 +317,15 @@
   function prepare(D) {
     const errors = [], warns = [];
     const q = D.design.quality, rel = D.reliability;
+    if (D.config.stages > 1 && D.struct?.c1Support === 'none') {
+      errors.push('2단 썬의 반경 지지가 없습니다. 2-7에서 C1 지지를 출력측 또는 양측으로 지정하세요.');
+    }
+    if (!nonnegative(D.loads.posError ?? 0) || !nonnegative(D.loads.pathRunIn ?? 0) || (D.loads.pathRunIn ?? 0) > 100) {
+      errors.push('5-6 유성 위치공차는 0 이상, 길들이기 후 경로 오차 감소율은 0~100 %로 지정하세요.');
+    }
     const stages = D.stages.map((st0, i) => {
       const st = { ...st0 };
-      if (i === 1 && D.config.sharedRing) { const a = D.stages[0]; st.p = (a.s + 2 * a.p - st.s) / 2; st.m = a.m; st.beta = a.beta; st.alpha = a.alpha; }
+      if (i === 1 && D.config.sharedRing) { const a = D.stages[0]; st.p = (a.s + 2 * a.p - st.s) / 2; st.m = a.m; st.beta = a.beta; st.alpha = a.alpha; st.ringOD = a.ringOD; }
       if (D.config.stages === 1 && i === 1) return null;
       if (st.autoRingShift) st.xr = matchRingShift(st);
       const geo = geometry(st);
@@ -336,10 +342,27 @@
       const carrier = geo.parts.length && geo.meshes[0] ? carrierGeometry.resolve(st, geo, i, D.geom?.['carrier' + (i + 1)]?.plateD) : null;
       carrier?.errors.forEach(msg => errors.push(`${i + 1}단 ${msg}`));
       carrier?.warnings.forEach(msg => warns.push(`${i + 1}단 ${msg}`));
-      return { i, st, geo, mats, carrier };
+      const support = sunSupportK(D, i);
+      if (support.error && !(i === 1 && D.struct?.c1Support === 'none')) errors.push(`${i + 1}단 ${support.error}`);
+      if (![st.bearing?.clearanceCompliance, st.pin?.fitCompliance].every(x => x == null || nonnegative(x))) {
+        errors.push(`${i + 1}단 5-6 베어링·핀 결합의 컴플라이언스는 0 이상이어야 합니다.`);
+      }
+      return { i, st, geo, mats, carrier, support };
     }).filter(Boolean);
     const ratio = stages.reduce((v, s) => v * (s.geo.ratio || NaN), 1);
-    return { D, stages, ratio, errors, warns };
+    if (D.config.sharedRing && stages.length > 1 && stages.every(s => s.geo.rims) && !pos(D.stages[0].ringOD)) {
+      const outerD = Math.max(...stages.map(s => s.geo.rims[2].diameter));
+      for (const stage of stages) stage.geo.rims[2] = { ...rim(stage.geo.parts[2], outerD), assumed: true };
+    }
+    const ctx = { D, stages, ratio, errors, warns };
+    if (!errors.length && stages.length) {
+      ctx.ringFits = ringFits(ctx, D);
+      ctx.outputSupport = outputSupport(ctx, D);
+      const badFit = ctx.ringFits.some(f => f?.error);
+      if (badFit) warns.push('8-2 링 압입 수축을 계산할 수 없습니다. 죔새·하우징 치수·재료 입력을 확인하세요.');
+      if (ctx.outputSupport.error) errors.push(ctx.outputSupport.error);
+    }
+    return ctx;
   }
 
   // Load sharing model (Kγ). sample.pos: per-stage planet position errors (µm) or null → design value.
@@ -352,19 +375,25 @@
     }
     return M.map((r, i) => r[3] / r[i]);
   }
+  function locationTolerance(loads) {
+    return (loads.posError ?? 0) * (loads.posErrorType === 'diametral' ? 0.5 : 1);
+  }
   function kgamma(stg, D, Fmean, kpath, sample) {
     const n = stg.st.n, mode = D.loads.kgMode;
     if (mode === 'fixed') return { value: D.loads.kgFixed, src: '가정', note: '직접 입력' };
     if (mode === 'agma') return { value: ({ 2: 1.16, 3: 1.23, 4: 1.32, 5: 1.35, 6: 1.38, 7: 1.47, 8: 1.52 })[n] ?? NaN, src: '규격', note: 'AGMA 6123-C16 표 7 Level 1' };
-    const delta = D.loads.posError; // µm, carrier pin-hole position tolerance (±)
-    let errs = sample?.pos?.[stg.i];
-    if (!errs) errs = Array.from({ length: n }, (_, j) => j === 0 ? delta : 0);
+    const delta = locationTolerance(D.loads);
+    const reduction = (D.loads.pathRunIn ?? 0) / 100;
+    const supplied = sample?.pos?.[stg.i];
+    const offsets = supplied || Array.from({ length: n }, (_, j) => j === 0 ? delta : 0);
+    const errs = offsets.map(e => e * (1 - reduction));
     const total = n * Fmean;
+    if (!(total > 0) || !(kpath > 0)) return { value: 1, src: '모델', note: '전달 접선력 없음' };
     // Sun centre held by its shaft/bearings (not floating): radial play cs (µm), then support stiffness ks (N/µm).
     // Equilibrium = minimum of the convex energy  Σ ½kp·max(0, u − g_i(s))² − W·u + ½ks·max(0, |s| − cs)²,
     // g_i(s) = gap of path i (planet position error) shifted by the sun displacement s along the planet's tangent.
-    const sup = sunSupportK(D, stg.i);
-    const ks = Math.max(1e-9, sup.k), cs = Math.max(0, sup.play || 0), kp = kpath;
+    const sup = stg.support ?? sunSupportK(D, stg.i);
+    const ks = sup.k, cs = sup.play, kp = kpath;
     const phi = Array.from({ length: n }, (_, j) => 2 * Math.PI * j / n), emax = Math.max(...errs);
     const e0 = errs.map(e => emax - e), dg = phi.map(p => [Math.sin(p), -Math.cos(p)]);
     const gap = (x, j) => e0[j] + dg[j][0] * x[1] + dg[j][1] * x[2];
@@ -387,14 +416,24 @@
       const d = solve3(H, g.map(v => -v));
       if (!d) break;
       let step = 1; const E0 = energy(x);
-      while (step > 1e-6 && energy(x.map((v, i) => v + step * d[i])) > E0 - 1e-12 * step) step /= 2;
+      const gradientStep = g.reduce((sum, v, i) => sum + v * d[i], 0);
+      while (step > 1e-6 && energy(x.map((v, i) => v + step * d[i])) > E0 + 1e-4 * step * gradientStep) step /= 2;
       x = x.map((v, i) => v + step * d[i]);
       if (Math.hypot(...d) * step < 1e-8) break;
     }
-    const loads = Array.from({ length: n }, (_, j) => kp * Math.max(0, x[0] - gap(x, j)));
-    const sx = x[1], sy = x[2];
-    const value = Math.min(n, Math.max(...loads) / Fmean);
-    return { value, src: '모델', note: `썬 고정 지지 (강성 ${ks.toFixed(1)} N/µm${sup.src !== '직접 입력' ? ' = ' + sup.src : ''}, 유격 ${cs} µm) · 유성 위치오차 ${delta} µm · 경로 강성 ${kpath.toFixed(0)} N/µm`, sunShift: Math.hypot(sx, sy) };
+    // 현재 썬 위치에서 활성 경로의 합력이 입력 접선력과 같도록 공통 접근량을 닫는다.
+    const gaps = Array.from({ length: n }, (_, j) => gap(x, j));
+    const ordered = [...gaps].sort((a, b) => a - b);
+    let u = ordered[0] + total / kp, sum = ordered[0];
+    for (let j = 1; j < n && u > ordered[j]; j++) {
+      sum += ordered[j];
+      u = (total / kp + sum) / (j + 1);
+    }
+    const loads = gaps.map(g => kp * Math.max(0, u - g));
+    const value = clamp(Math.max(...loads) / Fmean, 1, n);
+    const src = supplied ? '표본' : '유성 1개 선행 가정';
+    return { value, src: '모델', note: `썬 지지 ${ks.toFixed(1)} N/µm · 반경 유격 ${cs} µm · ${src} · 편측 투영 상한 ${delta} µm · 경로 오차 감소 ${reduction * 100} % · 경로 강성 ${kpath.toFixed(1)} N/µm`,
+      sunShift: Math.hypot(x[1], x[2]), pathLoads: loads, pathOffsets: errs };
   }
 
   // ------------------------------------------------------------ evaluation at one operating point
@@ -402,7 +441,7 @@
   function evaluate(ctx, op) {
     const D = ctx.D, rows = [], stageOut = [];
     let Tin = op.Tout / ctx.ratio, nIn = op.rpm || 0;
-    const obr = D.outBearing?.Z ? rollerModel(D, Math.max(0, op.Tout / D.req.Trated)) : null;
+    const obr = D.outBearing?.Z ? rollerModel(D, Math.max(0, op.Tout / D.req.Trated), ctx.outputSupport?.arm ?? 0) : null;
     for (const stg of ctx.stages) {
       const { st, geo, mats } = stg, ratio = geo.ratio, nc = nIn / ratio, rel = nIn - nc;
       const sun = geo.parts[0], planet = geo.parts[1];
@@ -412,7 +451,7 @@
       // planet tangential stiffness (planet free to spin): 4·(k_sp ⊕ k_pr), in series with pin bending; N/µm
       const kser = 1 / (1 / (pre0[0].cg * geo.meshes[0].b) + 1 / (pre0[1].cg * geo.meshes[1].b));
       const cPin = pinModel(st.pin, stg.carrier, 1, 0).compliance * 1000; // µm/N
-      const ktan = 1 / (1 / (4 * kser) + cPin + (st.bearing.clearanceCompliance || 0));
+      const ktan = 1 / (1 / (4 * kser) + cPin + (st.bearing.clearanceCompliance ?? 0) + (st.pin.fitCompliance ?? 0));
       const kpath = ktan / 2; // mesh-load change per µm of planet position error
       const kg = kgamma(stg, D, Ft, kpath, op.sample);
       const KA = op.static ? 1 : D.loads.KA, Kg = kg.value;
@@ -509,7 +548,7 @@
         });
       });
       // planet bearing: radial load per planet (heaviest path) = pin force
-      stageOut.push({ i: stg.i, car, obr: lastStage ? obr : null, Tin, Tout: Tin * ratio, nIn, nc, rel, Ft, Kg, KgSrc: kg.src, KgNote: kg.note, kpath, ktan, pin, pinForce, planetRel: Math.abs(rel) * sun.z / planet.z });
+      stageOut.push({ i: stg.i, car, obr: lastStage ? obr : null, Tin, Tout: Tin * ratio, nIn, nc, rel, Ft, Kg, KgSrc: kg.src, KgNote: kg.note, KgPaths: kg.pathLoads, KgOffsets: kg.pathOffsets, sunShift: kg.sunShift, kpath, ktan, pin, pinForce, planetRel: Math.abs(rel) * sun.z / planet.z });
       Tin *= ratio; nIn = nc;
     }
     return { rows, stages: stageOut };
@@ -672,11 +711,11 @@
   // ============================================================ output (cross-roller) bearing: roller load distribution
   // DOF: radial δr, axial δa, tilt θ. Roller j at ψj, alternating orientation s = ±1, contact angle 45°.
   // Roller (two line contacts, Palmgren): δ = 2·3.84e-5·Q^0.9 / L^0.8  →  Q = (δ·L^0.8 / 7.68e-5)^(1/0.9)
-  function rollerModel(D, k) {
+  function rollerModel(D, k, arm = 0) {
     const ob = D.outBearing, ext = D.req.ext || { Fr: 0, Fa: 0, M: 0 };
     const Z = Math.max(8, Math.round(ob.Z || 40)), Dw = ob.Dw || 4, Lw = ob.Lw || Dw * .9, dp = ob.dp, al = Math.PI / 4;
     const pre = (ob.preload || 0) / 1000; // mm (radial-normal interference per roller; negative = clearance)
-    const Fr = ext.Fr * k, Fa = ext.Fa * k, M = ext.M * k * 1000;
+    const Fr = ext.Fr * k, Fa = ext.Fa * k, M = outputMoment(ext, arm) * k * 1000;
     const ca = Math.cos(al), sa = Math.sin(al), R = dp / 2;
     const psi = Array.from({ length: Z }, (_, j) => 2 * Math.PI * j / Z), sg = psi.map((_, j) => j % 2 ? -1 : 1);
     const Qof = d => d > 0 ? (d * Lw ** .8 / 7.68e-5) ** (1 / .9) : 0;
@@ -706,7 +745,7 @@
     const Es = 1 / ((1 - .09) / 206000 * 2);
     const p0 = Math.sqrt(Qmax / Lw * Es / (Math.PI * Rr));
     return { Z, Dw, Lw, Q, Qmax, Qmean: Q.reduce((s, q) => s + q, 0) / Z, loaded, p0, s0: p0 > 0 ? (4000 / p0) ** 2 : Infinity,
-      tilt: x[2], tiltArcmin: x[2] * 180 / Math.PI * 60, dr: x[0] * 1000, da: x[1] * 1000, k };
+      momentNm: M / 1000, tilt: x[2], tiltArcmin: x[2] * 180 / Math.PI * 60, dr: x[0] * 1000, da: x[1] * 1000, k };
   }
 
   // ============================================================ carrier stiffness (double-plate carrier with webs)
@@ -727,14 +766,72 @@
     const ktor = 4 * n * kweb * rw * rw / 1000;                                            // N·m/rad: mean pin rotation = ½ far-plate windup
     return { double, kweb, windup, slope, ktor, sigma, Fweb, span, w, h };
   }
-  // sun radial support: direct stiffness, or support bearing ⊕ shaft cantilever (structure)
+  // 썬 지지의 유격은 반경 편측 이동량. 양측 지지의 반경 스프링은 병렬 근사다.
   function sunSupportK(D, i) {
-    const s = (D.loads.sunSupport || [])[i] || { k: 20, play: 0 };
-    if (s.mode !== 'structure') return { k: s.k, play: s.play || 0, src: '직접 입력' };
-    const E = 206000, I = Math.PI * ((s.od || 10) ** 4 - (s.id || 0) ** 4) / 64, L = s.overhang || 6;
-    const kShaft = 1 / (1000 * L ** 3 / (3 * E * I));                                      // N/µm
-    const k = 1 / (1 / Math.max(1e-6, s.bearingK || 40) + 1 / kShaft);
-    return { k, play: s.play || 0, kShaft, src: `베어링 ${s.bearingK} ⊕ 축 ${kShaft.toFixed(0)} N/µm` };
+    const s = D.loads.sunSupport?.[i] || { k: 20, play: null };
+    const arrangement = i === 1 ? D.struct?.c1Support ?? 'out' : null;
+    const spline = i === 1 && D.struct?.c1s2 === 'spline' ? D.struct.c1s2Dim?.radialPlay : null;
+    const bearingPlay = s.play ?? 0, splinePlay = spline ?? 0;
+    const play = bearingPlay + splinePlay;
+    const base = { play, bearingPlay, splinePlay, playAssumed: s.play == null || (D.struct?.c1s2 === 'spline' && i === 1 && spline == null), arrangement };
+    const fail = error => ({ ...base, k: 0, src: '확인 필요', error });
+    if (arrangement === 'none') return fail('C1 지지 없음: 플로팅 구조');
+    if (!nonnegative(bearingPlay) || !nonnegative(splinePlay)) return fail('반경 유격을 0 이상으로 지정하세요 (2-5 / 7-4).');
+    if (s.mode !== 'structure') {
+      return pos(s.k) ? { ...base, k: s.k, src: '직접 입력 (지지 전체)' } : fail('직접 입력 지지 강성을 0보다 크게 지정하세요 (7-4).');
+    }
+    const od = s.od ?? 10, id = s.id ?? 0, L = s.overhang ?? 6, first = s.bearingK ?? 40;
+    const second = arrangement === 'both' ? s.rearBearingK ?? first : 0;
+    if (!(pos(od) && nonnegative(id) && id < od && nonnegative(L) && pos(first) && (arrangement !== 'both' || pos(second)))) {
+      return fail('썬 지지 베어링 강성·축 내외경·돌출 길이를 확인하세요 (7-4).');
+    }
+    const I = Math.PI * (od ** 4 - id ** 4) / 64;
+    const kShaft = 3 * 206000 * I / (1000 * L ** 3);
+    const bearingK = first + second;
+    return { ...base, k: 1 / (1 / bearingK + 1 / kShaft), kShaft, bearingK,
+      rearAssumed: arrangement === 'both' && s.rearBearingK == null,
+      src: fin(kShaft) ? `베어링 ${bearingK} ⊕ 축 ${kShaft.toFixed(0)} N/µm` : `베어링 ${bearingK} N/µm · 돌출 길이 0` };
+  }
+
+  // 압입은 하나의 실제 링당 한 번 계산하고 단별 내접 치합에서 공유한다.
+  function ringFits(ctx, D) {
+    if (D.struct?.ringHousing !== 'press') return ctx.stages.map(() => null);
+    const rf = D.struct.ringFit || {};
+    const solve = stages => {
+      const a = Math.max(...stages.map(s => s.geo.parts[2].df / 2));
+      const b = Math.max(...stages.map(s => s.geo.rims[2].diameter / 2));
+      const c = b + (D.housing?.wall ?? 3);
+      const mat = stages[0].mats[2], Ei = mat.E, ni = mat.nu, Eo = rf.E ?? 70000, no = rf.nu ?? .33;
+      const delta = rf.delta ?? .03;
+      if (!(a > 0 && b > a && c > b && pos(Ei) && pos(Eo) && fin(ni) && fin(no) && ni > -1 && ni < .5 && no > -1 && no < .5 && nonnegative(delta))) {
+        return { error: true };
+      }
+      const inner = (b * b + a * a) / (b * b - a * a), outer = (c * c + b * b) / (c * c - b * b);
+      const p = delta / (2 * b * ((outer + no) / Eo + (inner - ni) / Ei));
+      return { p, diameter: 2 * b, shrinkInner: 4 * p * b * b * a / (Ei * (b * b - a * a)), hoopOuter: p * outer };
+    };
+    if (D.config.sharedRing && ctx.stages.length > 1) {
+      const common = solve(ctx.stages);
+      return ctx.stages.map(() => common);
+    }
+    return ctx.stages.map(stage => solve([stage]));
+  }
+
+  // 출력 플랜지 외면 기준 하중을 베어링 중심으로 옮긴다. 자동 위치는 축방향 배치 근사.
+  function outputSupport(ctx, D) {
+    const position = D.struct?.obPos;
+    if (!position) return { arm: 0 };
+    const last = ctx.stages.at(-1), shape = last.carrier, gearWidth = last.geo.parts[1].width;
+    const specifiedWidth = D.geom?.xroller?.width;
+    const width = pos(specifiedWidth) ? specifiedWidth : (D.outBearing.Dw || 4) * 1.5;
+    const end = shape.axial[1], flange = end + .6 + width + .2 + (D.housing?.flangeT ?? 5);
+    const center = { inside: gearWidth / 2, outside: shape.plates.at(-1)[1] + width / 2, flange: end + .6 + width / 2 }[position];
+    const arm = D.struct.obMomentArm ?? flange - center;
+    if (!nonnegative(arm)) return { position, error: '2-8 출력 베어링 레버암을 0 이상으로 지정하세요.' };
+    return { position, arm, automatic: D.struct.obMomentArm == null };
+  }
+  function outputMoment(ext, arm) {
+    return arm > 0 ? Math.abs(ext.M) + Math.abs(ext.Fr) * arm / 1000 : ext.M;
   }
 
   // ------------------------------------------------------------ output main bearing (cross-roller style equivalent load)
@@ -742,22 +839,23 @@
     const ob = D.outBearing, ext = D.req.ext || { Fr: 0, Fa: 0, M: 0 };
     const levels = D.req.duty.filter(l => l.time > 0 && l.torque > 0), totalT = levels.reduce((s, l) => s + l.time, 0) || 1;
     const p = ob.type === 'ball' ? 3 : 10 / 3;
+    const arm = ctx.outputSupport?.arm ?? 0, M = outputMoment(ext, arm);
     const Pof = (Fr, Fa, M) => { const Fre = Fr + 2000 * M / ob.dp; const ratio = Fa / Math.max(Fre, 1e-9); const [X, Y] = ratio <= 1.5 ? [1, .45] : [.67, .67]; return X * Fre + Y * Fa; };
     // loads assumed proportional to the torque level of each spectrum segment (link loads scale with joint effort)
     let sumP = 0, sumRev = 0;
     for (const l of levels) {
       const k = l.torque / 100, rpmOut = (l.rpm || D.req.rpm) / ctx.ratio;
-      const P = Pof(ext.Fr * k, ext.Fa * k, ext.M * k);
+      const P = Pof(ext.Fr * k, ext.Fa * k, M * k);
       const rev = rpmOut * 60 * D.req.lifeH * l.time / totalT;
       sumP += P ** p * rev; sumRev += rev;
     }
     const Peq = (sumP / Math.max(sumRev, 1e-9)) ** (1 / p);
     const L10rev = (ob.C / Peq) ** p * 1e6, revPerH = sumRev / D.req.lifeH;
     const kp = D.req.Tpeak / D.req.Trated, ke = D.req.Temerg / D.req.Trated;
-    const P0 = k => ext.Fr * k + 2000 * ext.M * k / ob.dp + .44 * ext.Fa * k;
+    const P0 = k => ext.Fr * k + 2000 * M * k / ob.dp + .44 * ext.Fa * k;
     return { name: ob.name, type: ob.type, C: ob.C, C0: ob.C0, dp: ob.dp, Peq, L10h: L10rev / Math.max(revPerH, 1e-12), outRpm: D.req.rpm / ctx.ratio,
-      s0peak: ob.C0 / P0(kp), s0emerg: ob.C0 / P0(ke), tiltRated: pos(ob.Km) ? ext.M / ob.Km : NaN, tiltPeak: pos(ob.Km) ? ext.M * kp / ob.Km : NaN, ext,
-      roll: ob.Z ? { rated: rollerModel(D, 1), peak: rollerModel(D, kp), emerg: rollerModel(D, ke) } : null };
+      s0peak: ob.C0 / P0(kp), s0emerg: ob.C0 / P0(ke), tiltRated: pos(ob.Km) ? M / ob.Km : NaN, tiltPeak: pos(ob.Km) ? M * kp / ob.Km : NaN, ext, momentNm: M, support: ctx.outputSupport,
+      roll: ob.Z ? { rated: rollerModel(D, 1, arm), peak: rollerModel(D, kp, arm), emerg: rollerModel(D, ke, arm) } : null };
   }
   // ------------------------------------------------------------ carrier & planet pin
   function carrierPin(ctx, D) {
@@ -808,12 +906,16 @@
     const st = [...ctx.stages].reverse().map(stg => {
       const a = stg.geo.meshes[0].center;
       const j = stg.st.jt || [0, 0];
-      const th = ((j[0] + j[1]) / 2) / 1000 / a; // rad at this stage's carrier
+      const fit = ctx.ringFits?.[stg.i];
+      const shrink = fit?.shrinkInner ?? 0;
+      const reduction = shrink * Math.tan(stg.geo.meshes[1].aw) * 1000; // 국소 랙 근사, µm
+      const ringClearance = j[1] - reduction;
+      const th = ((j[0] + Math.max(0, ringClearance)) / 2) / 1000 / a; // rad at this stage's carrier
       const thOut = th / ratioAfter;
       out += thOut; ratioAfter *= stg.geo.ratio;
-      return { stage: stg.i + 1, arcmin: th * 180 / Math.PI * 60, arcminOut: thOut * 180 / Math.PI * 60 };
+      return { stage: stg.i + 1, arcmin: th * 180 / Math.PI * 60, arcminOut: thOut * 180 / Math.PI * 60, ringClearance, reduction, fitValid: !fit?.error };
     }).reverse();
-    return { stages: st, arcmin: out * 180 / Math.PI * 60 };
+    return { stages: st, arcmin: out * 180 / Math.PI * 60, interference: st.some(s => s.ringClearance <= 0), fitValid: st.every(s => s.fitValid) };
   }
   function stiffness(ctx, D) {
     // gear-mesh + pin compliance only (housing, carrier, bearings not included) at rated torque
@@ -839,7 +941,7 @@
     const sample = { pos: [], stage: [], strength: { H: Math.exp(gauss(r) * D.reliability.covH), F: Math.exp(gauss(r) * D.reliability.covF) } };
     ctx.stages.forEach(stg => {
       const n = stg.st.n, util = D.mc.utilization; // fraction of tolerance used by the process (3σ = util·tol)
-      sample.pos[stg.i] = Array.from({ length: n }, () => gauss(r) * D.loads.posError * util / 3);
+      sample.pos[stg.i] = Array.from({ length: n }, () => gauss(r) * locationTolerance(D.loads) * util / 3);
       const fma = [0, 1].map(j => {
         const t = [stg.geo.tol[j ? 1 : 0], stg.geo.tol[j ? 2 : 1]];
         const h1 = gauss(r) * t[0].helixSlope * util / 3, h2 = gauss(r) * t[1].helixSlope * util / 3, cp = gauss(r) * D.loads.carrierParallel * util / 3;
@@ -936,6 +1038,7 @@
     if (out.lube.lambdaMin < 1) out.warns.push(`유막비 λ 최소 ${out.lube.lambdaMin.toFixed(2)} (정격): 경계 윤활입니다. 극압(EP) 그리스·표면 조도 개선 없이는 마모·마이크로피팅 위험이 큽니다 (이 판정은 피팅·굽힘 강도 계산에 포함되지 않음).`);
     out.eff = efficiency(ctx, D, D.req.Trated);
     out.backlash = backlash(ctx, D);
+    if (out.backlash.interference) out.warns.push('4-7 압입 후 유성–링 백래시가 0 이하입니다. 잇두께·죔새·중심거리를 확인하세요.');
     out.stiffness = stiffness(ctx, D);
     // case depth screen at peak torque
     out.caseDepth = out.peak.rows.map(r => ({ id: r.id, stage: r.stage, partName: r.partName, mesh: r.mesh, zMax: r.zMax, depth: ctx.stages[r.stage - 1].mats[r.part].depth, ratio: r.caseDepthRatio }));
@@ -977,7 +1080,7 @@
     add('스커핑 안전율 (피크, 섬광온도)', o.lube.SBmin, D.req.SBmin || 1.5, o.lube.SBmin >= (D.req.SBmin || 1.5), '', `운전 ${D.lube.temp} °C · FZG ${D.lube.fzg}`);
 
     add('효율 (정격, 추정)', o.eff.total * 100, D.req.effMin, o.eff.total * 100 >= D.req.effMin, '%', '치합 + 기타 손실 가정');
-    add('출력 백래시 (추정)', o.backlash.arcmin, D.req.backlashMax, o.backlash.arcmin <= D.req.backlashMax, 'arcmin', '치합 백래시만');
+    add('출력 백래시 (추정)', o.backlash.arcmin, D.req.backlashMax, o.backlash.fitValid && !o.backlash.interference && o.backlash.arcmin <= D.req.backlashMax, 'arcmin', o.backlash.interference ? '유성–링 치합 잔여 백래시 0 이하' : o.backlash.fitValid ? '링 압입 수축을 반영한 치합 백래시' : '링 압입 수축 확인 필요');
     return items;
   }
 
@@ -989,7 +1092,12 @@
     add('하중', 'KA', D.loads.KA, D.loads.KA === 1 ? '모델' : '가정', '스펙트럼에 피크를 포함하므로 1.0');
     const so = o.rated.stages;
     so.forEach(s => add('하중', `${s.i + 1}단 Kγ`, s.Kg.toFixed(3), s.KgSrc, s.KgNote));
-    add('하중', '썬 지지 (플로팅 아님)', ctx.stages.map(s => { const k = sunSupportK(D, s.i); return `${k.k.toFixed(1)} N/µm · 유격 ${k.play} µm`; }).join(' / '), '가정', '축·베어링(1단)·캐리어(2단) 반경 강성 추정 · Kγ에 가장 큰 영향');
+    add('하중', '썬 지지 (플로팅 금지)', ctx.stages.map(s => `${s.support.k.toFixed(1)} N/µm · 유격 ${s.support.play} µm`).join(' / '), '모델', '베어링 반경 강성과 축 굽힘 직렬 · C1 양측 베어링은 반경 병렬 근사 · 스플라인 편측 유격 합산');
+    add('하중', '썬·스플라인 유격 미입력', ctx.stages.some(s => s.support.playAssumed) ? '0 µm 적용' : '입력값 적용', '가정', '미입력분만 편측 유격 0으로 해석. 끼워맞춤 및 실제 반경 이동량 확인 필요');
+    add('하중', '유성 위치공차', `편측 투영 상한 ${locationTolerance(D.loads)} µm`, '가정', '지름 공차대는 Ø/2. 결정론 계산은 유성 1개 선행·나머지 0, 표본 해석은 공정 산포');
+    add('하중', '유성 경로 길들이기 · 착좌 컴플라이언스', `${D.loads.pathRunIn ?? 0} % · ${ctx.stages.map(s => (s.st.bearing.clearanceCompliance ?? 0) + (s.st.pin.fitCompliance ?? 0)).join(' / ')} µm/N`, '가정', '경로의 유효 오차 감소량과 착좌 후 추가 컴플라이언스를 직접 지정. 구멍 위치오차 자체가 줄어드는 효과는 가정하지 않음');
+    add('하중', '출력 베어링 레버암', `${o.outBearing.support?.arm ?? 0} mm`, o.outBearing.support?.automatic ? '모델' : '가정', '플랜지 하중면부터 베어링 중심까지. Fr × 레버암을 외부 모멘트와 동방향으로 합산');
+    if (D.struct?.ringHousing === 'press') add('요소', '링 압입 수축 → 백래시', o.backlash.stages.map(s => `${s.reduction.toFixed(2)} µm`).join(' / '), '모델', 'Lamé 이중 원통 모델과 내접 작용 압력각의 국소 랙 근사 · 공통 링은 한 몸체');
     add('하중', 'fma (잇줄 오차)', D.loads.fmaMode === 'worst' ? '최악합 (식 64)' : '제곱합 (식 66)', '규격', 'ISO 1328 공차 + 캐리어 핀 구멍 평행도 ' + D.loads.carrierParallel + ' µm');
     add('하중', 'fsh (지지 변형)', '핀 + 캐리어 + 출력 베어링', '모델', '핀 보 처짐·기울기, 캐리어 기둥 비틀림(양단 지지), 출력 베어링 롤러 모델 기울기(마지막 단)');
     add('요소', '캐리어 기둥', ctx.stages.map(s => `${s.st.carrier?.webW}×${s.st.carrier?.webH} mm ×${s.st.n}`).join(' / '), '가정', '형상 입력 · 판 자체 변형은 강체');
@@ -1002,7 +1110,7 @@
     add('하중', 'Kv, KHα', 'ISO 6336-1 방법 B', '규격', '정밀도 등급 공차 · 길들이기 포함');
     add('강도', 'ZB/ZD · fZCa', (ctx.stages[0].geo.meshes[0].fZCa).toFixed(2), '규격', 'ISO 6336-2:2019 표 3 · 치형 수정 근거 수준');
     add('강도', '수명계수 ZNT·YNT', 'ISO 표 2 곡선', '규격', '정적 → 내구 → 10¹⁰회 0.85 (일반 윤활)');
-    add('강도', '재료 등급', D.design.quality, '가정', 'ME는 품질 증빙 필요 · 없으면 MQ');
+    add('강도', '재료 등급', D.design.quality, '가정', '재료·열처리 미확정 예제. 실제 강종·공정·경도·경화층 및 품질 근거 확인 필요');
     add('강도', '피로강도 산포 (현실 예측)', `σln H ${D.reliability.covH} · F ${D.reliability.covF}`, '가정', 'ISO 값 = 1 % 파손확률 · 중앙값 = ×exp(2.326σ)');
     add('요소', '유성 베어링 C / C0', ctx.stages.map(s => `${s.st.bearing.C}/${s.st.bearing.C0} N`).join(', '), '가정', '카탈로그 값 입력');
     add('요구', '관절 케이스', CASES[D.req.case]?.label || '사용자 정의', '가정', CASES[D.req.case]?.note || '직접 입력');
@@ -1031,22 +1139,32 @@
       duty: c.duty.map(([tq, tm]) => ({ torque: tq, time: tm, rpm: 0 })), ext: { Fr: +(c.ext[0] * T).toFixed(1), Fa: +(c.ext[1] * T).toFixed(1), M: +(c.ext[2] * T).toFixed(2) } });
     return D;
   }
+  function structureDefaults() {
+    return {
+      ringHousing: 'press',
+      ringFit: { delta: .03, mu: .12, E: 70000, nu: .33, Sy: 240, boltN: 6, boltD: 3 },
+      c1s2: 'spline', c1s2Dim: { d: null, L: null, p: 40, radialPlay: null },
+      s1motor: 'key', s1Dim: { d: null, L: 8, p: 40 },
+      c1Support: 'out', obPos: 'flange', obMomentArm: null
+    };
+  }
   function defaultDesign() {
     const mat = () => ({ family: 'NV', surfaceHRC: 60, coreHRC: 28, depth: 0.10 });
     const stage = b => ({ s: 46, p: 23, n: 3, m: 0.6, beta: 12, alpha: 20, b, xs: 0, xp: 0, xr: 0, autoRingShift: true, grade: 4,
       mod: { crown: 2, tip: 0, verified: 'none' }, sunBore: null, planetBore: null, ringOD: null,
-      pin: { d: 4, type: 'double', material: 'SUJ2', wall: 4, allow: 1200, holeMode: 'through', depth: null },
-      bearing: { name: '니들 케이지 4×7×7 (예시값)', C: 1600, C0: 1500, count: 1 }, jt: [20, 25], carrier: { webW: 4, webH: 3, material: 'S45C', outerD: null, innerD: null, groove: null, pocket: null, axialClearance: 0, bossD: null, bossT: 4 } });
+      pin: { d: 4, type: 'double', material: 'SUJ2', wall: 4, allow: 1200, holeMode: 'through', depth: null, fitCompliance: null },
+      bearing: { name: '니들 케이지 4×7×7 (예시값)', C: 1600, C0: 1500, count: 1, clearanceCompliance: null }, jt: [20, 25], carrier: { webW: 4, webH: 3, material: 'S45C', outerD: null, innerD: null, groove: null, pocket: null, axialClearance: 0, bossD: null, bossT: 4 } });
     return {
       schema: 'pgd/1', name: '9:1 2단 유성감속기 (예제)',
       req: { case: 'custom', ext: { Fr: 135, Fa: 45, M: 7.2 }, Trated: 9, Tpeak: 28, Temerg: 40, rpm: 1000, lifeH: 5000, SH: 1.0, SF: 1.4, SHstat: 1.0, SFstat: 1.2, s0: 1.0, SBmin: 1.5, effMin: 85, backlashMax: 15,
         duty: [{ torque: 100, time: 20, rpm: 0 }, { torque: 70, time: 30, rpm: 0 }, { torque: 40, time: 40, rpm: 0 }, { torque: 10, time: 10, rpm: 0 }] },
       config: { stages: 2, sharedRing: true, floatingSun: false },
       design: { quality: 'MQ' },
+      struct: structureDefaults(),
       stages: [stage(5), stage(6)],
       materials: Array.from({ length: 6 }, mat),
       lube: { type: 'grease', nu40: 100, nu100: 11, temp: 50, rho: .88, alphaP: 2.0, starvation: .7, XL: 1, XW: 1, fzg: 12, rzFlank: 2, rzRoot: 6 },
-      loads: { KA: 1.0, kgMode: 'model', kgFixed: 1.1, posError: 6, sunSupport: [{ mode: 'structure', k: 20, play: 0, bearingK: 40, od: 20, id: 14, overhang: 8 }, { mode: 'structure', k: 10, play: 0, bearingK: 20, od: 12, id: 0, overhang: 8 }], fmaMode: 'rss', carrierParallel: 3, extraFsh: [0, 0], reverse: false },
+      loads: { KA: 1.0, kgMode: 'model', kgFixed: 1.1, posError: 6, posErrorType: 'projected', pathRunIn: null, sunSupport: [{ mode: 'structure', k: 20, play: null, bearingK: 40, od: 20, id: 14, overhang: 8 }, { mode: 'structure', k: 10, play: null, bearingK: 20, rearBearingK: null, od: 12, id: 0, overhang: 8 }], fmaMode: 'rss', carrierParallel: 3, extraFsh: [0, 0], reverse: false },
       reliability: { mode: 'iso', covH: 0.08, covF: 0.07 },
       perf: { muMode: 'model', mu: 0.06, otherLoss: 1.5 },
       outBearing: { name: '크로스 롤러 (예시값)', type: 'roller', C: 8190, C0: 13600, dp: 77, Km: 90, Z: 40, Dw: 4, Lw: 3.6, preload: 2 },
@@ -1056,7 +1174,7 @@
     };
   }
 
-  const api = { lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, matchRingShift, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, cyclesFor, spectrumDamage, NAMES };
+  const api = { structureDefaults, lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, matchRingShift, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, cyclesFor, spectrumDamage, NAMES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PGD = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

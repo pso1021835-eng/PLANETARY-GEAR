@@ -1,4 +1,4 @@
-importScripts('carrier-geometry.js', 'engine.js?v=carrier-pin-1');
+importScripts('carrier-geometry.js', 'engine.js?v=gpt-stage1-1');
 self.onmessage = e => {
   const { id, type, design } = e.data;
   try {
