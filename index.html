@@ -136,6 +136,20 @@ main.wide{max-width:none}
 .dw-in label{display:flex;flex-direction:column;gap:4px}.dw-in input{background:#111;border:1px solid #444;color:var(--ink);padding:4px 6px;border-radius:3px;text-align:right}
 .dw-n{margin:8px 0 0}.dw-k{color:#8a8a8a}.dw-k.ed{color:#6f9fe0;font-weight:600}
 
+
+/* ---- design process (PR8) */
+nav.rail .grp.pg{display:flex;align-items:center;gap:6px;color:var(--ink);font-weight:600;margin-top:14px}nav.rail .grp.pg small{margin-left:auto;color:var(--mute);font-weight:400}
+nav.rail button.sub{padding-left:22px;font-size:13px}
+.pbars{display:flex;gap:2px;margin:6px 0 18px;border-radius:6px;overflow:hidden;font-size:12px}.pbar{padding:6px 8px;white-space:nowrap;overflow:hidden;color:#111}
+.k-calc{background:#7fb69a}.k-in{background:#9db8d9}.k-man{background:#e0c27a}.k-none{background:#5a5a5c;color:#ddd}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px}
+.pcard .ph{display:flex;justify-content:space-between;align-items:baseline}.pcard h3{margin:0 0 8px}
+.plist{list-style:none;margin:0;padding:0}.plist li{display:grid;grid-template-columns:44px 1fr auto;grid-template-areas:"id t k" "id v ok";column-gap:8px;padding:6px 4px;border-top:1px solid var(--rule);cursor:pointer;font-size:13px}
+.plist li:hover{background:rgba(255,255,255,.04)}.plist .pid{grid-area:id;color:var(--mute);font-variant-numeric:tabular-nums}.plist .pt{grid-area:t}.plist .kchip{grid-area:k}.plist .pval{grid-area:v;color:var(--mute);font-size:12px}.plist li>b,.plist li>.x{grid-area:ok;justify-self:end}
+.kchip{font-size:11px;padding:1px 7px;border-radius:999px;color:#111;justify-self:end;align-self:center}
+.pgate{margin-top:8px;padding:6px 10px;border-radius:6px;background:rgba(255,255,255,.05);font-size:12.5px}.pgate.ok{color:#7fd4a3}.pgate.bad{color:#f08a7a}
+.pstrip{margin:0 0 14px;padding:8px 12px;border:1px solid var(--rule);border-radius:8px;font-size:13px}.pstrip summary{cursor:pointer;color:var(--mute)}.pstrip summary b{color:var(--ink);font-weight:500}
+.pstrip ul{list-style:none;margin:8px 0 0;padding:0}.pstrip li{display:flex;gap:8px;align-items:center;padding:3px 0}.pstrip .pid{color:var(--mute);width:40px}.pstrip .pval{color:var(--mute);margin-left:auto;font-size:12px}
 /* ---- studio look for the 3D viewer (light glass UI over a cream backdrop) */
 #viewer{background:#f3f0ea;border-color:#e2ddd3}
 #viewer{--ink:#1c1b1a;--text:#2b2927;--mute:#8a847b;--rule:#ebe6dd;--panel:#fff;--soft:#f6f3ee;--brick:#e4612a;color:var(--text)}
@@ -183,7 +197,8 @@ main.wide{max-width:none}
 <script src="carrier-geometry.js"></script>
 <script src="engine.js?v=pr7-6"></script>
 <script src="viewer3d.js?v=pr7-6"></script>
-<script src="drawings.js?v=pr7-6"></script>
-<script src="app.js?v=pr7-6"></script>
+<script src="drawings.js?v=pr8-1"></script>
+<script src="process.js?v=pr8-1"></script>
+<script src="app.js?v=pr8-1"></script>
 </body>
 </html>

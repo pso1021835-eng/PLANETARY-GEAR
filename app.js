@@ -45,7 +45,7 @@ function changed() { save(); compute(); renderRail(); renderVerdict(); render(tr
 
 // ------------------------------------------------------------------ rail & verdict
 const STEPS = [
-  ['overview', '', '1. 종합판정'],
+  ['overview', '', '1. 종합판정'], ['proc', '', '설계 공정'],
   ['s1', '정의', '2. 요구사양'], ['s2', '', '3. 구성–감속비'],
   ['s3', '기어설계', '4. 제원–형상'], ['s4', '', '5. 치형 검사'], ['s5', '', '6. 정밀도–치형 수정'],
   ['s7', '구조 해석–강도', '7. 하중 계수'], ['s8', '', '8. 기어 강도'], ['s9', '', '9. 베어링'], ['scar', '', '10. 캐리어–핀'],
@@ -68,8 +68,22 @@ function status(id) {
     default: return '';
   }
 }
+// ------------------------------------------------------------------ design process (PGDProc)
+const VIEW_TITLE = { s1: '요구사양', s2: '구성–감속비', s3: '제원–형상', s4: '치형 검사', s5: '정밀도–치형 수정', s7: '하중 계수', s8: '기어 강도',
+  scar: '캐리어–핀', s9: '베어링', shous: '하우징–커버·부품 형상', smat: '소재', s10: '성능 예측', s11: '가상 검증', reg: '가정 대장' };
+function procExtra() {
+  const X = { MC };
+  try { if (window.PGD3D && R && !R.errors?.length) { ensureD(); const pl = PGD3D.partsList(R, D); X.parts = pl.length; X.mass = pl.reduce((s, p) => s + (p.mass || 0) * (p.qty || 1), 0) * 1000; } } catch (e) { }
+  return X;
+}
+function procEval() { return window.PGDProc ? PGDProc.evaluate(R, D, procExtra()) : []; }
+const gateCls = ok => ok === true ? 'ok' : ok === false ? 'bad' : '';
 function renderRail() {
-  $('#rail').innerHTML = STEPS.map(([id, g, t]) => `${g ? `<div class="grp">${g}</div>` : ''}<button data-v="${id}" aria-current="${view === id}"><span class="dot ${status(id)}"></span>${t}</button>`).join('');
+  const E = procEval();
+  const btn = (id, t, sub) => `<button data-v="${id}" aria-current="${view === id}" class="${sub ? 'sub' : ''}"><span class="dot ${status(id)}"></span>${t}</button>`;
+  $('#rail').innerHTML = btn('overview', '종합판정') + btn('proc', '설계 공정 체크리스트') +
+    E.filter(g => g.views.length && g.n !== 12).map(g => `<div class="grp pg"><span class="dot ${gateCls(g.gate.ok)}"></span>${g.n} ${esc(g.name)}<small>${g.done}/${g.total}</small></div>` +
+      g.views.map(v => btn(v, VIEW_TITLE[v] || v, true)).join('')).join('');
   $('#rail').querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.v));
 }
 function go(id) { view = id; try { history.replaceState(null, '', '#' + id); } catch (e) { } renderRail(); render(); window.scrollTo(0, 0); }
@@ -92,11 +106,32 @@ function render(keepScroll) {
   if (VIEW3D) { if (VIEW3D.full) OVSTATE.view = VIEW3D.getView(); VIEW3D.dispose(); VIEW3D = null; }
   m.className = view === 'overview' ? 'wide' : '';
   m.innerHTML = (VIEWS[view] || VIEWS.overview)();
+  if (view !== 'proc' && view !== 'overview') { const s = procStrip(view); if (s) m.insertAdjacentHTML('afterbegin', s); }
   bindInputs(m);
   (AFTER[view] || (() => { }))(m);
   if (keepScroll) window.scrollTo(0, y);
 }
 const head = (t, lead) => `<h2>${t}</h2><p class="lead">${lead}</p>`;
+const KIND_CLS = { in: 'k-in', calc: 'k-calc', man: 'k-man', none: 'k-none' };
+const okMark = ok => ok === true ? '<b class="good">✓</b>' : ok === false ? '<b class="bad">✗</b>' : '<span class="x">–</span>';
+// compact list of the process items this screen covers
+function procStrip(v) {
+  const E = procEval(); if (!E.length) return '';
+  const its = PGDProc.viewItems(E, v); if (!its.length) return '';
+  return `<details class="pstrip"><summary>이 화면의 설계 공정 항목 <b>${its.map(i => i.id).join(' · ')}</b></summary>
+    <ul>${its.map(i => `<li><span class="pid">${i.id}</span>${esc(i.t)}<span class="kchip ${KIND_CLS[i.kind]}">${PGDProc.KIND[i.kind]}</span><span class="pval">${i.val != null ? esc(String(i.val)) : ''}</span>${okMark(i.ok)}</li>`).join('')}</ul></details>`;
+}
+function procView() {
+  const E = procEval();
+  if (!E.length) return head('설계 공정', '공정 데이터를 불러오지 못했습니다.');
+  const all = E.flatMap(g => g.items), cnt = k => all.filter(i => i.kind === k).length;
+  const bar = ['calc', 'in', 'man', 'none'].map(k => `<span class="pbar ${KIND_CLS[k]}" style="flex:${cnt(k)}">${PGDProc.KIND[k]} ${cnt(k)}</span>`).join('');
+  const card = g => `<div class="card pcard"><div class="ph"><h3>${g.n} ${esc(g.name)}</h3><span class="x">${g.done}/${g.total}</span></div>
+    <ul class="plist">${g.items.map(i => `<li data-go="${i.view}" tabindex="0" role="button" title="${esc(VIEW_TITLE[i.view] || '종합판정')} 화면으로"><span class="pid">${i.id}</span><span class="pt">${esc(i.t)}</span><span class="kchip ${KIND_CLS[i.kind]}">${PGDProc.KIND[i.kind]}</span><span class="pval">${i.val != null ? esc(String(i.val)) : ''}</span>${okMark(i.ok)}</li>`).join('')}</ul>
+    <div class="pgate ${gateCls(g.gate.ok)}">게이트 · ${esc(g.gate.t)} ${g.gate.ok === true ? '통과' : g.gate.ok === false ? '미달' : '판정 기준 없음'}</div></div>`;
+  return head('설계 공정 체크리스트', '화이트보드의 설계 순서(12단계 · 세부 항목)를 그대로 따릅니다. 항목을 누르면 해당 화면으로 갑니다. 상태: <b>계산</b> = 사이트가 계산·검사, <b>입력</b> = 값을 넣는 곳만 있음, <b>판단</b> = 사람이 정함, <b>미구현</b> = 아직 사이트에 없음.') +
+    `<div class="pbars">${bar}</div><div class="pgrid">${E.map(card).join('')}</div>`;
+}
 const errBox = () => R?.errors?.length ? `<div class="card"><h3 class="bad">계산할 수 없습니다</h3><ul class="warns">${R.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : '';
 const tag = s => `<span class="tag ${s}">${s}</span>`;
 const partLabel = r => `${r.stage}단 ${r.mesh} · ${r.partName}`;
@@ -105,6 +140,7 @@ const VIEWS = {
   smat() { return VIEWS.s6() + '<div style="height:28px"></div>' + VIEWS.slub(); },
   shous() { return housingView(); },
   overview() { return overviewView(); },
+  proc() { return procView(); },
   overviewOld() {
     if (!R || R.errors?.length) return head('종합 판정', '입력에 오류가 있어 계산하지 못했습니다.') + errBox();
     const tgt = D.req.Trated, cap = R.capacityLife;
@@ -426,6 +462,7 @@ function sensHTML() {
 
 // ------------------------------------------------------------------ after-render hooks
 const AFTER = {
+  proc(m) { m.querySelectorAll('[data-go]').forEach(li => { const g = () => go(li.dataset.go); li.onclick = g; li.onkeydown = e => { if (e.key === 'Enter') g(); }; }); },
   s1(m) {
     m.querySelector('#cApply').onclick = () => { E.applyCase(D, m.querySelector('#cPos').value + '-' + m.querySelector('#cAxis').value, R?.ratio); D.anim.rpm = D.req.rpm; changed(); };
     m.querySelector('#addDuty').onclick = () => { D.req.duty.push({ torque: 50, time: 10, rpm: 0 }); changed(); };
