@@ -131,7 +131,7 @@
       ['11-5', '가정 역산·보정', 'none', 's11'],
       ['11-6', '가정 대장 갱신', 'calc', 'reg', R => `${R.register?.length || 0}개 가정`],
     ], gate: ['차이 원인 규명', () => null] },
-    { n: 12, name: '출력물', views: ['overview'], items: [
+    { n: 12, name: '출력물', views: ['out'], items: [
       ['12-1', '부품 도면', 'calc', 'shous', () => '정면도·단면도 (사이트)'],
       ['12-2', 'STEP 조립체', 'none', 'overview'],
       ['12-3', 'BOM·중량', 'calc', 'overview', (R, D, X) => X?.parts ? `${X.parts}종` : null],
@@ -140,7 +140,7 @@
       ['12-6', '검토·승인', 'man', 'overview'],
     ], gate: ['출시 승인', () => null] },
   ];
-  const DFM = { n: 'D', name: '가공·원가 (병행)', views: [], items: [
+  const DFM = { n: 'D', name: '가공·원가 (병행)', views: ['out'], items: [
     ['D1', '가공 방식 후보 (2단계와)', 'none', 's2'],
     ['D2', '공구·공정 제약 (3·4단계와)', 'none', 's3'],
     ['D3', '공차 배분 (4·6단계와)', 'in', 's7', (R, D) => `유성 위치오차 ${D.loads.posError} µm · 정밀도 ${D.stages.map(s => s.grade).join('/')}급`],
@@ -156,12 +156,13 @@
   function evaluate(R, D, X) {
     const ok = !!(R && !R.errors?.length);
     return [...STAGES, DFM].map(g => {
-      const items = g.items.map(([id, t, kind, view, val, chkFn]) => ({
-        id, t, kind, view,
-        val: ok ? safe(val, R, D, X) : null,
-        ok: ok ? safe(chkFn, R, D, X) : null,
-      }));
-      const gate = { t: g.gate[0], ok: ok ? safe(g.gate[1], R, D, X) : null };
+      const items = g.items.map(([id, t, kind, view, val, chkFn]) => {
+        const ck = ok ? X?.CK?.[id] : null, fm = globalThis.PGDChecks?.FORMS?.[id];
+        if (ck) return { id, t, kind: ck.kind || 'calc', view: fm?.view || view, val: ck.val ?? null, ok: ck.ok ?? null };
+        return { id, t, kind, view: fm?.view || view, val: ok ? safe(val, R, D, X) : null, ok: ok ? safe(chkFn, R, D, X) : null };
+      });
+      const gck = ok ? X?.CK?.['gate-' + g.n] : null;
+      const gate = { t: g.gate[0], ok: gck ? gck.ok ?? null : ok ? safe(g.gate[1], R, D, X) : null };
       const done = items.filter(i => i.kind === 'in' || i.kind === 'calc').length;
       return { n: g.n, name: g.name, views: g.views, items, gate, done, total: items.length };
     });
