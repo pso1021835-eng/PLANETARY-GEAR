@@ -12,14 +12,7 @@
   // ---------------------------------------------------------------- defaults (added to D once)
   const DEF = {
     req: { Dmax: null, Lmax: null, ratio: null, stiffMin: null },
-    struct: {
-      ringHousing: 'press',                      // integral | press | bolt
-      ringFit: { delta: 0.03, mu: 0.12, E: 70000, nu: 0.33, Sy: 240, boltN: 6, boltD: 3 }, // 알루미늄 하우징 기본
-      c1s2: 'spline', c1s2Dim: { d: null, L: null, p: 40 },   // integral | spline | key | press
-      s1motor: 'key', s1Dim: { d: null, L: 8, p: 40 },        // integral | key | press | clamp | spline
-      c1Support: 'none',                         // none | out | both
-      obPos: 'flange',                           // inside | outside | flange
-    },
+    struct: globalThis.PGD.structureDefaults(),
     bolts: { grade: 12.9, mu: 0.12, util: 0.7 },
     thermal: { Tamb: 25, h: 12, duty: 1 },
     verify: { feaKcar: [null, null], feaSigmaF: null, testT: null, testNote: '' },
@@ -58,14 +51,6 @@
   }
   function layout(R, D) { try { return globalThis.PGD3D ? PGD3D.layout(R, D) : null; } catch (e) { return null; } }
 
-  // Lamé shrink fit: inner ring (a..b) in outer housing (b..c), diametral interference delta
-  function pressFit(a, b, c, delta, Eo, nuo, Ei, nui) {
-    const d = 2 * b;
-    const p = delta / (d * ((1 / Eo) * ((c * c + b * b) / (c * c - b * b) + nuo) + (1 / Ei) * ((b * b + a * a) / (b * b - a * a) - nui)));
-    const shrinkInner = 2 * (2 * p * b * b * a) / (Ei * (b * b - a * a));      // 링 내경 감소 (지름, mm)
-    const hoopOuter = p * (c * c + b * b) / (c * c - b * b);                   // 하우징 내면 원주응력
-    return { p, shrinkInner, hoopOuter };
-  }
   // shaft–hub joint torque capacity (N·m)
   function jointCap(type, d, L, p, mu = 0.12) {
     if (!(d > 0 && L > 0)) return null;
@@ -97,16 +82,26 @@
     // 2-4 / 8-2 링–하우징 결합
     const ringType = D.struct.ringHousing, rf = D.struct.ringFit;
     if (L) {
-      const m = S[0].st.m, zr = S[0].st.s + 2 * S[0].st.p, a = (m * zr + 2.5 * m) / 2, b = L.ringOD / 2, c = L.housR;
+      const b = L.ringOD / 2;
       const len = L.shared ? L.gearEnd : S[0].st.b, Tring = Math.max(...PT.ring) * (L.shared ? 1 : 1);
       const need = 1.5 * (L.shared ? PT.ring.reduce((s, x) => Math.max(s, x), 0) : Tring);
       if (ringType === 'integral') put('2-4', { val: '하우징 일체 (강 하우징 · 링 가공 = 하우징 가공)', ok: true }), put('8-2', { val: '일체 — 체결 없음', ok: true });
       else if (ringType === 'press') {
-        const pf = pressFit(a, b, c, rf.delta, rf.E, rf.nu, 206000, .3), Tcap = rf.mu * pf.p * PI * 2 * b * len * b / 1000;
-        const dj = pf.shrinkInner * Math.tan(20 * PI / 180) * 1000;   // 백래시 감소 (µm, 원주)
-        put('2-4', { val: `압입 · 면압 ${f(pf.p, 1)} MPa · 전달 ${f(Tcap, 1)} N·m`, ok: Tcap >= need });
-        put('8-2', { val: `면압 ${f(pf.p, 1)} MPa · 전달 ${f(Tcap, 1)} / 필요 ${f(need, 1)} N·m · 링 수축 ${f(pf.shrinkInner * 1000, 1)} µm → 백래시 −${f(dj, 1)} µm · 하우징 응력 ${f(pf.hoopOuter, 0)} / ${rf.Sy} MPa`,
-          ok: Tcap >= need && pf.hoopOuter <= rf.Sy / 1.5, p: pf.p, Tcap, need, dj });
+        const group = L.shared ? [[0, 1]] : S.map((_, i) => [i]);
+        const results = group.map(indices => {
+          const pf = R.ctx.ringFits[indices[0]];
+          const required = 1.5 * indices.reduce((sum, i) => sum + PT.ring[i], 0);
+          if (pf?.error || !pf) return { ok: false, short: '압입 확인 필요', detail: '죔새·하우징 치수·재료 확인 필요' };
+          const length = L.shared ? len : S[indices[0]].st.b;
+          const Tcap = rf.mu * pf.p * PI * pf.diameter * length * (pf.diameter / 2) / 1000;
+          const reductions = indices.map(i => R.backlash.stages[i].reduction);
+          return { ok: Tcap >= required && pf.hoopOuter <= rf.Sy / 1.5, p: pf.p, Tcap, need: required, dj: reductions[0],
+            short: `압입 · 면압 ${f(pf.p, 1)} MPa · 전달 ${f(Tcap, 1)} N·m`,
+            detail: `면압 ${f(pf.p, 1)} MPa · 전달 ${f(Tcap, 1)} / 필요 ${f(required, 1)} N·m · 내경 수축 ${f(pf.shrinkInner * 1000, 1)} µm · 단별 백래시 감소 ${reductions.map(v => f(v, 1)).join(' / ')} µm · 하우징 응력 ${f(pf.hoopOuter, 0)} / ${rf.Sy} MPa` };
+        });
+        const ok = results.every(v => v.ok);
+        put('2-4', { val: results.map(v => v.short).join(' · '), ok });
+        put('8-2', { ...results[0], val: results.map(v => v.detail).join(' | '), ok });
       } else {
         const F = (D.bolts.util * RP[D.bolts.grade] || 770) * (AS[rf.boltD] || 5) , Tcap = rf.boltN * F * D.bolts.mu * (b + 2) / 1000;
         put('2-4', { val: `볼트 체결 M${rf.boltD} × ${rf.boltN} · 전달 ${f(Tcap, 1)} N·m`, ok: Tcap >= need });
@@ -118,7 +113,7 @@
       const cj = D.struct.c1s2Dim, d = cj.d || L?.S?.[1]?.sunBore || S[1].st.m * S[1].st.s * .5, Lj = cj.L || S[1].st.b;
       const cap = jointCap(D.struct.c1s2, d, Lj, cj.p), need = PT.sun[1];
       const txt = D.struct.c1s2 === 'integral' ? '일체 (결합부 없음)' : `${JNAME[D.struct.c1s2]} Ø${f(d, 1)} × ${f(Lj, 1)} · 전달 ${f(cap, 1)} / 피크 ${f(need, 1)} N·m`;
-      put('2-5', { val: txt + (D.struct.c1s2 === 'spline' ? ' · 유격이 S2 자리잡음 허용' : ''), ok: cap >= need });
+      put('2-5', { val: txt + (D.struct.c1s2 === 'spline' ? ` · 스플라인 편측 유격 ${cj.radialPlay == null ? '미입력 (0 µm 가정)' : f(cj.radialPlay) + ' µm'}` : ''), ok: cap >= need });
       put('6-7', { val: txt, ok: cap >= need * 1.2 });
     } else { put('2-5', { val: '1단 구조 — 해당 없음', ok: true }); put('6-7', { val: '1단 구조 — 해당 없음', ok: true }); }
     {
@@ -127,8 +122,8 @@
     }
     // 2-7 C1 지지 (입력 보강), 2-8 출력 베어링 위치
     const c1 = D.struct.c1Support, OBP = { inside: '2단 기어 폭 안', outside: '2단 출력측 바깥', flange: '출력 플랜지 쪽' };
-    put('2-7', { kind: 'in', val: (D.loads.sunSupport || []).map((s, i) => `S${i + 1} ${s.mode === 'structure' ? `베어링 ${s.bearingK} N/µm` : `${s.k} N/µm`}`).join(' · ') + ` · C1 지지 ${c1 === 'none' ? '없음' : c1 === 'out' ? '출력측 1개' : '양측'}`, ok: S.length > 1 && c1 === 'none' ? false : null });
-    put('2-8', { kind: 'in', val: `${D.outBearing?.name || ''} · 위치 ${OBP[D.struct.obPos]}` });
+    put('2-7', { kind: 'in', val: S.map((s, i) => `S${i + 1} ${f(s.support?.k, 1)} N/µm · 편측 ${f(s.support?.play)} µm`).join(' | ') });
+    put('2-8', { kind: 'in', val: `${D.outBearing?.name || ''} · 위치 ${OBP[D.struct.obPos]} · 레버암 ${f(R.outBearing?.support?.arm)} mm` });
     // 2-10 하중 경로, gate 2
     const floating = S.length > 1 && c1 === 'none';
     put('2-10', { val: floating ? 'C1 지지 없음 → S2 반경 위치는 유성 맞물림에만 의존' : '모든 축에 반경 지지 있음', ok: !floating, html: loadPathHTML(D, S, floating) });
@@ -212,7 +207,7 @@
       if (D.struct.ringHousing === 'integral' && D.dfm.proc.ring === 'shape') iss.push('링 일체 하우징 셰이핑 → 커터 도피 홈 필요');
       put('D2', { kind: 'calc', val: iss.length ? iss.join(' · ') : '표준 공구로 가공 가능', ok: !iss.some(t => /불가|비규격/.test(t)) ? (iss.length ? null : true) : false });
     }
-    put('D3', { kind: 'calc', val: `유성 위치오차 ±${D.loads.posError} µm → Kγ ${(R.rated?.stages || []).map(s => f(s.Kg, 2)).join(' / ')} · 정밀도 ${D.stages.map(s => s.grade).join('/')}급`, ok: (R.rated?.stages || []).every(s => s.Kg <= 1.3) });
+    put('D3', { kind: 'calc', val: `유성 위치공차 ${D.loads.posErrorType === 'diametral' ? 'Ø' : '±'}${D.loads.posError} µm → Kγ ${(R.rated?.stages || []).map(s => f(s.Kg, 2)).join(' / ')} · 정밀도 ${D.stages.map(s => s.grade).join('/')}급`, ok: (R.rated?.stages || []).every(s => s.Kg <= 1.3) });
     if (L) {
       const th = [];
       S.forEach((s, i) => {

@@ -73,7 +73,7 @@
   I['1-5'] = { what: '출력 플랜지에 걸리는 외부 하중 — 반경 Fr, 축 Fa, 모멘트 M — 을 정한다.',
     how: '케이스 비율(정격 토크 1 N·m당 N, N·m) 또는 링크 길이·가반하중 정역학으로 구한다. 스펙트럼 구간마다 토크 비율만큼 비례한다고 본다.',
     why: '출력 베어링 수명·정적 안전율·기울기(→ 2단 KHβ)를 정한다. 관절에서 모멘트가 가장 큰 하중일 때가 많다.',
-    rows: [['A', 'num', 'req.ext.Fr', '반경 하중 Fr N'], ['A', 'num', 'req.ext.Fa', '축 하중 Fa N'], ['A', 'num', 'req.ext.M', '모멘트 M N·m'],
+    rows: [['A', 'num', 'req.ext.Fr', '반경 하중 Fr N'], ['A', 'num', 'req.ext.Fa', '축 하중 Fa N'], ['A', 'num', 'req.ext.M', '플랜지 외면 기준 모멘트 M N·m'],
       ['C', '등가 하중 · L10', c => c.R?.outBearing ? `${f(c.R.outBearing.Peq, 0)} N · ${fh(c.R.outBearing.L10h)} h` : '—', 'P = X(Fr + 2000M/dp) + Y·Fa'],
       ['P', '출력 기울기 (정격)', c => c.R?.outBearing ? `${f(c.R.outBearing.tiltRated, 3)}′` : '—', 'M / 모멘트 강성 (롤러 분포 모델)'],
       ['J', 'link', '링크 길이·자중·가반하중으로 외부 하중을 계산해 케이스 값을 대체했다']],
@@ -134,9 +134,10 @@
       ['J', 'path', '링 반력이 하우징 → 고정부로 가는 경로를 확인했다']],
     k: '전달 토크 ≥ 링 반력 피크 × 1.5' };
   I['2-5'] = { what: '1단 캐리어(C1)와 2단 썬(S2)을 어떻게 연결할지 정한다.',
-    how: '일체 / 스플라인 / 키 / 압입. 전달 능력을 피크 S2 토크와 비교한다. 스플라인 유격은 S2가 유성 사이에서 자리 잡게 해 2단 Kγ를 낮춘다.',
+    how: '일체 / 스플라인 / 키 / 압입. 전달 능력을 피크 S2 토크와 비교한다. 스플라인은 S2의 편측 반경 이동량을 C1 지지 유격에 더해 Kγ에 반영한다. 미입력은 0 µm 가정이다.',
     why: '2단 입력 토크가 전부 이 결합부를 지난다. 유격 유무가 2단 하중분배(5-6)를 바꾼다.',
     rows: [['D', 'sel', 'struct.c1s2', '결합 방식', { o: JO }], ['D', 'num', 'struct.c1s2Dim.d', '결합 지름 mm (빈칸 = S2 보어)'], ['D', 'num', 'struct.c1s2Dim.L', '결합 길이 mm (빈칸 = 치폭)'],
+      ['M', 'num', 'struct.c1s2Dim.radialPlay', '스플라인 편측 반경 이동량 µm (빈칸 = 0 가정)', { if: D => D.struct.c1s2 === 'spline' }],
       ['A', 'num', 'struct.c1s2Dim.p', '압입 면압 MPa (압입 시)', { if: D => D.struct.c1s2 === 'press' }],
       ['C', '전달 능력 / 피크', c => ck(c, '2-5'), '스플라인: (π/8)d²L·0.75·τ, 키: 전단 60·면압 100 MPa, 압입: μpπdL·d/2']],
     up: ['2-1'], k: '전달 토크 ≥ 피크 S2 토크' };
@@ -148,18 +149,21 @@
       ['C', '전달 능력 / 피크', c => ck(c, '2-6'), '2-5와 같은 식']],
     k: '전달 토크 ≥ 피크 S1 토크' };
   I['2-7'] = { what: '썬과 1단 캐리어(C1)를 반경 방향으로 무엇이 받치는지 정한다.',
-    how: '썬은 플로팅이 아니라 지지 베어링(7-4)으로 받친다. 2단에서 C1에 지지 베어링이 없으면 S2 위치가 유성 맞물림에만 의존 = 사실상 플로팅이 된다.',
+    how: '2단 썬의 반경 지지 경로를 C1 베어링과 축으로 구성한다. 예제는 출력측 1개를 가정하고, 양측은 베어링 반경 강성을 병렬 근사한다. 직접 입력값은 선택 구조의 전체 지지 강성이다.',
     why: '지지 강성·유격이 유성 하중분배 Kγ(5-6)를 직접 정한다. 플로팅 불가 조건이므로 C1 지지 없음은 게이트 2 미달이다.',
     rows: [['D', 'sel', 'struct.c1Support', 'C1 지지 베어링', { o: [['none', '없음 (유성 위에 얹힘)'], ['out', '출력측 1개'], ['both', '양측']] }],
       ['D', 'sel', 'loads.sunSupport.{i}.mode', '{s}단 썬 지지 산정 방식', { st: 1, o: [['structure', '구조 (베어링 ⊕ 축)'], ['direct', '직접 입력']] }],
       ['P', '썬 지지 강성', c => S(c).map((s, i) => { try { return `S${i + 1} ${f(globalThis.PGD.sunSupportK(c.D, i).k, 1)} N/µm`; } catch (e) { return ''; } }).join(' · '), '베어링 반경 강성 ⊕ 중공축 굽힘 (7-4 입력)'],
-      ['C', '구속 상태', c => c.CK['gate-2']?.val || '—', '모든 회전 부품에 반경 지지가 있는가']],
-    up: ['2-1'], k: '2단이면 C1 지지 필요 (없으면 플로팅)' };
+      ['A', '예제 구조', () => 'C1 출력측 베어링 1개', '실물 지지 구조 확인 필요'],
+      ['C', '구속 상태', c => c.D.config.stages > 1 && c.D.struct.c1Support === 'none' ? 'C1 지지 없음 · 해석 미지원' : c.CK['gate-2']?.val || '—', '모든 회전 부품에 반경 지지가 있는가']],
+    up: ['2-1'], k: '2단이면 C1 지지 필요', ok: c => c.D.config.stages > 1 && c.D.struct.c1Support === 'none' ? false : null };
   I['2-8'] = { what: '출력 메인 베어링(크로스 롤러)을 축방향 어디에 둘지 정한다.',
-    how: '2단 기어 폭 안 / 출력측 바깥 / 출력 플랜지 쪽. 외부 모멘트 → 베어링 기울기 → C2 기울기 → 2단 KHβ 경로를 본다.',
-    why: '베어링이 2단 치폭 중심에서 멀수록 외부 모멘트가 2단 치합 정렬을 더 흔든다(5-4). 길이(1-6)도 바뀐다.',
+    how: '플랜지 외면에서 베어링 중심까지의 축방향 거리를 정한다. 자동값은 선택한 위치의 조립 치수 근사다. 반경력 × 레버암을 플랜지 모멘트와 동방향으로 합산한다.',
+    why: '같은 관절 외력이라도 베어링 중심에 생기는 모멘트가 달라져 베어링 하중과 마지막 단의 치폭 정렬(5-4)이 바뀐다.',
     rows: [['D', 'sel', 'struct.obPos', '출력 베어링 위치', { o: [['inside', '2단 기어 폭 안'], ['outside', '2단 출력측 바깥'], ['flange', '출력 플랜지 쪽']] }],
-      ['P', '출력 베어링 기울기 → fsh', c => rows(c).length ? `${f(c.R.outBearing?.tiltRated, 3)}′ → ${f(Math.max(...rows(c).map(r => r.f.fshOB || 0)), 2)} µm` : '—', '롤러 분포 모델 기울기 × 치폭'],
+      ['M', 'num', 'struct.obMomentArm', '플랜지 하중면–베어링 중심 거리 mm (빈칸 = 자동)'],
+      ['P', '레버암 · 베어링 모멘트', c => c.R?.outBearing ? `${f(c.R.outBearing.support?.arm)} mm · ${f(c.R.outBearing.momentNm)} N·m` : '—', '플랜지 M + Fr × 거리, 동방향 가정'],
+      ['P', '출력 베어링 기울기 → fsh', c => c.R?.outBearing?.roll ? `${f(c.R.outBearing.roll.rated.tiltArcmin, 3)}′ → ${f(Math.max(...rows(c).map(r => r.f.fshOB || 0)), 2)} µm` : '롤러 분포 모델 미적용', '롤러 모델 기울기 × cos(압력각) × 치폭'],
       ['J', 'asm', '선택한 위치에서 조립 순서(8-7)가 성립하는지 확인했다']],
     up: ['1-5'], k: '판정은 7-6·5-4에서' };
   I['2-9'] = { what: '단별 유성기어 개수(3·4·5…)를 정한다.',
@@ -261,12 +265,13 @@
       ['C', 'KHβ (최대)', c => rows(c).length ? f(mx(c, 'KHb'), 3) : '—', 'ISO 6336-1 부록 E']],
     up: ['4-5'], k: '판정은 5-4에서' };
   I['4-7'] = { what: '원주 백래시(치합 유격)를 정하고 출력 백래시를 예측·측정한다.',
-    how: '단별 원주 백래시 jt를 출력축 각도로 환산해 합산한다. 링 압입 수축(8-2)은 백래시를 줄인다.',
+    how: '압입 전 원주 백래시를 입력한다. 링 내경 수축량 × tan(내접 작용 압력각)을 유성–링 치합에서 빼고 출력축으로 환산한다.',
     why: '백래시 0은 열팽창·편심에서 걸림을, 과대는 위치 정밀도 저하(1-8)를 부른다.',
-    rows: [['D', 'num', 'stages.{i}.jt.0', '{s}단 썬–유성 백래시 µm', { st: 1 }], ['D', 'num', 'stages.{i}.jt.1', '{s}단 유성–링 백래시 µm', { st: 1 }],
+    rows: [['D', 'num', 'stages.{i}.jt.0', '{s}단 썬–유성 원주 백래시 µm', { st: 1 }], ['D', 'num', 'stages.{i}.jt.1', '{s}단 유성–링 압입 전 원주 백래시 µm', { st: 1 }],
+      ['P', '압입 후 유성–링 백래시', c => c.R?.backlash?.stages.map(s => `${s.stage}단 ${f(s.ringClearance, 2)} µm`).join(' · ') || '—', '0 이하는 조립 간섭 검토'],
       ['P', '출력 백래시', c => c.R?.backlash ? `${f(c.R.backlash.arcmin, 2)} arcmin` : '—', '단별 jt → 출력축 환산 합'],
       ['M', 'num', 'verify.blMeas', '측정 백래시 arcmin (시제품)']],
-    w: ['bl'], up: ['8-2', '4-5'], k: '백래시 ≤ 목표 (1-8)', ok: c => c.R?.backlash ? c.R.backlash.arcmin <= c.D.req.backlashMax : null };
+    w: ['bl'], up: ['8-2', '4-5'], k: '유성–링 잔여 > 0, 출력 백래시 ≤ 목표', ok: c => c.R?.backlash ? c.R.backlash.fitValid && !c.R.backlash.interference && c.R.backlash.arcmin <= c.D.req.backlashMax : null };
 
   // ============================================================== 5 하중계수·기어 강도
   I['5-1'] = { what: '단별 썬·캐리어 토크, 유성당 접선력, 상대 회전수를 확인한다.',
@@ -295,10 +300,15 @@
     why: '정밀도가 낮고 물림률이 클수록 커진다.',
     rows: [['C', 'KHα (최대)', c => rows(c).length ? f(mx(c, 'KHa'), 3) : '—', 'ISO 6336-1 §8']], w: ['kf'], up: ['4-5', '4-2'], k: '판정 없음' };
   I['5-6'] = { what: '유성 간 하중분배계수 Kγ를 확인한다.',
-    how: '유성 위치 공차·치합 강성·핀 강성·썬 지지 강성·유격의 힘 평형(에너지 최소)으로 계산한다. AGMA 6123 표나 직접 입력도 고를 수 있다.',
+    how: 'Kγ = 최대 유성 경로 하중 ÷ 평균. 지름 공차대는 절반을 편측 투영 상한으로 쓴다. 결정론 계산에서 유성 1개의 선행을 가정하며, 썬 지지·핀과 치합의 탄성 평형을 푼다. AGMA 참조 또는 직접 입력도 가능하다.',
     why: '가장 많이 걸린 유성이 강도를 정한다. 유성 수(2-9)·지지(2-7)·공차(D3)가 모두 여기로 모인다.',
     rows: [['A', 'sel', 'loads.kgMode', 'Kγ 산정 방식', { o: [['model', '물리 모델 (권장)'], ['agma', 'AGMA 6123 표'], ['fixed', '직접 입력']] }],
-      ['A', 'num', 'loads.kgFixed', 'Kγ 직접 입력값', { if: D => D.loads.kgMode === 'fixed' }], ['D', 'num', 'loads.posError', '유성 위치 공차 ± µm'],
+      ['A', 'num', 'loads.kgFixed', 'Kγ 직접 입력값', { if: D => D.loads.kgMode === 'fixed' }], ['D', 'sel', 'loads.posErrorType', '유성 핀 홀 위치공차 표기', { o: [['projected', '편측 투영 ±'], ['diametral', '지름 공차대 Ø']] }],
+      ['D', 'num', 'loads.posError', '유성 핀 홀 위치공차 µm'],
+      ['M', 'num', 'loads.pathRunIn', '길들이기 후 유효 경로 오차 감소율 % (빈칸 = 0)'],
+      ['A', 'num', 'stages.{i}.bearing.clearanceCompliance', '{s}단 유성 베어링 착좌 후 컴플라이언스 µm/N (빈칸 = 0)', { st: 1 }],
+      ['A', 'num', 'stages.{i}.pin.fitCompliance', '{s}단 핀–홀 결합 착좌 후 컴플라이언스 µm/N (빈칸 = 0)', { st: 1 }],
+      ['P', '유성별 접선력', c => (c.R?.rated?.stages || []).filter(s => s.KgPaths).map(s => `${s.i + 1}단 ${s.KgPaths.map(x => f(x, 1)).join(' / ')} N`).join(' · ') || '—', '힘 평형 모델, 간극과 착좌 후 변형을 구분'],
       ['P', 'Kγ', c => (c.R?.rated?.stages || []).map((s, i) => `${i + 1}단 ${f(s.Kg, 3)}`).join(' · ') || '—', '힘 평형 모델 / AGMA 표']],
     w: ['kf'], up: ['2-7', '2-9', '2-5', 'D3'], k: 'Kγ ≤ 1.3', ok: c => (c.R?.rated?.stages || []).length ? c.R.rated.stages.every(s => s.Kg <= 1.3) : null };
   I['5-7'] = { what: '치면 피팅 안전율 SH를 목표와 비교한다.',
@@ -406,12 +416,13 @@
     rows: [['D', 'num', 'req.s0', '베어링 정적 s0 목표'], ['C', 'L10 (스펙트럼)', c => vd(c, '유성 베어링 L10 (스펙트럼)'), 'ISO 281'], ['C', 's0 (피크)', c => vd(c, '유성 베어링 정적 s0 (피크)'), 'C0/P0']],
     w: ['brgPlanet'], up: ['7-1', '7-2', '5-6'], k: 'L10 ≥ 목표 수명, s0 ≥ 목표', ok: c => { const v = c.R?.verdict; if (!v) return null; return ['유성 베어링 L10 (스펙트럼)', '유성 베어링 정적 s0 (피크)'].every(k => v.find(x => x.k === k)?.ok !== false); } };
   I['7-4'] = { what: '썬을 받치는 지지 베어링과 축 치수를 정한다.',
-    how: '1단 = 입력 중공축 지지 베어링, 2단 = C1을 받치는 베어링. 지지 강성 = 베어링 반경 강성 ⊕ 축 굽힘 강성 (직렬), 유격 포함.',
+    how: '1단 = 입력 중공축 지지 베어링, 2단 = C1을 받치는 베어링. 베어링 반경 강성과 축 굽힘 강성은 직렬이다. C1 양측은 베어링을 병렬로 근사하며, 두 번째 베어링 강성이 비면 첫 번째와 같은 값을 쓴다.',
     why: '지지 강성·유격이 Kγ(5-6)를 정한다. 강성이 무한이면 완전 고정, 0이면 플로팅.',
     rows: [['M', 'num', 'loads.sunSupport.{i}.bearingK', '{s}단 지지 베어링 반경 강성 N/µm (카탈로그·측정)', { st: 1, if: (D, i) => D.loads.sunSupport?.[i]?.mode === 'structure' }],
+      ['M', 'num', 'loads.sunSupport.1.rearBearingK', '2단 후측 지지 베어링 반경 강성 N/µm (빈칸 = 전측과 동일)', { if: D => D.config.stages > 1 && D.struct.c1Support === 'both' && D.loads.sunSupport[1].mode === 'structure' }],
       ['D', 'num', 'loads.sunSupport.{i}.od', '{s}단 축 외경 mm', { st: 1, if: (D, i) => D.loads.sunSupport?.[i]?.mode === 'structure' }], ['D', 'num', 'loads.sunSupport.{i}.id', '{s}단 축 내경 mm (중공)', { st: 1, if: (D, i) => D.loads.sunSupport?.[i]?.mode === 'structure' }],
       ['D', 'num', 'loads.sunSupport.{i}.overhang', '{s}단 베어링 → 치폭 중앙 mm', { st: 1, if: (D, i) => D.loads.sunSupport?.[i]?.mode === 'structure' }],
-      ['A', 'num', 'loads.sunSupport.{i}.k', '{s}단 썬 지지 반경 강성 N/µm (직접)', { st: 1, if: (D, i) => D.loads.sunSupport?.[i]?.mode !== 'structure' }], ['A', 'num', 'loads.sunSupport.{i}.play', '{s}단 반경 유격 µm (베어링 틈새)', { st: 1 }],
+      ['A', 'num', 'loads.sunSupport.{i}.k', '{s}단 썬 지지 반경 강성 N/µm (직접)', { st: 1, if: (D, i) => D.loads.sunSupport?.[i]?.mode !== 'structure' }], ['A', 'num', 'loads.sunSupport.{i}.play', '{s}단 지지부 편측 반경 이동량 µm (빈칸 = 0 가정)', { st: 1 }],
       ['P', '지지 강성', c => S(c).map((s, i) => { try { const k = globalThis.PGD.sunSupportK(c.D, i); return `S${i + 1} ${f(k.k, 1)}${k.kShaft ? ` (축 ${f(k.kShaft, 0)})` : ''} N/µm`; } catch (e) { return ''; } }).join(' · '), '직렬 강성 1/k = 1/k_brg + 1/k_shaft']],
     up: ['2-7', '1-7'], k: '판정은 5-6에서' };
   I['7-5'] = { what: '출력 메인 베어링(크로스 롤러)의 형식·크기·정격을 정한다.',
@@ -445,7 +456,8 @@
     how: 'Lamé 두꺼운 원통: p = δ / (d·[(1/Eo)((c²+b²)/(c²−b²)+νo) + (1/Ei)((b²+a²)/(b²−a²)−νi)]). 전달 T = μ·p·π·d·L·d/2. 링 내경 수축 → 원주 백래시 감소.',
     why: '죔새가 작으면 링이 돌고, 크면 하우징이 항복하고 링이 줄어 백래시(4-7)가 없어진다.',
     rows: [['D', 'num', 'struct.ringFit.delta', '압입 죔새 (지름) mm', { if: D => D.struct.ringHousing === 'press' }], ['A', 'num', 'struct.ringFit.mu', '마찰계수', { if: D => D.struct.ringHousing !== 'integral' }],
-      ['M', 'num', 'struct.ringFit.E', '하우징 탄성계수 E MPa (재료 시험서)', { if: D => D.struct.ringHousing === 'press' }], ['M', 'num', 'struct.ringFit.Sy', '하우징 항복 MPa (재료 시험서)', { if: D => D.struct.ringHousing === 'press' }],
+      ['M', 'num', 'struct.ringFit.E', '하우징 탄성계수 E MPa (재료 시험서)', { if: D => D.struct.ringHousing === 'press' }],       ['M', 'num', 'struct.ringFit.nu', '하우징 푸아송비 ν', { if: D => D.struct.ringHousing === 'press' }],
+['M', 'num', 'struct.ringFit.Sy', '하우징 항복 MPa (재료 시험서)', { if: D => D.struct.ringHousing === 'press' }],
       ['D', 'num', 'struct.ringFit.boltN', '볼트 수', { if: D => D.struct.ringHousing === 'bolt' }], ['D', 'num', 'struct.ringFit.boltD', '볼트 호칭 M', { if: D => D.struct.ringHousing === 'bolt' }],
       ['C', '면압 · 전달 · 수축 · 응력', c => ck(c, '8-2'), 'Lamé']],
     up: ['2-4', '8-1'], k: '전달 ≥ 필요 × 1.5, 하우징 응력 ≤ 항복/1.5' };
@@ -479,7 +491,7 @@
   I['9-1'] = { what: '기어별 재료·열처리(침탄·질화·고주파·조질)와 경도·경화 깊이를 정한다.',
     how: 'ISO 6336-5 재료선: 재료군·표면 경도·품질 등급으로 σHlim·σFlim이 정해진다. 아래 표에서 부품별로 입력.',
     why: '허용응력이 SH·SF(5-7·5-8)와 필요 모듈(3-6)을 바로 바꾼다. 원가(D5)도 크게 바뀐다.',
-    rows: [['J', 'spec', '열처리 사양서(경도·유효 경화층·심부 경도)를 재료 표 값과 대조했다'], ['M', 'str', 'verify.hardMeas', '시제품 경도 측정값 (HRC, 부위별)']],
+    rows: [['A', '기본 재료 상태', () => '재질 미확정 · 예제 NV 질화강', '실제 강종·열처리·경도·경화층 확인 필요'], ['M', 'str', 'verify.materialSpec', '실제 강종·열처리 근거 (성적서 / 도면)'], ['J', 'spec', '열처리 사양서(경도·유효 경화층·심부 경도)를 재료 표 값과 대조했다'], ['M', 'str', 'verify.hardMeas', '시제품 경도 측정값 (HRC, 부위별)']],
     w: ['mat'], k: '재료 경고 없음' , ok: c => S(c).length ? S(c).every(s => s.mats.every(m => !m.warnings.length)) : null };
   I['9-2'] = { what: '재료 품질 등급(ML·MQ·ME)을 정한다.',
     how: 'ISO 6336-5: 같은 경도라도 품질 관리(청정도·결정립·경화층 관리) 수준에 따라 허용응력이 다르다. ME는 증빙이 필요하다.',
@@ -615,7 +627,7 @@
   I['D3'] = { what: '공차 배분이 강도에 주는 영향을 확인한다.',
     how: '유성 위치 공차(5-6)와 정밀도 등급(4-5)이 Kγ·KHβ에 들어가는 결과를 본다. 입력은 해당 항목에서만 바꾼다.',
     why: '공차를 풀면 원가는 내려가지만 Kγ가 올라 강도가 떨어진다.',
-    rows: [['C', '공차 → Kγ', c => ck(c, 'D3'), '5-6 모델'], ['C', '현재 공차', c => `유성 위치 ±${c.D.loads.posError} µm (5-6) · 정밀도 ${c.D.stages.slice(0, c.D.config.stages).map(s => 'N' + s.grade).join('/')} (4-5)`, '입력은 5-6·4-5']],
+    rows: [['C', '공차 → Kγ', c => ck(c, 'D3'), '5-6 모델'], ['C', '현재 공차', c => `유성 위치 ${c.D.loads.posErrorType === 'diametral' ? 'Ø' : '±'}${c.D.loads.posError} µm (5-6) · 정밀도 ${c.D.stages.slice(0, c.D.config.stages).map(s => 'N' + s.grade).join('/')} (4-5)`, '입력은 5-6·4-5']],
     up: ['5-6', '4-5'], k: 'Kγ ≤ 1.3' };
   I['D4'] = { what: '최소 두께(림·판·벽·포켓)로 가공 가능 여부를 검사한다.',
     how: '썬·유성 림 ≥ 1.2·h, 링 림 ≥ 3.5·m, 하우징 벽 ≥ 0.8, 캐리어 판 ≥ 1, 포켓 ≥ 2 mm.',
