@@ -16,6 +16,7 @@ const set = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((o, 
 
 function compute() {
   ensureD();
+  if (window.PGDChecks) { PGDChecks.ensure(D); PGDChecks.applyNeedles(D); }
   try { R = E.analyze(D); } catch (e) { R = { errors: ['계산 오류: ' + e.message], warns: [] }; console.error(e); }
   MC = null; SENS = null;
 }
@@ -50,7 +51,7 @@ const STEPS = [
   ['s3', '기어설계', '4. 제원–형상'], ['s4', '', '5. 치형 검사'], ['s5', '', '6. 정밀도–치형 수정'],
   ['s7', '구조 해석–강도', '7. 하중 계수'], ['s8', '', '8. 기어 강도'], ['s9', '', '9. 베어링'], ['scar', '', '10. 캐리어–핀'],
   ['shous', '', '11. 하우징–커버·부품 형상'], ['smat', '', '12. 소재'],
-  ['s10', '검증', '13. 성능 예측'], ['s11', '', '14. 가상 검증'], ['reg', '', '15. 가정 대장']
+  ['s10', '검증', '13. 성능 예측'], ['s11', '', '14. 가상 검증'], ['reg', '', '15. 가정 대장'], ['out', '', '출력물·가공·원가']
 ];
 function status(id) {
   if (!R || R.errors?.length) return ['s3', 's4', 'overview'].includes(id) ? 'bad' : '';
@@ -70,9 +71,10 @@ function status(id) {
 }
 // ------------------------------------------------------------------ design process (PGDProc)
 const VIEW_TITLE = { s1: '요구사양', s2: '구성–감속비', s3: '제원–형상', s4: '치형 검사', s5: '정밀도–치형 수정', s7: '하중 계수', s8: '기어 강도',
-  scar: '캐리어–핀', s9: '베어링', shous: '하우징–커버·부품 형상', smat: '소재', s10: '성능 예측', s11: '가상 검증', reg: '가정 대장' };
+  scar: '캐리어–핀', s9: '베어링', shous: '하우징–커버·부품 형상', smat: '소재', s10: '성능 예측', s11: '가상 검증', reg: '가정 대장', out: '출력물·가공·원가' };
 function procExtra() {
   const X = { MC };
+  try { if (window.PGDChecks && R && !R.errors?.length) X.CK = PGDChecks.compute(R, D, { MC }); } catch (e) { console.error(e); }
   try { if (window.PGD3D && R && !R.errors?.length) { ensureD(); const pl = PGD3D.partsList(R, D); X.parts = pl.length; X.mass = pl.reduce((s, p) => s + (p.mass || 0) * (p.qty || 1), 0) * 1000; } } catch (e) { }
   return X;
 }
@@ -82,7 +84,7 @@ function renderRail() {
   const E = procEval();
   const btn = (id, t, sub) => `<button data-v="${id}" aria-current="${view === id}" class="${sub ? 'sub' : ''}"><span class="dot ${status(id)}"></span>${t}</button>`;
   $('#rail').innerHTML = btn('overview', '종합판정') + btn('proc', '설계 공정 체크리스트') +
-    E.filter(g => g.views.length && g.n !== 12).map(g => `<div class="grp pg"><span class="dot ${gateCls(g.gate.ok)}"></span>${g.n} ${esc(g.name)}<small>${g.done}/${g.total}</small></div>` +
+    E.filter(g => g.views.length && g.n !== 'D').map(g => `<div class="grp pg"><span class="dot ${gateCls(g.gate.ok)}"></span>${g.n} ${esc(g.name)}<small>${g.done}/${g.total}</small></div>` +
       g.views.map(v => btn(v, VIEW_TITLE[v] || v, true)).join('')).join('');
   $('#rail').querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.v));
 }
@@ -107,6 +109,7 @@ function render(keepScroll) {
   m.className = view === 'overview' ? 'wide' : '';
   m.innerHTML = (VIEWS[view] || VIEWS.overview)();
   if (view !== 'proc' && view !== 'overview') { const s = procStrip(view); if (s) m.insertAdjacentHTML('afterbegin', s); }
+  if (view !== 'proc') { const c = procCards(view); if (c) { m.insertAdjacentHTML('beforeend', c); bindProcCards(m); } }
   bindInputs(m);
   (AFTER[view] || (() => { }))(m);
   if (keepScroll) window.scrollTo(0, y);
@@ -120,6 +123,77 @@ function procStrip(v) {
   const its = PGDProc.viewItems(E, v); if (!its.length) return '';
   return `<details class="pstrip"><summary>이 화면의 설계 공정 항목 <b>${its.map(i => i.id).join(' · ')}</b></summary>
     <ul>${its.map(i => `<li><span class="pid">${i.id}</span>${esc(i.t)}<span class="kchip ${KIND_CLS[i.kind]}">${PGDProc.KIND[i.kind]}</span><span class="pval">${i.val != null ? esc(String(i.val)) : ''}</span>${okMark(i.ok)}</li>`).join('')}</ul></details>`;
+}
+// ------------------------------------------------------------------ process item cards (checks.js)
+function fldHTML([type, path, label, opts, t2], i) {
+  const p = path.replace('{i}', i), l = label.replace('{s}', i + 1);
+  if (type === 'num') return num(p, l);
+  if (type === 'sel') return sel(p, l, opts, t2 ? { type: t2 } : {});
+  if (type === 'chk') return chk(p, l);
+  if (type === 'str') return `<label class="f">${l}<input type="text" data-p="${p}" data-t="str" value="${esc(get(p) ?? '')}"></label>`;
+  return '';
+}
+function procCards(v) {
+  if (!window.PGDChecks || !R || R.errors?.length) return '';
+  const F = PGDChecks.FORMS, X = procExtra(), CK = X.CK || {}, E = PGDProc.evaluate(R, D, X);
+  const items = Object.fromEntries(E.flatMap(g => g.items).map(i => [i.id, i]));
+  const ids = Object.keys(F).filter(id => F[id].view === v);
+  if (!ids.length) return '';
+  const nst = R.ctx.stages.length;
+  const card = id => {
+    const fm = F[id], it = items[id] || {}, ck = CK[id] || {};
+    const fields = fm.stage ? Array.from({ length: nst }, (_, i) => fm.f.map(x => fldHTML(x, i)).join('')).join('') : fm.f.map(x => fldHTML(x, 0)).join('');
+    return `<div class="card pcx" id="pc-${id}"><div class="ph"><h3><span class="pid">${id}</span> ${esc(fm.title)}</h3><span>${it.kind ? `<span class="kchip ${KIND_CLS[it.kind]}">${PGDProc.KIND[it.kind]}</span>` : ''} ${okMark(it.ok ?? ck.ok)}</span></div>
+      ${fields ? `<div class="grid g4">${fields}</div>` : ''}
+      <p class="pres">${esc(ck.val ?? it.val ?? '—')}</p>${ck.html || ''}${extraHTML(id, ck)}</div>`;
+  };
+  return `<h3 style="margin:28px 0 8px">설계 공정 항목 (이 화면)</h3>` + ids.map(card).join('');
+}
+function extraHTML(id, ck) {
+  const tbl = (head, rows) => `<table class="ptbl"><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</table>`;
+  if (id === '3-6' && ck.req) return tbl(['단', '현재 m', '필요 m', '지배', '규격'], ck.req.filter(Boolean).map((q, i) => [`${i + 1}단`, q.m, fmt(q.mr, 3), q.mode, `<b class="${q.m >= q.mr ? 'good' : 'bad'}">${q.std}</b>`]));
+  if (id === '7-2' && ck.res) return tbl(['단', 'Dw×Lw', 'Z (최대)', 'C / C0 N', '경도 보정', '유성 보어', '유성 림'], ck.res.map((r, i) => r ? [`${i + 1}단`, `${r.Dw}×${fmt(r.Lw, 1)}`, `${r.Z} (${r.Zmax})`, `${fmt(r.C, 0)} / ${fmt(r.C0, 0)}`, `×${fmt(r.fH, 2)}`, `Ø${fmt(r.bore, 2)}`, `<b class="${r.rimOk ? 'good' : 'bad'}">${fmt(r.rim, 2)}</b>`] : [`${i + 1}단`, '기성', '', '', '', '', '']));
+  if (id === 'D4' && ck.th) return tbl(['부위', '두께 mm', '최소 mm', ''], ck.th.map(([n, v, mn]) => [n, fmt(v, 2), fmt(mn, 2), v >= mn - 1e-3 ? '<b class="good">✓</b>' : '<b class="bad">✗</b>']));
+  if (id === 'D5' && ck.cost) return tbl(['부품', '소재', '가공', '열처리', '합계 원'], ck.cost.items.map(x => [esc(x.name), Math.round(x.material).toLocaleString('ko-KR'), Math.round(x.mach).toLocaleString('ko-KR'), Math.round(x.heat).toLocaleString('ko-KR'), `<b>${Math.round(x.total).toLocaleString('ko-KR')}</b>`])) + '<p class="note">가공 시간·셋업·열처리 단가는 가정값입니다. 견적 단가로 바꾸면 순위와 합계가 바로 갱신됩니다.</p>';
+  if (id === 'D6' && ck.sug) return ck.sug.length ? `<ul class="sug">${ck.sug.map(s => `<li>${esc(s.t)} <span class="x">약 ${s.v.toLocaleString('ko-KR')} 원/대 절감</span></li>`).join('')}</ul><p class="note">절감안을 적용하면 강도·공차가 바뀔 수 있으니 해당 단계로 돌아가 재검토하세요.</p>` : '';
+  if (id === '12-2') return `<div class="row"><button class="btn" data-copy="sw">솔리드웍스 전역변수 복사</button><button class="btn" data-copy="cq">CadQuery 스크립트 복사</button><span class="x" id="copyMsg"></span></div><details><summary class="x">미리보기</summary><pre class="code">${esc(swVars())}</pre></details>`;
+  if (id === '12-4') return datasheetHTML();
+  if (id === '12-5') return `<ul class="sug">${Object.entries({ '링–하우징': D.struct.ringHousing, 'C1–S2': D.struct.c1s2, 'S1–모터축': D.struct.s1motor, 'C1 지지': D.struct.c1Support, '출력 베어링 위치': D.struct.obPos }).map(([k, v]) => `<li>${k}: <b>${esc(v)}</b></li>`).join('')}<li>가정 대장 ${R.register?.length || 0}개 — <a href="#reg">가정 대장 화면</a></li></ul>`;
+  return '';
+}
+function datasheetHTML() {
+  const X = procExtra(), ck = X.CK || {}, v = k => R.verdict.find(x => x.k === k);
+  const rows = [['감속비', `${fmt(R.ratio, 3)} : 1`], ['정격 토크 (ISO 설계 판정)', `${fmt(R.reducerCap, 2)} N·m`], ['현실 예측 P50', MC ? `${fmt(MC.capacity.p50, 1)} N·m` : '가상 검증 실행 후'], ['피크 정적 안전율', fmtV(v('피크 토크 정적 안전율'))],
+    ['효율 (정격)', fmtV(v('효율 (정격, 추정)'))], ['백래시', fmtV(v('출력 백래시 (추정)'))], ['비틀림 강성', `${fmt(R.stiffness?.NmPerArcmin, 1)} N·m/arcmin`], ['출력 베어링 L10', fmtV(v('출력 베어링 L10'))],
+    ['외경 × 길이', ck['1-6'] ? `Ø${fmt(ck['1-6'].Dout, 1)} × ${fmt(ck['1-6'].Lt, 1)} mm` : '—'], ['중량', X.mass ? `${fmt(X.mass, 0)} g` : '—'], ['정격 운전 온도', ck['10-6'] ? `${fmt(ck['10-6'].T, 1)} °C` : '—'], ['추정 원가', ck.D5?.cost ? `${Math.round(ck.D5.cost.total).toLocaleString('ko-KR')} 원/대` : '—']];
+  return `<table class="ptbl ds">${rows.map(([k, x]) => `<tr><th>${k}</th><td>${x}</td></tr>`).join('')}</table>`;
+}
+function swVars() {
+  const L = window.PGD3D ? PGD3D.layout(R, D) : null, out = [];
+  R.ctx.stages.forEach((s, i) => { const n = i + 1, st = s.st; out.push(`"m${n}" = ${st.m}`, `"zs${n}" = ${st.s}`, `"zp${n}" = ${st.p}`, `"zr${n}" = ${st.s + 2 * st.p}`, `"b${n}" = ${st.b}`, `"beta${n}" = ${st.beta}`, `"np${n}" = ${st.n}`, `"xs${n}" = ${st.xs}`, `"xp${n}" = ${st.xp}`, `"pin_d${n}" = ${st.pin.d}`); if (L) out.push(`"orbit_r${n}" = ${fmt(L.S[i].a, 4)}`, `"sun_bore${n}" = ${fmt(L.S[i].sunBore, 3)}`, `"planet_bore${n}" = ${fmt(L.S[i].planetBore, 3)}`); });
+  if (L) out.push(`"ring_od" = ${fmt(L.ringOD, 3)}`, `"housing_od" = ${fmt(2 * L.housR, 3)}`, `"flange_od" = ${fmt(2 * L.flangeR, 3)}`, `"hollow_d" = ${fmt(2 * L.hollowR, 3)}`, `"xroller_dp" = ${D.outBearing.dp}`, `"bolt_n" = ${D.housing.boltN}`, `"bolt_m" = ${D.housing.boltD}`);
+  return out.join('\n');
+}
+function cqScript() {
+  const L = PGD3D.layout(R, D), S = R.ctx.stages, n = x => fmt(x, 4);
+  const g = [];
+  g.push('# 유성감속기 설계실에서 생성한 CadQuery 스크립트 (기어는 피치원 원통 근사, 치형은 cq_gears로 교체 가능)', 'import cadquery as cq', 'parts = {}');
+  S.forEach((s, i) => { const k = i + 1, st = s.st, x = L.S[i]; g.push(
+    `# ${k}단`, `parts["S${k}"] = cq.Workplane("XY").workplane(offset=${n(x.z0)}).circle(${n(st.m * st.s / 2)}).circle(${n((x.sunBore || 0) / 2 || 0.01)}).extrude(${n(st.b)})`,
+    `for j in range(${st.n}):`, `    a = j * 360 / ${st.n}`,
+    `    parts[f"P${k}_{j+1}"] = (cq.Workplane("XY").workplane(offset=${n(x.z0)}).center(${n(x.a)}, 0).circle(${n(st.m * st.p / 2)}).circle(${n(x.planetBore / 2)}).extrude(${n(st.b)}).rotate((0,0,0),(0,0,1),a))`); });
+  g.push(`parts["R"] = cq.Workplane("XY").circle(${n(L.ringOD / 2)}).circle(${n(S[0].st.m * (S[0].st.s + 2 * S[0].st.p) / 2)}).extrude(${n(L.gearEnd)})`,
+    `parts["housing"] = cq.Workplane("XY").workplane(offset=${n(L.zIn)}).circle(${n(L.housR)}).circle(${n(L.ringOD / 2)}).extrude(${n(L.zFlange[1] - L.zIn)})`,
+    'asm = cq.Assembly()', 'for k, v in parts.items(): asm.add(v, name=k)', 'asm.save("reducer.step")');
+  return g.join('\n');
+}
+function bindProcCards(m) {
+  m.querySelectorAll('.pcx [data-copy]').forEach(b => b.onclick = async () => {
+    const txt = b.dataset.copy === 'sw' ? swVars() : cqScript(), msg = m.querySelector('#copyMsg');
+    try { await navigator.clipboard.writeText(txt); if (msg) msg.textContent = '복사됨'; }
+    catch (e) { const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); if (msg) msg.textContent = '복사됨'; } catch (e2) { if (msg) msg.textContent = '복사 실패 — 미리보기에서 선택해 복사하세요'; } ta.remove(); }
+  });
+  m.querySelectorAll('.pcx [data-p]').forEach(elm => { if (!elm.dataset.bound) { elm.dataset.bound = 1; } });
 }
 function procView() {
   const E = procEval();
@@ -141,6 +215,7 @@ const VIEWS = {
   shous() { return housingView(); },
   overview() { return overviewView(); },
   proc() { return procView(); },
+  out() { return head('출력물 · 가공 · 원가', '12단계 출력물과 가공·원가 병행 트랙(D1~D6)입니다. 원가는 가정 단가로 계산한 추정치이며, 실제 견적 단가로 바꿔 넣으면 그대로 반영됩니다.'); },
   overviewOld() {
     if (!R || R.errors?.length) return head('종합 판정', '입력에 오류가 있어 계산하지 못했습니다.') + errBox();
     const tgt = D.req.Trated, cap = R.capacityLife;
