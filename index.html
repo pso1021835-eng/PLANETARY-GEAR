@@ -273,6 +273,19 @@ body.mapmode main{max-width:none;padding:12px 14px 14px}.maphost{height:calc(100
 .mp-rels2{margin:10px 0 2px;display:flex;flex-direction:column;gap:6px}.mp-rels2>div{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.mp-rels2 .rl{font-size:11.5px;color:var(--mute);min-width:52px}.mp-rels2 .rc{border:1px solid #f1c9b6;background:var(--panel)6f1;color:#b3491c;border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer}.mp-rels2 .rc:hover{background:#ffe9de}
 .mp.fl .stb{rx:10px}.mp.fl .mp-back{fill:#9aaec4;font-size:15px}.mp.fl .mp-backp{stroke:var(--acc);stroke-width:2.6;stroke-dasharray:10 7;fill:none;pointer-events:none}
 
+/* ---- PR15: 3D viewer on the warm dark stage */
+#viewer{background:#1a130e;border-color:var(--rule);border-radius:12px}
+#viewer{--ink:#f3eadb;--text:#dccdb6;--mute:#a59078;--rule:rgba(205,165,110,.16);--panel:#1f1813;--soft:#281f18;--brick:#d9a25c;color:var(--text)}
+#viewer .v3-bom,#viewer .v3-card,#viewer .v3-pop,#viewer .v3-menu,#viewer .v3-bar{background:rgba(24,18,14,.86);border:1px solid var(--line2);box-shadow:0 24px 50px -22px #000}
+#viewer .v3-bom tr[data-id]:hover td{background:rgba(217,162,92,.08)}#viewer .v3-bom tr.sel td{background:rgba(217,162,92,.16)}
+#viewer .btn{background:var(--bg-deep);border:1px solid var(--line2);color:var(--ink)}#viewer .btn:hover{background:var(--raised);border-color:var(--acc)}#viewer .btn.on{border-color:var(--acc);color:var(--acc);background:rgba(217,162,92,.1)}
+#viewer .btn.primary{background:var(--acc);color:#1a130d;border-color:var(--acc)}#viewer .btn.primary:hover{background:#e6b472}
+#viewer .v3-bar .sep{background:var(--line2)}
+#viewer .dims input,#viewer .v3-menu input,#viewer .v3-menu select{background:var(--bg-deep);border:1px solid var(--line2);color:var(--ink)}#viewer .dims input:disabled{background:transparent;color:var(--mute)}#viewer .dims input::placeholder{color:#7d6c5a}
+#viewer .v3-menu button:hover{background:rgba(217,162,92,.1)}
+#viewer .v3-lab{background:rgba(24,18,14,.9);border:1px solid var(--line2);color:var(--ink);box-shadow:0 10px 24px -10px #000}#viewer .v3-lab b{background:var(--acc);color:#1a130d}
+#viewer .v3-lead polyline{stroke:#d9a25c;opacity:.55}#viewer .v3-lead circle{fill:var(--acc);stroke:#1a130e}
+#viewer .good{color:var(--okt)}#viewer .bad{color:#e0644a}
 /* ================= PR14: warm dark theme + supply-chain style design map ================= */
 body{background:var(--bg) radial-gradient(90% 60% at 50% -10%,rgba(217,162,92,.08),transparent 60%) fixed}
 .bad{color:var(--brick)}.good{color:var(--okt)}tr.bad td{color:var(--brick)}.tag.모델{color:var(--okt)}
@@ -341,7 +354,7 @@ nav.rail button.stg[aria-current="true"] .sn{background:var(--acc);color:#1a130d
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="carrier-geometry.js"></script>
 <script src="engine.js?v=pr7-6"></script>
-<script src="viewer3d.js?v=pr7-6"></script>
+<script src="viewer3d.js?v=pr15-1"></script>
 <script src="drawings.js?v=pr8-1"></script>
 <script src="checks.js?v=pr9-1"></script>
 <script src="process.js?v=pr9-1"></script>

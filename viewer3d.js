@@ -284,12 +284,14 @@
     renderer.localClippingEnabled = true;
     host.prepend(renderer.domElement);
     const scene = new TH.Scene();
-    const prefs = Object.assign({ bg: '#f3f0ea', shade: 'pbr', light: 1, lightAz: 35 }, D.view || {});
-    if (prefs.bg === '#17181a' || prefs.bg === '#e8eaed') prefs.bg = '#f3f0ea'; // older defaults → studio cream
+    const prefs = Object.assign({ bg: '#1a130e', shade: 'pbr', light: 1, lightAz: 35 }, D.view || {});
+    if (['#17181a', '#e8eaed', '#f3f0ea'].includes(prefs.bg)) prefs.bg = '#1a130e'; // older defaults → warm dark stage
     // studio backdrop: soft radial light falling off to a slightly deeper tone of the chosen colour
     const paintBg = () => {
-      const c = new TH.Color(prefs.bg), hi = c.clone().lerp(new TH.Color(0xffffff), .55), lo = c.clone().multiplyScalar(.9);
-      host.style.background = `radial-gradient(120% 90% at 58% 38%, #${hi.getHexString()} 0%, #${c.getHexString()} 48%, #${lo.getHexString()} 100%)`;
+      // dark stage: a warm amber glow behind the model; light colours keep the old studio falloff
+      const c = new TH.Color(prefs.bg), dark = c.r + c.g + c.b < 1.2, hi = c.clone().lerp(new TH.Color(dark ? 0xd6a05a : 0xffffff), dark ? .22 : .55), lo = c.clone().multiplyScalar(dark ? .55 : .9);
+      host.style.background = `radial-gradient(${dark ? '70% 60% at 52% 46%' : '120% 90% at 58% 38%'}, #${hi.getHexString()} 0%, #${c.getHexString()} ${dark ? 55 : 48}%, #${lo.getHexString()} 100%)`;
+      host.classList.toggle('v3-dark', dark);
     };
     paintBg();
     scene.environment = makeEnv(renderer);
@@ -476,15 +478,19 @@
     const box = new TH.Box3().setFromObject(root), ctr = box.getCenter(new TH.Vector3()), size = box.getSize(new TH.Vector3());
     root.position.sub(ctr);
     const maxR = Math.max(size.x, size.y) / 2, len = size.z;
-    const ground = new TH.Mesh(new TH.PlaneGeometry(maxR * 30, maxR * 30), new TH.ShadowMaterial({ opacity: .14 }));
+    const ground = new TH.Mesh(new TH.PlaneGeometry(maxR * 30, maxR * 30), new TH.ShadowMaterial({ opacity: .4 }));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -maxR * 1.35 - 2; ground.receiveShadow = true; ground.visible = renderer.shadowMap.enabled; scene.add(ground);
     // soft contact shadow (works without shadow maps, e.g. on phones): radial gradient texture under the model
     const blobTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'), gr = g.createRadialGradient(128, 128, 0, 128, 128, 128);
-      gr.addColorStop(0, 'rgba(60,52,44,.42)'); gr.addColorStop(.45, 'rgba(60,52,44,.16)'); gr.addColorStop(1, 'rgba(60,52,44,0)'); g.fillStyle = gr; g.fillRect(0, 0, 256, 256); const tx = new TH.CanvasTexture(c); tx.encoding = TH.sRGBEncoding; return tx; })();
+      gr.addColorStop(0, 'rgba(214,160,90,.26)'); gr.addColorStop(.5, 'rgba(214,160,90,.09)'); gr.addColorStop(1, 'rgba(214,160,90,0)'); g.fillStyle = gr; g.fillRect(0, 0, 256, 256); const tx = new TH.CanvasTexture(c); tx.encoding = TH.sRGBEncoding; return tx; })();
     const blob = new TH.Mesh(new TH.PlaneGeometry(1, 1), new TH.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, toneMapped: false }));
-    blob.rotation.x = -Math.PI / 2; blob.position.y = ground.position.y + .05; blob.scale.set(maxR * 3.2, len * 1.3 + maxR, 1); blob.renderOrder = -1; scene.add(blob);
+    blob.rotation.x = -Math.PI / 2; blob.position.y = ground.position.y + .05; blob.scale.set(maxR * 7, len * 2.4 + maxR * 4, 1); blob.renderOrder = -1; scene.add(blob);
+    // floor grid: fine amber lines fading with distance, a lit patch under the model
+    const gridSize = Math.ceil(maxR * 14 / 10) * 10, grid = new TH.GridHelper(gridSize, gridSize / 5, 0xd6a05a, 0xd6a05a);
+    grid.material.transparent = true; grid.material.opacity = .13; grid.material.depthWrite = false; grid.material.toneMapped = false; grid.position.y = ground.position.y + .02; grid.renderOrder = -2; grid.raycast = () => { }; scene.add(grid);
+    scene.fog = new TH.Fog(new TH.Color(prefs.bg).multiplyScalar(.7).getHex(), Math.max(maxR * 2, len) * 5, Math.max(maxR * 2, len) * 14);
     // construction axis: thin dash-dot centre line through the whole assembly (stretches with the explode)
-    const axisMat = new TH.LineDashedMaterial({ color: 0x8f8a82, dashSize: 3, gapSize: 1.6, transparent: true, opacity: .55, toneMapped: false });
+    const axisMat = new TH.LineDashedMaterial({ color: 0xd6a05a, dashSize: 3, gapSize: 1.6, transparent: true, opacity: .5, toneMapped: false });
     const axisGeo = new TH.BufferGeometry().setFromPoints([new TH.Vector3(0, 0, box.min.z - ctr.z - unit * 6), new TH.Vector3(0, 0, box.max.z - ctr.z + unit * 6)]);
     const axisLine = new TH.Line(axisGeo, axisMat); axisLine.computeLineDistances(); axisLine.raycast = () => { }; scene.add(axisLine);
     // world: reducer axis = z, y up. Part centres (local to root) for focus / leader anchors
