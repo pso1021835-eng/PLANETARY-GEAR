@@ -186,6 +186,7 @@ function itemPage(id) {
     <div class="ihead"><span class="iid">${id}</span><div class="ittl"><div class="ist"><button class="lnk" data-v="st-${k}">${k === 'D' ? 'D 가공·원가' : k + '단계 · ' + esc(it.sname)}</button> · ${idx + 1} / ${O.length}</div><h2>${esc(it.t)}</h2><div class="isrc">${srcChips(id)}</div></div>
       <div class="ibadge">${rvBadge(st)}<span>${RV[st][1]}</span></div></div>
     ${errBox()}${alerts}
+    ${window.PGDStructure?.render(id, c) || ''}
     ${wwwHTML(sp)}
     ${judgeHTML(id, c)}
     <div class="isecs">${itemSections(id, c)}</div>
@@ -230,6 +231,7 @@ function stagePage(k) {
   const first = g.items.find((i, n) => sts[n] !== 'done')?.id || g.items[0].id;
   return `<div class="shead"><span class="snum">${k}</span><div><h2>${esc(k === 'D' ? '가공·원가 (병행 트랙)' : g.name)}</h2><p class="lead">항목 ${g.total}개 · 검토 완료 ${done}${stale ? ` · <b class="bad">재검토 ${stale}</b>` : ''} · 항목을 누르면 전용 페이지로 갑니다.</p></div><button class="btn primary" data-goit="${first}">${first}부터 검토 →</button></div>
     <div class="pgate ${gateCls(g.gate.ok)}">단계 게이트 · ${esc(g.gate.t)} — ${g.gate.ok === true ? '통과' : g.gate.ok === false ? '미달' : '판정 기준 없음 (설계자 확인)'}</div>
+    ${k === '2' ? window.PGDStructure?.render('overview', c) || '' : ''}
     <ol class="slist">${g.items.map((i, n) => { const sp = IT()[i.id] || {}, ok = itemOk(i.id, c); return `<li><button data-goit="${i.id}"><span class="pid">${i.id}</span><span class="st"><b>${esc(i.t)}</b><small>${esc(sp.what || '')}</small></span><span class="srcs">${srcChips(i.id)}</span><span class="pval">${esc(String(i.val ?? ''))}</span>${okMark(ok)}${rvBadge(sts[n])}</button></li>`; }).join('')}</ol>
     <div class="pager">${prev ? `<button class="btn" data-v="st-${prev}">← ${prev} ${esc(nameOf(prev))}</button>` : '<span></span>'}${next ? `<button class="btn primary" data-v="st-${next}">${next} ${esc(nameOf(next))} →</button>` : ''}</div>`;
 }
@@ -281,6 +283,7 @@ function render(keepScroll) {
   const paged = view.startsWith('st-') || view.startsWith('it-');
   if (view.startsWith('it-')) LASTITEM = view.slice(3);
   document.body.classList.toggle('has-rail', paged);
+  document.body.classList.toggle('structure-mode', view === 'st-2' || view.startsWith('it-2-'));
   m.className = view === 'overview' || view === 'map' ? 'wide' : '';
   document.body.classList.toggle('mapmode', view === 'map');
   if (!keepScroll) { void m.offsetWidth; m.classList.add('pg-enter'); }
