@@ -192,6 +192,25 @@ main.pg-enter{animation:pgIn .32s cubic-bezier(.2,.7,.2,1)}@keyframes pgIn{from{
 .mp-rel{stroke:#e4612a;stroke-width:1.6;fill:none;opacity:.28;transition:opacity .25s,stroke-width .25s}.mp-rel.peek,.mp-rel.on{opacity:1;stroke-width:3.2}.mp-rel.dim{opacity:.06}
 .mp-rl{fill:#f0b49a;font-size:14px;pointer-events:none;transition:opacity .25s;paint-order:stroke;stroke:#17181a;stroke-width:5px}
 .mp-n:focus{outline:none}.mp-n:focus-visible .itc,.mp-n:focus-visible .stc{stroke:#fff}
+
+/* ---- flowchart map (PR12) */
+.mp.fl{background:#f4f7fb}.mp.fl .mp-svg{background:radial-gradient(130% 100% at 50% 30%,#fbfcfe 0%,#eef3f8 100%)}
+.mp.fl .mp-ui{background:rgba(255,255,255,.85);border-color:#d8e2ec;color:#4c6b8c}.mp.fl .mp-ui .x{color:#7d93ab}.mp.fl .mp-ui .btn{background:#fff;color:#35577c;border-color:#c9d7e5}
+.mp.fl .mp-side{background:rgba(255,255,255,.96);border-color:#d8e2ec;color:#2d4763}.mp.fl .mp-side .x,.mp.fl .mp-list small,.mp.fl .mp-list .pid,.mp.fl .mp-side h4{color:#7d93ab}.mp.fl .mp-list li{border-color:#e3eaf1}.mp.fl .mp-list li:hover{background:#eef4fa}.mp.fl .mp-val{color:#2d4763}
+.mp.fl .mp-side .btn{background:#fff;color:#35577c;border-color:#c9d7e5}.mp.fl .mp-side .btn.primary{background:#4f7fb5;color:#fff;border-color:#4f7fb5}.mp.fl .pgate{background:#eef3f8}
+.mp.fl text{font-family:inherit}
+.mp.fl .stb{fill:#c9dbea;transition:fill .25s}.mp.fl .stb.dfm{fill:#e2e9f2;stroke:#9fb6cf;stroke-dasharray:8 6;stroke-width:2}
+.mp.fl .mp-stage{cursor:pointer}.mp.fl .mp-stage:hover .stb{fill:#b9cfe3}.mp.fl .mp-stage.sel .stb{fill:#a9c5df;stroke:#e4612a;stroke-width:3}
+.mp.fl .stt{fill:#3f6a98;font-size:21px;font-weight:600}.mp.fl .stp{fill:#6f8fb1;font-size:15px}
+.mp.fl .gtd{fill:#c9dbea}.mp.fl .gtd.ok{fill:#cfe7d8}.mp.fl .gtd.bad{fill:#f4d5cd}.mp.fl .mp-gate{cursor:pointer}.mp.fl .gtt{fill:#3f6a98;font-size:16px;font-weight:600}.mp.fl .gts{fill:#5f7fa1;font-size:14px}
+.mp.fl .mp-pill rect{fill:#c9dbea}.mp.fl .mp-pill text{fill:#3f6a98;font-size:20px;font-weight:600}
+.mp.fl .mp-ar{stroke:#6a93c2;stroke-width:2.4;fill:none}.mp.fl .mp-ar.no{stroke:#9db5cf}.mp.fl .mp-ar.long{stroke-dasharray:9 7}.mp.fl .mp-ar.par{stroke:#9fb6cf;stroke-dasharray:4 6;marker-end:none}
+.mp.fl .mp-yn{fill:#5f87b3;font-size:15px;paint-order:stroke;stroke:#f2f6fa;stroke-width:6px}
+.mp.fl .mp-dim{fill:#eef3f8;opacity:0;pointer-events:none;transition:opacity .35s}.mp.fl .mp-dim.on{opacity:.82}
+.mp.fl .mp-br{stroke:#7fa4cc;stroke-width:2.2;fill:none;pointer-events:none}
+.mp.fl .mp-item{cursor:pointer}.mp.fl .itb{fill:#fff;stroke-width:2;filter:url(#mpSh)}.mp.fl .itt{fill:#34587e;font-size:15px;font-weight:500;pointer-events:none}
+.mp.fl .mp-item:hover .itb{fill:#f2f7fc}.mp.fl .mp-item.sel .itb{stroke:#e4612a;stroke-width:3.5}.mp.fl .mp-item.hl .itb{fill:#fff4ee}
+.mp.fl .mp-rel{stroke:#e4612a;stroke-width:2.6;opacity:1;fill:none;pointer-events:none}.mp.fl .mp-rl{fill:#c2501f;font-size:14px;paint-order:stroke;stroke:#fff;stroke-width:6px}
 /* ---- studio look for the 3D viewer (light glass UI over a cream backdrop) */
 #viewer{background:#f3f0ea;border-color:#e2ddd3}
 #viewer{--ink:#1c1b1a;--text:#2b2927;--mute:#8a847b;--rule:#ebe6dd;--panel:#fff;--soft:#f6f3ee;--brick:#e4612a;color:var(--text)}
@@ -242,7 +261,7 @@ main.pg-enter{animation:pgIn .32s cubic-bezier(.2,.7,.2,1)}@keyframes pgIn{from{
 <script src="drawings.js?v=pr8-1"></script>
 <script src="checks.js?v=pr9-1"></script>
 <script src="process.js?v=pr9-1"></script>
-<script src="map.js?v=pr11-1"></script>
-<script src="app.js?v=pr11-1"></script>
+<script src="map.js?v=pr12-1"></script>
+<script src="app.js?v=pr12-1"></script>
 </body>
 </html>
