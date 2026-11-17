@@ -27,211 +27,144 @@
   ];
   const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
-  const BW = 290, BH = 104, DW = 160, DH = 116, STEP = 310, ROWH = 310, PER = 4;
-  // 미달(No) 시 돌아가는 단계 — 마스터플랜 검증 루프 기준
-  const BACK = { 4: '3', 5: '3', 7: '6', 10: '2', 11: '2' };
+  const CW = 218, CH = 32, GY = 9, GX = 86, HEAD = 86, PERROW = 7;
 
+  // 공급망 지도식 배치: 단계 = 열, 세부 항목 = 카드, 항목 간 상호작용 = 곡선. 전 항목이 항상 보인다.
   function mount(host, opt) {
     const E = opt.E, onOpen = opt.onOpen || (() => { });
-    host.innerHTML = `<div class="mp fl"><svg class="mp-svg"></svg>
-      <div class="mp-ui"><button data-a="all" class="btn">전체 보기</button><label class="sw"><input type="checkbox" data-a="rel" checked> 연관 표시</label><span class="x">① 단계를 누르면 항목이 펼쳐집니다  ② 항목을 누르면 오른쪽에서 바로 입력·확인</span></div>
-      <div class="mp-legend"><span><i class="lg ok"></i>통과</span><span><i class="lg bad"></i>미달</span><span><i class="lg"></i>판정 없음</span><span><i class="lg rel"></i>연관</span></div>
-      <aside class="mp-side" hidden></aside></div>`;
-    const svg = host.querySelector('svg'), side = host.querySelector('.mp-side'), ui = host.querySelector('.mp-ui');
-    el('defs', {}, svg).innerHTML = `<marker id="mpA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1L10,5L0,9Z" fill="#6a93c2"/></marker>
-      <marker id="mpR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1L10,5L0,9Z" fill="#e4612a"/></marker>
-      <filter id="mpSh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#2b4a6b" flood-opacity=".18"/></filter>`;
-    const cam = el('g', {}, svg), gFlow = el('g', {}, cam), gBox = el('g', {}, cam), gDim = el('rect', { class: 'mp-dim', x: -5000, y: -5000, width: 20000, height: 20000 }, cam), gBr = el('g', {}, cam), gItem = el('g', {}, cam), gRel = el('g', { class: 'mp-rels' }, cam);
+    host.innerHTML = `<div class="mp sc"><svg class="mp-svg"></svg>
+      <div class="sc-ctl"><select data-a="jump" aria-label="단계로 이동"><option value="">단계로 이동</option>${E.map(g => `<option value="${g.n}">${g.n === 'D' ? 'D 가공·원가' : g.n + ' ' + esc(g.name)}</option>`).join('')}</select><button data-a="all" class="scb">전체 맞춤</button><button data-a="rel" class="scb on" aria-pressed="true"><i></i>연관 선</button></div>
+      <div class="sc-leg"><span><i class="l1"></i>상호작용</span><span><i class="l2"></i>단계 흐름</span><span><i class="d ok"></i>통과</span><span><i class="d bad"></i>미달</span><span><i class="d"></i>판정 없음</span><span class="r">항목에 올리면 연결을 따라갑니다 · 누르면 편집 · 끌어서 이동 · 휠 확대</span></div>
+      <aside class="sc-side" hidden></aside></div>`;
+    const root = host.querySelector('.mp'), svg = host.querySelector('svg'), side = host.querySelector('.sc-side');
+    const cam = el('g', {}, svg), gFlow = el('g', {}, cam), gRel = el('g', { class: 'sc-rels' }, cam), gCol = el('g', {}, cam), gCard = el('g', {}, cam);
+    const tone = ok => ok === true ? 'ok' : ok === false ? 'bad' : 'na';
 
-    // ---------- process layout: snake rows of [stage box → gate diamond]
-    const stages = E.filter(g => g.n !== 'D').map((g, i) => ({ key: String(g.n), g, i, name: g.name }));
-    const dfm = E.find(g => g.n === 'D');
-    const pos = i => { const r = Math.floor(i / PER), c = i % PER, dir = r % 2 ? -1 : 1, col = dir > 0 ? c : PER - 1 - c; return { r, dir, bx: col * 2 * STEP, y: r * ROWH }; };
-    stages.forEach(s => { const p = pos(s.i); s.r = p.r; s.dir = p.dir; s.x = p.bx; s.y = p.y; s.dx = p.bx + p.dir * STEP; });
-    const byId = {}, items = [];
-    const start = { x: stages[0].x - STEP * .9, y: 0 }, last = stages.at(-1), end = { x: last.dx + last.dir * STEP * .9, y: last.y };
-    const col = ok => ok === true ? '#3f9d68' : ok === false ? '#d24a36' : '#9fb3c8';
-
-    // ---------- draw static flow
-    const pill = (x, y, txt, cls) => { const g = el('g', { class: 'mp-pill ' + (cls || '') }, gBox); el('rect', { x: x - 80, y: y - 34, width: 160, height: 68, rx: 34 }, g); const t = el('text', { x, y: y + 7, 'text-anchor': 'middle' }, g); t.textContent = txt; return g; };
-    const arrow = (d, cls = 'mp-ar', lab, lx, ly) => { el('path', { d, class: cls, 'marker-end': 'url(#mpA)' }, gFlow); if (lab) { const t = el('text', { x: lx, y: ly, class: 'mp-yn', 'text-anchor': 'middle' }, gFlow); t.textContent = lab; } };
-    pill(start.x, start.y, '시작');
-    arrow(`M${start.x + 80},0 H${stages[0].x - BW / 2 - 2}`);
-    stages.forEach((s, i) => {
-      // stage box
-      const g = el('g', { class: 'mp-n mp-stage', tabindex: 0, role: 'button' }, gBox); s.gEl = g;
-      s.rect = el('rect', { x: s.x - BW / 2, y: s.y - BH / 2, width: BW, height: BH, rx: 6, class: 'stb' }, g);
-      el('circle', { cx: s.x + BW / 2 - 14, cy: s.y - BH / 2 + 14, r: 6, fill: col(s.g.gate.ok) }, g);
-      const t1 = el('text', { x: s.x, y: s.y - 8, 'text-anchor': 'middle', class: 'stt' }, g); t1.textContent = `${s.key}. ${s.name}`;
-      const t2 = el('text', { x: s.x, y: s.y + 22, 'text-anchor': 'middle', class: 'stp' }, g); t2.textContent = `세부 ${s.g.total}개 · 처리 ${s.g.done}`;
-      // gate diamond
-      const dg = el('g', { class: 'mp-n mp-gate', tabindex: 0, role: 'button' }, gBox); s.dEl = dg;
-      el('polygon', { points: `${s.dx},${s.y - DH / 2} ${s.dx + DW / 2},${s.y} ${s.dx},${s.y + DH / 2} ${s.dx - DW / 2},${s.y}`, class: 'gtd ' + (s.g.gate.ok === true ? 'ok' : s.g.gate.ok === false ? 'bad' : '') }, dg);
-      const gt = el('text', { x: s.dx, y: s.y - 4, 'text-anchor': 'middle', class: 'gtt' }, dg); gt.textContent = '게이트';
-      const gs = el('text', { x: s.dx, y: s.y + 18, 'text-anchor': 'middle', class: 'gts' }, dg); gs.textContent = s.g.gate.ok === true ? '통과' : s.g.gate.ok === false ? '미달' : '기준 없음';
-      // box → gate
-      arrow(`M${s.x + s.dir * (BW / 2)},${s.y} H${s.dx - s.dir * (DW / 2 + 2)}`);
-      // gate → next (Yes)
-      const n = stages[i + 1];
-      if (n) {
-        if (n.r === s.r) arrow(`M${s.dx + s.dir * DW / 2},${s.y} H${n.x - s.dir * (BW / 2 + 2)}`, 'mp-ar', '통과', (s.dx + n.x) / 2, s.y - 10);
-        else arrow(`M${s.dx},${s.y + DH / 2} V${n.y - ROWH / 2 + 20} H${n.x} V${n.y - BH / 2 - 2}`, 'mp-ar', '통과', s.dx + 26, s.y + DH / 2 + 26);
-      } else arrow(`M${s.dx + s.dir * DW / 2},${s.y} H${end.x - s.dir * 82}`, 'mp-ar', '통과', (s.dx + end.x) / 2, s.y - 10);
-      // gate No: a small label under the diamond; the return path itself is drawn only while the stage is open
-      const back = BACK[s.key] ? stages.find(x => x.key === BACK[s.key]) : null;
-      const bl = el('text', { x: s.dx, y: s.y - DH / 2 - 12, class: 'mp-back', 'text-anchor': 'middle' }, gFlow); bl.textContent = back ? `미달 → ${back.key}단계로` : '미달 → 재검토';
-      if (back) { const ax = s.dx, ay = s.y - DH / 2, bx = back.x, by = back.y + BH / 2 + 4, cx = (ax + bx) / 2 - (by - ay) * .25, cy = (ay + by) / 2 + (bx - ax) * .25;
-        s.backP = el('path', { d: `M${ax},${ay} Q${cx},${cy} ${bx},${by}`, class: 'mp-backp', 'marker-end': 'url(#mpR)' }, gRel); s.backP.style.display = 'none'; }
-    });
-    pill(end.x, end.y, '출시');
-    // 가공·원가 병행 트랙: a lane box beside the flow
-    const minX = Math.min(...stages.map(s => Math.min(s.x, s.dx))) - BW, maxX = Math.max(...stages.map(s => Math.max(s.x, s.dx))) + BW;
-    if (dfm) {
-      const dx = -STEP, dy = 2 * ROWH, g = el('g', { class: 'mp-n mp-stage mp-dfm', tabindex: 0, role: 'button' }, gBox);
-      const s = { key: 'D', g: dfm, name: '가공·원가 (병행)', x: dx, y: dy, dir: 1, gEl: g, r: -1 };
-      el('rect', { x: dx - BW / 2, y: dy - BH / 2 - 30, width: BW, height: BH + 60, rx: 6, class: 'stb dfm' }, g);
-      const t1 = el('text', { x: dx, y: dy - 18, 'text-anchor': 'middle', class: 'stt' }, g); t1.textContent = 'D. 가공·원가';
-      const t2 = el('text', { x: dx, y: dy + 10, 'text-anchor': 'middle', class: 'stp' }, g); t2.textContent = '설계 단계와 병행';
-      const t3 = el('text', { x: dx, y: dy + 34, 'text-anchor': 'middle', class: 'stp' }, g); t3.textContent = `세부 ${dfm.total}개`;
-      stages.push(s);
-    }
-    // ---------- items (hidden until their stage opens): mind-map branches under the box
-    stages.forEach(s => {
-      s.items = s.g.items.map((it, k) => {
-        const g = el('g', { class: 'mp-n mp-item', tabindex: 0, role: 'button' }, gItem);
-        const r = el('rect', { x: 0, y: -19, width: 250, height: 38, rx: 6, class: 'itb', stroke: col(it.ok) }, g);
-        const t = el('text', { x: 12, y: 5, class: 'itt' }, g); t.textContent = `${it.id}  ${it.t}`;
-        const br = el('path', { class: 'mp-br' }, gBr);
-        const m = { id: it.id, it, s, k, g, br, x: s.x, y: s.y, tx: s.x, ty: s.y, a: 0, ta: 0 };
-        byId[it.id] = m; items.push(m); return m;
+    // ---------- layout
+    const cols = E.map((g, i) => { const r = Math.floor(i / PERROW), c = i % PERROW; return { key: String(g.n), g, i, name: g.n === 'D' ? '가공·원가' : g.name, x: c * (CW + GX), r }; });
+    const rowH = r => HEAD + Math.max(...cols.filter(c => c.r === r).map(c => c.g.items.length)) * (CH + GY) + 70;
+    cols.forEach(c => { c.y = c.r ? rowH(0) : 0; });
+    const byId = {}, cards = [];
+    cols.forEach(c => {
+      const g = el('g', { class: 'sc-col mp-n ' + tone(c.g.gate.ok), tabindex: 0, role: 'button', style: `animation-delay:${c.i * 45}ms` }, gCol); c.el = g;
+      el('rect', { x: c.x - 10, y: c.y - 8, width: CW + 20, height: HEAD - 16, rx: 10, class: 'sc-hd' }, g);
+      const n = el('text', { x: c.x, y: c.y + 20, class: 'sc-num' }, g); n.textContent = c.key === 'D' ? 'D' : c.key.padStart(2, '0');
+      const t = el('text', { x: c.x + 34, y: c.y + 20, class: 'sc-name' }, g); t.textContent = c.name;
+      el('circle', { cx: c.x + 5, cy: c.y + 43, r: 4.5, class: 'sc-dot' }, g);
+      const s = el('text', { x: c.x + 16, y: c.y + 47.5, class: 'sc-sub' }, g); s.textContent = `게이트 ${c.g.gate.ok === true ? '통과' : c.g.gate.ok === false ? '미달' : '—'} · ${c.g.done}/${c.g.total}`;
+      c.items = c.g.items.map((it, k) => {
+        const y = c.y + HEAD + k * (CH + GY), cg = el('g', { class: 'sc-card mp-n ' + tone(it.ok) + ' k-' + it.kind, tabindex: 0, role: 'button', style: `animation-delay:${c.i * 45 + k * 18}ms` }, gCard);
+        el('rect', { x: c.x, y, width: CW, height: CH, rx: 7, class: 'sc-bx' }, cg);
+        el('rect', { x: c.x, y: y + 6, width: 3, height: CH - 12, rx: 1.5, class: 'sc-tk' }, cg);
+        const a = el('text', { x: c.x + 12, y: y + 21, class: 'sc-id' }, cg); a.textContent = it.id;
+        const b = el('text', { x: c.x + 48, y: y + 21, class: 'sc-tx' }, cg); b.textContent = it.t.length > 14 ? it.t.slice(0, 13) + '…' : it.t;
+        const m = { id: it.id, it, c, k, el: cg, x: c.x, y: y + CH / 2 }; byId[it.id] = m; cards.push(m); return m;
       });
     });
-    const rels = REL.filter(([a, b]) => byId[a] && byId[b]).map(([a, b, t]) => ({ a: byId[a], b: byId[b], t }));
-
-    // ---------- state + layout of the open stage
-    let focus = null, sel = null;
-    function layout() {
-      items.forEach(m => {
-        const open = focus === m.s.key, s = m.s, n = s.items.length;
-        if (open) {   // branches fan out below the box (mind-map), two columns when long
-          const cols = n > 7 ? 2 : 1, per = Math.ceil(n / cols), c = Math.floor(m.k / per), k = m.k % per;
-          m.side = cols === 2 && c === 0 ? -1 : 1;
-          m.tx = m.side < 0 ? s.x - 34 - 250 : s.x + 34; m.ty = s.y + BH / 2 + 70 + k * 52; m.ta = 1;
-        } else { m.tx = s.x - 125; m.ty = s.y; m.ta = 0; }
-      });
-      gDim.classList.toggle('on', !!focus);
-      stages.forEach(s => { s.gEl.classList.toggle('sel', focus === s.key); if (s.backP) s.backP.style.display = focus === s.key ? '' : 'none'; });
+    // stage flow: arcs between consecutive column heads
+    cols.slice(0, -2).forEach((c, i) => {
+      const n = cols[i + 1], same = n.r === c.r;
+      const d = same ? `M${c.x + CW + 12},${c.y + 30} C${c.x + CW + 40},${c.y + 6} ${n.x - 40},${n.y + 6} ${n.x - 12},${n.y + 30}`
+        : `M${c.x + CW / 2},${c.y + HEAD + c.g.items.length * (CH + GY) + 6} C${c.x + CW / 2},${n.y - 60} ${n.x + CW / 2},${n.y - 90} ${n.x + CW / 2},${n.y - 12}`;
+      el('path', { d, class: 'sc-flow ' + tone(c.g.gate.ok) }, gFlow);
+    });
+    // relations
+    const rels = REL.filter(([a, b]) => byId[a] && byId[b]).map(([a, b, t]) => {
+      const A = byId[a], B = byId[b]; let d;
+      if (A.c === B.c) { const x = A.x + CW; d = `M${x},${A.y} C${x + 46},${A.y} ${x + 46},${B.y} ${x},${B.y}`; }
+      else { const fw = B.x > A.x, x1 = fw ? A.x + CW : A.x, x2 = fw ? B.x : B.x + CW, k = Math.max(40, Math.abs(x2 - x1) * .45) * (fw ? 1 : -1); d = `M${x1},${A.y} C${x1 + k},${A.y} ${x2 - k},${B.y} ${x2},${B.y}`; }
+      return { a: A, b: B, t, p: el('path', { d, class: 'sc-rel' }, gRel) };
+    });
+    const outOf = {}, inOf = {};
+    rels.forEach(r => { (outOf[r.a.id] = outOf[r.a.id] || []).push(r); (inOf[r.b.id] = inOf[r.b.id] || []).push(r); });
+    // everything upstream and downstream of one item
+    function trace(m) {
+      const N = new Set([m]), L = new Set();
+      const walk = (start, map, next) => { const q = [start]; while (q.length) { const x = q.shift(); for (const r of map[x.id] || []) { L.add(r); const y = next(r); if (!N.has(y)) { N.add(y); q.push(y); } } } };
+      walk(m, outOf, r => r.b); walk(m, inOf, r => r.a); return { N, L };
     }
+    let sel = null, focus = null, hover = null;
+    function paint() {
+      const m = hover || sel, tr = m ? trace(m) : null;
+      root.classList.toggle('tracing', !!tr);
+      cards.forEach(c => { c.el.classList.toggle('on', !!tr && tr.N.has(c)); c.el.classList.toggle('sel', sel === c); });
+      rels.forEach(r => r.p.classList.toggle('on', !!tr && tr.L.has(r)));
+      cols.forEach(c => c.el.classList.toggle('sel', focus === c.key && !sel));
+    }
+
     // ---------- camera
-    const view = { x: 0, y: 0, k: .3 }; let tween = null;
+    const view = { x: 0, y: 0, k: .4 }; let tween = null, raf = 0;
     const W = () => svg.clientWidth || 1000, H = () => svg.clientHeight || 700;
-    const applyCam = () => cam.setAttribute('transform', `translate(${W() / 2 - view.x * view.k},${H() / 2 - view.y * view.k}) scale(${view.k})`);
-    function flyTo(x, y, k, ms = 750) { tween = { a: { ...view }, b: { x, y, k }, t0: performance.now(), ms }; kick(); }
-    function fitPts(pts, padX, padY, kMax, ms) {
-      const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), w = Math.max(...xs) - Math.min(...xs) + padX, h = Math.max(...ys) - Math.min(...ys) + padY;
-      const panel = side.hidden ? 0 : side.offsetWidth + 24, k = Math.min(kMax, (W() - panel) / w, H() / h);
-      flyTo((Math.max(...xs) + Math.min(...xs)) / 2 + panel / 2 / k, (Math.max(...ys) + Math.min(...ys)) / 2, k, ms);
-    }
-    const fitAll = ms => fitPts([[-STEP - BW / 2, -BH], [Math.max(maxX - BW + DW / 2, end.x + 80), (Math.ceil(12 / PER) - 1) * ROWH + BH]], 90, 150, 1.1, ms);
-    const fitStage = s => fitPts([[s.x - BW, s.y - BH], [s.x + BW, s.y + BH / 2 + 80 + Math.ceil(s.items.length / (s.items.length > 7 ? 2 : 1)) * 52]], 160, 120, 1.25);
-
-    // ---------- per-frame
-    function draw() {
-      items.forEach(m => {
-        m.g.setAttribute('transform', `translate(${m.x},${m.y})`); m.g.style.opacity = m.a; m.g.style.pointerEvents = m.a > .5 ? '' : 'none';
-        const s = m.s, sx = s.x, sy = s.y + BH / 2 + (s.key === 'D' ? 30 : 0), ex = m.x, ey = m.y;
-        const tip = m.side < 0 ? ex + 250 : ex, sg = m.side < 0 ? -1 : 1;   // trunk down the box centre, then a rounded branch to the item
-        m.br.setAttribute('d', `M${sx},${sy} V${ey - 14} Q${sx},${ey} ${sx + sg * 14},${ey} H${tip}`); m.br.style.opacity = m.a;
-        const hl = sel && (sel === m || rels.some(r => (r.a === sel && r.b === m) || (r.b === sel && r.a === m)));
-        m.g.classList.toggle('sel', sel === m); m.g.classList.toggle('hl', !!hl && sel !== m);
-      });
-      // relations of the selected item: to the related item if its stage is open, else to that stage's box
-      rels.forEach(r => {
-        const on = sel && (r.a === sel || r.b === sel);
-        if (!r.p) { r.p = el('path', { class: 'mp-rel', 'marker-end': 'url(#mpR)' }, gRel); r.lab = el('text', { class: 'mp-rl', 'text-anchor': 'middle' }, gRel); r.lab.textContent = r.t; }
-        const vis = on && relOn && r.a.a > .5 && r.b.a > .5;
-        r.p.style.display = r.lab.style.display = vis ? '' : 'none'; if (!vis) return;
-        const P = m => ({ x: m.x + (m.side < 0 ? 0 : 250), y: m.y });
-        const A = P(r.a), B = P(r.b), mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2, cx = mx - (B.y - A.y) * .2, cy = my + (B.x - A.x) * .2;
-        r.p.setAttribute('d', `M${A.x},${A.y} Q${cx},${cy} ${B.x},${B.y}`); r.lab.setAttribute('x', (A.x + 2 * cx + B.x) / 4); r.lab.setAttribute('y', (A.y + 2 * cy + B.y) / 4 - 6);
-      });
-      stages.forEach(s => s.gEl.classList.toggle('rel', !!sel && relOn && s !== sel.s && rels.some(r => (r.a === sel && r.b.s === s) || (r.b === sel && r.a.s === s))));
-      applyCam();
-    }
-    let raf = 0, relOn = true;
-    function frame(now) {
-      raf = 0; let moving = false;
-      items.forEach(m => { const dx = m.tx - m.x, dy = m.ty - m.y, da = m.ta - m.a; if (Math.abs(dx) + Math.abs(dy) > .3 || Math.abs(da) > .01) { m.x += dx * .18; m.y += dy * .18; m.a += da * .2; moving = true; } else { m.x = m.tx; m.y = m.ty; m.a = m.ta; } });
-      if (tween) { const t = Math.min(1, (now - tween.t0) / tween.ms), e = ease(t); view.x = tween.a.x + (tween.b.x - tween.a.x) * e; view.y = tween.a.y + (tween.b.y - tween.a.y) * e; view.k = tween.a.k * Math.pow(tween.b.k / tween.a.k, e); if (t >= 1) tween = null; moving = true; }
-      draw(); if (moving) kick();
-    }
+    const apply = () => cam.setAttribute('transform', `translate(${W() / 2 - view.x * view.k},${H() / 2 - view.y * view.k}) scale(${view.k})`);
+    function frame(now) { raf = 0; if (tween) { const t = Math.min(1, (now - tween.t0) / tween.ms), e = ease(t); view.x = tween.a.x + (tween.b.x - tween.a.x) * e; view.y = tween.a.y + (tween.b.y - tween.a.y) * e; view.k = tween.a.k * Math.pow(tween.b.k / tween.a.k, e); if (t >= 1) tween = null; else kick(); } apply(); }
     const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };
+    function flyTo(x, y, k, ms = 700) { tween = { a: { ...view }, b: { x, y, k }, t0: performance.now(), ms }; kick(); }
+    function fit(x0, y0, x1, y1, kMax, ms) { const panel = side.hidden ? 0 : side.offsetWidth + 20, k = Math.min(kMax, (W() - panel - 60) / (x1 - x0), (H() - 110) / (y1 - y0)); flyTo((x0 + x1) / 2 + panel / 2 / k, (y0 + y1) / 2 + 8 / k, k, ms); }
+    const total = { x0: -20, y0: -30, x1: PERROW * (CW + GX) - GX + 20, y1: rowH(0) + rowH(1) - 60 };
+    const fitAll = ms => fit(total.x0, total.y0, total.x1, total.y1, 1.2, ms);
+    const fitCol = c => fit(c.x - CW * .9, c.y - 30, c.x + CW * 1.9, c.y + HEAD + c.items.length * (CH + GY) + 20, 1.5);
 
     // ---------- side panel
     const KIND = globalThis.PGDProc?.KIND || {};
+    const chips = (list, pick, arrow) => list.map(r => { const x = pick(r); return `<button class="sc-chip ${tone(x.it.ok)}" data-id="${x.id}" title="${esc(r.t)}">${arrow} ${x.id} ${esc(x.it.t)}</button>`; }).join('');
     function showSide(x) {
       if (!x) { side.hidden = true; return; }
-      side.hidden = false; side.classList.toggle('wide', !x.items); side.scrollTop = 0;
+      side.hidden = false; side.scrollTop = 0; side.classList.toggle('wide', !x.items);
       if (x.items) {
-        side.innerHTML = `<div class="mp-sh"><span class="snum">${x.key}</span><b>${esc(x.name)}</b></div>
-          <div class="pgate ${x.g.gate.ok === true ? 'ok' : x.g.gate.ok === false ? 'bad' : ''}">게이트 · ${esc(x.g.gate.t)} — ${x.g.gate.ok === true ? '통과' : x.g.gate.ok === false ? '미달' : '기준 없음'}</div>
-          <ul class="mp-list">${x.items.map(m => `<li data-id="${m.id}"><span class="pid">${m.id}</span>${esc(m.it.t)}<i class="d" style="background:${col(m.it.ok)}"></i></li>`).join('')}</ul>
-          <button class="btn primary" data-open="st-${x.key}">단계 페이지 열기 →</button>`;
+        side.innerHTML = `<div class="sc-eye">설계 단계 ${x.key}</div><h3>${esc(x.name)}</h3>
+          <div class="sc-gate ${tone(x.g.gate.ok)}">게이트 · ${esc(x.g.gate.t)} — ${x.g.gate.ok === true ? '통과' : x.g.gate.ok === false ? '미달' : '판정 기준 없음'}</div>
+          <div class="sc-lab">세부 항목 ${x.g.total}개</div>
+          <ul class="sc-list">${x.items.map(m => `<li data-id="${m.id}" class="${tone(m.it.ok)}"><span class="i">${m.id}</span><span>${esc(m.it.t)}</span><small>${esc(m.it.val ?? '')}</small></li>`).join('')}</ul>
+          <button class="sc-cta" data-open="st-${x.key}">단계 페이지 열기</button>`;
       } else {
-        const it = x.it, out = rels.filter(r => r.a === x), inn = rels.filter(r => r.b === x);
-        side.innerHTML = `<div class="mp-sh"><span class="snum">${esc(x.s.key)}</span><b>${it.id} ${esc(it.t)}</b></div>
-          <p><span class="kchip k-${it.kind}">${KIND[it.kind] || ''}</span> ${it.ok === true ? '<b class="good">✓ 통과</b>' : it.ok === false ? '<b class="bad">✗ 미달</b>' : ''}</p>
-          <p class="mp-val">${esc(it.val ?? '—')}</p>
-          ${out.length || inn.length ? `<div class="mp-rels2">${inn.length ? `<div><span class="rl">영향 받음</span>${inn.map(r => `<button class="rc" data-id="${r.a.id}" title="${esc(r.t)}">← ${r.a.id} ${esc(r.a.it.t)}</button>`).join('')}</div>` : ''}${out.length ? `<div><span class="rl">영향 줌</span>${out.map(r => `<button class="rc" data-id="${r.b.id}" title="${esc(r.t)}">→ ${r.b.id} ${esc(r.b.it.t)}</button>`).join('')}</div>` : ''}</div>` : ''}
-          <div class="mp-detail">${opt.detail ? opt.detail(it.id) : ''}</div>
-          <button class="btn" data-open="st-${x.s.key}" data-anchor="${it.id}">단계 페이지에서 크게 보기 →</button>`;
+        const it = x.it, out = outOf[x.id] || [], inn = inOf[x.id] || [];
+        side.innerHTML = `<div class="sc-eye">${esc(x.c.key)} ${esc(x.c.name)} · ${KIND[it.kind] || ''}</div><h3>${it.id} ${esc(it.t)}</h3>
+          <p class="sc-val ${tone(it.ok)}">${esc(it.val ?? '—')}${it.ok === true ? ' <b>통과</b>' : it.ok === false ? ' <b>미달</b>' : ''}</p>
+          ${inn.length ? `<div class="sc-lab">이 항목을 바꾸는 것</div><div class="sc-chips">${chips(inn, r => r.a, '←')}</div>` : ''}
+          ${out.length ? `<div class="sc-lab">이 항목이 바꾸는 것</div><div class="sc-chips">${chips(out, r => r.b, '→')}</div>` : ''}
+          <div class="sc-lab">입력 · 결과</div><div class="mp-detail">${opt.detail ? opt.detail(it.id) : ''}</div>
+          <button class="sc-cta ghost" data-open="st-${x.c.key}" data-anchor="${it.id}">단계 페이지에서 크게 보기</button>`;
         if (opt.bindDetail) opt.bindDetail(side.querySelector('.mp-detail'), it.id);
       }
       side.insertAdjacentHTML('afterbegin', '<button class="mp-x" aria-label="닫기">×</button>');
-      side.querySelector('.mp-x').onclick = () => { if (sel) { sel = null; showSide(stages.find(s => s.key === focus)); } else { focus = null; layout(); showSide(null); fitAll(); } kick(); };
-      side.querySelectorAll('[data-id]').forEach(li => li.onclick = () => selectItem(byId[li.dataset.id]));
-      side.querySelectorAll('[data-open]').forEach(b => b.onclick = () => open(b.dataset.open, b.dataset.anchor));
+      side.querySelector('.mp-x').onclick = () => clear();
+      side.querySelectorAll('[data-id]').forEach(b => b.onclick = () => selectItem(byId[b.dataset.id], true));
+      side.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { root.classList.add('leaving'); setTimeout(() => onOpen(b.dataset.open, b.dataset.anchor), 300); });
     }
-    function selectStage(s) { if (focus === s.key && !sel) { focus = null; layout(); showSide(null); fitAll(); kick(); return; } focus = s.key; sel = null; layout(); showSide(s); fitStage(s); kick(); }
-    function selectItem(m) {
-      const changed = focus !== m.s.key; focus = m.s.key; sel = m; layout(); showSide(m);
-      if (changed) fitStage(m.s); kick();
+    function clear() { sel = null; focus = null; showSide(null); paint(); fitAll(); }
+    function selectCol(c) { sel = null; focus = c.key; showSide(c); paint(); fitCol(c); }
+    function selectItem(m, fly) {
+      sel = m; focus = m.c.key; showSide(m); paint();
+      const tr = trace(m), xs = [...tr.N].map(n => n.x), ys = [...tr.N].map(n => n.y);
+      if (fly !== false) fit(Math.min(...xs) - 30, Math.min(...ys) - 90, Math.max(...xs) + CW + 30, Math.max(...ys) + 60, 1.25);
     }
-    function open(stageId, anchor) { host.querySelector('.mp').classList.add('leaving'); flyTo(view.x, view.y, view.k * 1.6, 380); setTimeout(() => onOpen(stageId, anchor), 340); }
 
     // ---------- input
+    const hit = t => { const g = t.closest?.('.mp-n'); if (!g) return null; return cards.find(m => m.el === g) || cols.find(c => c.el === g) || null; };
     let drag = null, moved = false;
-    const hit = t => { const g = t.closest?.('.mp-n'); if (!g) return null; const it = items.find(m => m.g === g); if (it) return it; return stages.find(s => s.gEl === g || s.dEl === g) || null; };
     svg.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, target: e.target }; moved = false; svg.setPointerCapture(e.pointerId); });
-    svg.addEventListener('pointermove', e => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 4) moved = true; if (moved) { tween = null; view.x = drag.vx - dx / view.k; view.y = drag.vy - dy / view.k; kick(); } });
-    svg.addEventListener('pointerup', () => {
-      const was = drag; drag = null; if (!was || moved) return;
-      const x = hit(was.target);
-      if (!x) { if (sel) { sel = null; showSide(stages.find(s => s.key === focus)); } else if (focus) { focus = null; layout(); showSide(null); fitAll(); } kick(); return; }
-      if (x.items) selectStage(x); else selectItem(x);
+    svg.addEventListener('pointermove', e => {
+      if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 4) moved = true; if (moved) { tween = null; view.x = drag.vx - dx / view.k; view.y = drag.vy - dy / view.k; kick(); } return; }
+      const x = hit(e.target), h = x && !x.items ? x : null; if (h !== hover) { hover = h; paint(); }
     });
-    svg.addEventListener('wheel', e => {
-      e.preventDefault(); tween = null;
-      const r = svg.getBoundingClientRect(), mx = e.clientX - r.left - W() / 2, my = e.clientY - r.top - H() / 2;
-      const wx = view.x + mx / view.k, wy = view.y + my / view.k, k2 = Math.max(.1, Math.min(3, view.k * Math.exp(-e.deltaY * .0015)));
-      view.k = k2; view.x = wx - mx / k2; view.y = wy - my / k2; kick();
-    }, { passive: false });
-    cam.addEventListener('keydown', e => { if (e.key !== 'Enter') return; const x = hit(e.target); if (x) x.items ? selectStage(x) : selectItem(x); });
-    ui.querySelector('[data-a="all"]').onclick = () => { focus = null; sel = null; layout(); showSide(null); fitAll(); kick(); };
-    ui.querySelector('[data-a="rel"]').onchange = e => { relOn = e.target.checked; kick(); };
+    svg.addEventListener('pointerleave', () => { if (hover) { hover = null; paint(); } });
+    svg.addEventListener('pointerup', () => { const was = drag; drag = null; if (!was || moved) return; const x = hit(was.target); if (!x) { if (sel || focus) clear(); return; } x.items ? selectCol(x) : selectItem(x); });
+    svg.addEventListener('wheel', e => { e.preventDefault(); tween = null; const r = svg.getBoundingClientRect(), mx = e.clientX - r.left - W() / 2, my = e.clientY - r.top - H() / 2, wx = view.x + mx / view.k, wy = view.y + my / view.k, k2 = Math.max(.15, Math.min(3, view.k * Math.exp(-e.deltaY * .0015))); view.k = k2; view.x = wx - mx / k2; view.y = wy - my / k2; kick(); }, { passive: false });
+    cam.addEventListener('keydown', e => { if (e.key !== 'Enter') return; const x = hit(e.target); if (x) x.items ? selectCol(x) : selectItem(x); });
+    const ctl = host.querySelector('.sc-ctl');
+    ctl.querySelector('[data-a="all"]').onclick = clear;
+    ctl.querySelector('[data-a="rel"]').onclick = e => { const b = e.currentTarget, on = !b.classList.contains('on'); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); gRel.style.display = on ? '' : 'none'; };
+    ctl.querySelector('[data-a="jump"]').onchange = e => { const c = cols.find(x => x.key === e.target.value); if (c) selectCol(c); e.target.value = ''; };
     const ro = new ResizeObserver(() => kick()); ro.observe(svg);
+    const api = { dispose() { cancelAnimationFrame(raf); ro.disconnect(); host.innerHTML = ''; }, state: () => ({ focus, sel: sel?.id, view: { ...view }, scroll: side.scrollTop }), select: id => { const m = byId[id]; if (m) selectItem(m); } };
 
-    if (opt.restore) {   // re-mounted after an input change: same camera, same open stage/item, no intro
-      const r = opt.restore; Object.assign(view, r.view); focus = r.focus; sel = r.sel ? byId[r.sel] : null; layout();
-      items.forEach(m => { m.x = m.tx; m.y = m.ty; m.a = m.ta; });
-      showSide(sel || stages.find(s => s.key === focus) || null); side.scrollTop = r.scroll || 0; kick();
-      return api();
+    if (opt.restore) {
+      const r = opt.restore; root.classList.add('noanim'); Object.assign(view, r.view); focus = r.focus; sel = r.sel ? byId[r.sel] : null;
+      showSide(sel || cols.find(c => c.key === focus) || null); side.scrollTop = r.scroll || 0; paint(); kick(); return api;
     }
-    layout(); view.k = .15; fitAll(900);
-    if (opt.focus) { const x = byId[opt.focus] || stages.find(s => s.key === String(opt.focus).replace('st-', '')); if (x) setTimeout(() => x.items ? selectStage(x) : selectItem(x), 700); }
-    kick();
-    return api();
-    function api() { return { dispose() { cancelAnimationFrame(raf); ro.disconnect(); host.innerHTML = ''; }, state: () => ({ focus, sel: sel?.id, view: { ...view }, scroll: side.scrollTop }), select: id => { const m = byId[id]; if (m) selectItem(m); } }; }
+    view.k = .25; view.x = (total.x0 + total.x1) / 2; view.y = (total.y0 + total.y1) / 2; fitAll(900);
+    if (opt.focus) { const x = byId[opt.focus] || cols.find(c => c.key === String(opt.focus).replace('st-', '')); if (x) setTimeout(() => x.items ? selectCol(x) : selectItem(x), 750); }
+    return api;
   }
   globalThis.PGDMap = { mount, REL };
 })();
