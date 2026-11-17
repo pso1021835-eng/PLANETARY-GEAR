@@ -46,7 +46,7 @@ function changed() { save(); compute(); renderRail(); renderVerdict(); render(tr
 
 // ------------------------------------------------------------------ rail & verdict
 const STEPS = [
-  ['overview', '', '1. 종합판정'], ['proc', '', '설계 공정'],
+  ['overview', '', '1. 종합판정'], ['proc', '', '설계 공정'], ['map', '', '설계 지도'],
   ['s1', '정의', '2. 요구사양'], ['s2', '', '3. 구성–감속비'],
   ['s3', '기어설계', '4. 제원–형상'], ['s4', '', '5. 치형 검사'], ['s5', '', '6. 정밀도–치형 수정'],
   ['s7', '구조 해석–강도', '7. 하중 계수'], ['s8', '', '8. 기어 강도'], ['s9', '', '9. 베어링'], ['scar', '', '10. 캐리어–핀'],
@@ -89,7 +89,7 @@ let ANCHOR = null;
 function renderRail() {
   const E = procEval(), cur = view.startsWith('st-') ? view.slice(3) : null;
   const top = (id, t) => `<button data-v="${id}" aria-current="${view === id}"><span class="dot ${status(id)}"></span>${t}</button>`;
-  $('#rail').innerHTML = top('overview', '종합판정') + top('proc', '설계 공정 전체') + '<div class="grp">설계 단계</div>' +
+  $('#rail').innerHTML = top('overview', '종합판정') + top('map', '설계 지도') + top('proc', '설계 공정 전체') + '<div class="grp">설계 단계</div>' +
     E.map(g => { const k = String(g.n), open = k === cur;
       return `<button data-v="st-${k}" class="stg" aria-current="${open}" aria-expanded="${open}"><span class="dot ${gateCls(g.gate.ok)}"></span><span class="sn">${k === 'D' ? 'D' : k}</span>${esc(k === 'D' ? '가공·원가' : g.name)}<small>${g.done}/${g.total}</small></button>` +
         (open ? `<div class="its">${g.items.map(i => `<button data-v="st-${k}" data-a="${i.id}" class="it ${ANCHOR === i.id ? 'on' : ''}"><span class="dot ${i.ok === true ? 'ok' : i.ok === false ? 'bad' : i.kind === 'none' ? '' : 'in'}"></span><span class="iid">${i.id}</span>${esc(i.t)}</button>`).join('')}</div>` : ''); }).join('');
@@ -134,7 +134,10 @@ function render(keepScroll) {
   const m = $('#main');
   const y = window.scrollY;
   if (VIEW3D) { if (VIEW3D.full) OVSTATE.view = VIEW3D.getView(); VIEW3D.dispose(); VIEW3D = null; }
-  m.className = view === 'overview' ? 'wide' : '';
+  if (MAPV) { MAPSTATE = MAPV.state(); MAPV.dispose(); MAPV = null; }
+  m.className = view === 'overview' || view === 'map' ? 'wide' : '';
+  document.body.classList.toggle('mapmode', view === 'map');
+  if (!keepScroll) { void m.offsetWidth; m.classList.add('pg-enter'); }
   if (view.startsWith('st-')) {
     const k = view.slice(3);
     m.innerHTML = stagePage(k);
@@ -279,6 +282,7 @@ const VIEWS = {
   shous() { return housingView(); },
   overview() { return overviewView(); },
   proc() { return procView(); },
+  map() { return `<div class="maphead"><h2>설계 지도</h2><p class="lead">모든 단계와 세부 항목을 한 평면에 펼쳤습니다. 단계를 누르면 항목이 펼쳐지고, 항목을 누르면 연관 항목이 이어집니다. 주황 화살표 = 상호작용, 회색 = 단계 흐름.</p></div><div id="mapHost" class="maphost"></div>`; },
   outLegacy() { return head('출력물 · 가공 · 원가', '12단계 출력물과 가공·원가 병행 트랙(D1~D6)입니다. 원가는 가정 단가로 계산한 추정치이며, 실제 견적 단가로 바꿔 넣으면 그대로 반영됩니다.'); },
   overviewOld() {
     if (!R || R.errors?.length) return head('종합 판정', '입력에 오류가 있어 계산하지 못했습니다.') + errBox();
@@ -600,7 +604,13 @@ function sensHTML() {
 }
 
 // ------------------------------------------------------------------ after-render hooks
+let MAPV = null, MAPSTATE = null;
 const AFTER = {
+  map(m) {
+    if (!window.PGDMap) return;
+    const E = procEval(); if (!E.length) return;
+    MAPV = PGDMap.mount(m.querySelector('#mapHost'), { E, focus: ANCHOR || MAPSTATE?.sel || MAPSTATE?.focus, onOpen: (st, a) => go(st, a) });
+  },
   proc(m) { m.querySelectorAll('[data-go]').forEach(li => { const g = () => go('st-' + itemStage(li.dataset.id), li.dataset.id); li.onclick = g; li.onkeydown = e => { if (e.key === 'Enter') g(); }; }); },
   s1(m) {
     m.querySelector('#cApply').onclick = () => { E.applyCase(D, m.querySelector('#cPos').value + '-' + m.querySelector('#cAxis').value, R?.ratio); D.anim.rpm = D.req.rpm; changed(); };
