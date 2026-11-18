@@ -112,17 +112,36 @@
     // end-mill corner radius: material left where a pocket wall meets a plate face, swept along the wall
     const r = shape.pocketR;
     if (r > 1e-6 && shape.fillets?.length) {
-      const prof = new TH.Shape(); prof.moveTo(0, 0); prof.lineTo(r, 0);
-      for (let k = 1; k <= 12; k++) { const a = -Math.PI / 2 - k * Math.PI / 24; prof.lineTo(r + r * Math.cos(a), r + r * Math.sin(a)); }
-      prof.lineTo(0, 0);
+      // profile in (s = into the pocket from the wall, h = away from the plate face): corner minus the tool circle
+      const prof = [[0, 0], [r, 0]];
+      for (let k = 1; k < 12; k++) { const a = -Math.PI / 2 - k * Math.PI / 24; prof.push([r + r * Math.cos(a), r + r * Math.sin(a)]); }
+      prof.push([0, r]);
+      const tris = TH.ShapeUtils.triangulateShape(prof.map(([x, y]) => new TH.Vector2(x, y)), []);
+      const ro = shape.outerD / 2, ri = shape.innerD / 2, orient = Math.sign(prof.reduce((a, p, i) => { const q = prof[(i + 1) % prof.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0));
+      // along the wall direction u from P0: the tool is plunged radially from the max OD, so every profile line runs out to
+      // the outer cylinder (no step at the opening) and starts at the bore or the wall start, whichever is further out
+      const hit = (P, u, R, far) => { const bq = P[0] * u[0] + P[1] * u[1], c = P[0] * P[0] + P[1] * P[1] - R * R, d = bq * bq - c; return d < 0 ? null : far ? -bq + Math.sqrt(d) : -bq - Math.sqrt(d); };
       for (const f of shape.fillets) {
-        const L = Math.hypot(f.B[0] - f.A[0], f.B[1] - f.A[1]), u = new TH.Vector3((f.B[0] - f.A[0]) / L, (f.B[1] - f.A[1]) / L, 0);
-        const nx = new TH.Vector3(f.n[0], f.n[1], 0), nz = new TH.Vector3(0, 0, f.dir);
-        const m = new TH.Matrix4().makeBasis(nx, nz, u).setPosition(f.A[0], f.A[1], f.z);
-        const g = new TH.ExtrudeGeometry(prof, { depth: L, bevelEnabled: false, curveSegments: 12 }).applyMatrix4(m);
-        // a mirrored basis keeps correct normals (applyMatrix4) but flips the triangle winding: swap order only
-        if (m.determinant() < 0) { const n = g.index ? g.toNonIndexed() : g; for (const name of ['position', 'normal']) { const a = n.attributes[name].array; for (let i = 0; i < a.length; i += 9) for (let j = 0; j < 3; j++) [a[i + 3 + j], a[i + 6 + j]] = [a[i + 6 + j], a[i + 3 + j]]; } add(n); if (n !== g) g.dispose(); }
-        else add(g);
+        const L = Math.hypot(f.B[0] - f.A[0], f.B[1] - f.A[1]), u = [(f.B[0] - f.A[0]) / L, (f.B[1] - f.A[1]) / L];
+        const ends = prof.map(([sv, h]) => {
+          const P = [f.A[0] + f.n[0] * sv, f.A[1] + f.n[1] * sv], z = f.z + f.dir * h;
+          const l1 = hit(P, u, ro, true) ?? L, l0 = Math.max(0, hit(P, u, ri, true) ?? 0);
+          return [[P[0] + u[0] * l0, P[1] + u[1] * l0, z], [P[0] + u[0] * l1, P[1] + u[1] * l1, z]];
+        });
+        // orient each triangle by its intended outward normal (side: profile edge normal, caps: ∓u)
+        const tri = (a, b, c, want) => {
+          const ab = [0, 1, 2].map(k => b[k] - a[k]), ac = [0, 1, 2].map(k => c[k] - a[k]);
+          let n = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
+          const len = Math.hypot(...n); if (len < 1e-12) return; n = n.map(v => v / len);
+          if (n[0] * want[0] + n[1] * want[1] + n[2] * want[2] < 0) { [b, c] = [c, b]; n = n.map(v => -v); }
+          for (const p of [a, b, c]) { positions.push(...p); normals.push(...n); }
+        };
+        for (let j = 0; j < ends.length; j++) {
+          const k = (j + 1) % ends.length, ds = prof[k][0] - prof[j][0], dh = prof[k][1] - prof[j][1];
+          const ns = orient * dh, nh = -orient * ds, want = [f.n[0] * ns, f.n[1] * ns, f.dir * nh];
+          tri(ends[j][0], ends[k][0], ends[k][1], want); tri(ends[j][0], ends[k][1], ends[j][1], want);
+        }
+        for (const [x, y, z] of tris) { tri(ends[x][0], ends[y][0], ends[z][0], [-u[0], -u[1], 0]); tri(ends[x][1], ends[y][1], ends[z][1], [u[0], u[1], 0]); }
       }
     }
     const geometry = new TH.BufferGeometry();
