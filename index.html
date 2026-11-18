@@ -81,6 +81,7 @@ aside li b{font-variant-numeric:tabular-nums;white-space:nowrap}
 .prog{height:6px;background:var(--soft);border-radius:3px;overflow:hidden;margin:8px 0}
 .prog i{display:block;height:100%;background:var(--accent2);width:0}
 dialog{border:1px solid #3a3a3a;border-radius:4px;background:var(--panel);color:var(--ink);max-width:min(720px,92vw);width:100%}
+dialog.rec{max-width:min(1100px,96vw)}.rec-in{grid-template-columns:repeat(4,minmax(0,1fr))}#recOut table td,#recOut table th{white-space:nowrap}#recOut .scroll{max-height:52vh;overflow:auto}
 dialog textarea{width:100%;height:280px;font:12px/1.4 ui-monospace,Consolas,monospace;background:var(--soft);border:1px solid var(--rule);padding:8px}
 .note{font-size:12px;color:var(--mute)}
 main.wide{max-width:none}
@@ -416,6 +417,7 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
  <button id="vchip" class="vchip" aria-label="판정 요약 열기"></button>
  <div class="more"><button class="btn" id="bMore" aria-label="파일 메뉴">파일 ▾</button>
   <div id="moreMenu" class="moremenu" hidden>
+   <button class="btn" id="bRecommend">추천 제원 생성</button>
    <button class="btn" id="bExample">예제로 초기화</button>
    <button class="btn" id="bExport">설계 JSON 복사</button>
    <button class="btn" id="bImport">JSON 불러오기</button>
@@ -433,16 +435,33 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
  <p class="note" id="dlgNote"></p>
  <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" value="cancel">닫기</button><button class="btn primary" id="dlgOk" value="ok">확인</button></div>
 </form></dialog>
+<dialog id="recDlg" class="rec"><form method="dialog">
+ <h3 style="margin-top:0">추천 제원 생성</h3>
+ <div class="grid rec-in">
+  <label class="f">최대 외경 Ø (mm)<input type="number" id="rOD" step="any"></label>
+  <label class="f">최대 높이 (mm)<input type="number" id="rH" step="any"></label>
+  <label class="f">목표 감속비<input type="number" id="rRatio" step="any"></label>
+  <label class="f">치직각 모듈 mn<input type="number" id="rM" step="any"></label>
+  <label class="f">비틀림각 β (°)<input type="number" id="rBeta" step="any"></label>
+  <label class="f">기어 치폭 b (mm)<input type="number" id="rB" step="any"></label>
+  <label class="f">링기어 잇수 R<input type="number" id="rR" step="1"></label>
+  <label class="f">감속비 허용 오차 (%)<input type="number" id="rTol" step="any" value="3"></label>
+ </div>
+ <p class="note">썬·유성 잇수와 유성 개수(3–6)를 1단 · 2단(링 공유)으로 조합해 현재 설계의 요구 수명·안전율·재료·윤활·판정 기준으로 계산하고, 감속기 허용 토크가 큰 순서로 보여 줍니다. 핀·니들·출력 베어링·캐리어·하우징 치수는 예제 설계를 외경 비로 맞춘 초안입니다.</p>
+ <div id="recOut"></div>
+ <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn" value="cancel">닫기</button><button class="btn primary" id="recGo" type="button">계산</button></div>
+</form></dialog>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="carrier-geometry.js?v=pr28-1"></script>
-<script src="engine.js?v=pr36-1"></script>
+<script src="engine.js?v=pr38-1"></script>
 <script src="viewer3d.js?v=pr37-1"></script>
+<script src="recommend.js?v=pr38-1"></script>
 <script src="drawings.js?v=pr19-1"></script>
 <script src="checks.js?v=pr33-1"></script>
 <script src="process.js?v=pr26-1"></script>
 <script src="map.js?v=pr14-1"></script>
 <script src="items.js?v=pr36-1"></script>
 <script src="groups.js?v=pr34-1"></script>
-<script defer src="app.js?v=pr36-1"></script>
+<script defer src="app.js?v=pr38-1"></script>
 </body>
 </html>
