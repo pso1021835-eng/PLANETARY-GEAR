@@ -109,6 +109,22 @@
       const [z0, z1] = shape.web.z;
       add(new TH.ExtrudeGeometry(profile, { depth: z1 - z0, bevelEnabled: false }).translate(0, 0, z0));
     }
+    // end-mill corner radius: material left where a pocket wall meets a plate face, swept along the wall
+    const r = shape.pocketR;
+    if (r > 1e-6 && shape.fillets?.length) {
+      const prof = new TH.Shape(); prof.moveTo(0, 0); prof.lineTo(r, 0);
+      for (let k = 1; k <= 12; k++) { const a = -Math.PI / 2 - k * Math.PI / 24; prof.lineTo(r + r * Math.cos(a), r + r * Math.sin(a)); }
+      prof.lineTo(0, 0);
+      for (const f of shape.fillets) {
+        const L = Math.hypot(f.B[0] - f.A[0], f.B[1] - f.A[1]), u = new TH.Vector3((f.B[0] - f.A[0]) / L, (f.B[1] - f.A[1]) / L, 0);
+        const nx = new TH.Vector3(f.n[0], f.n[1], 0), nz = new TH.Vector3(0, 0, f.dir);
+        const m = new TH.Matrix4().makeBasis(nx, nz, u).setPosition(f.A[0], f.A[1], f.z);
+        const g = new TH.ExtrudeGeometry(prof, { depth: L, bevelEnabled: false, curveSegments: 12 }).applyMatrix4(m);
+        // a mirrored basis keeps correct normals (applyMatrix4) but flips the triangle winding: swap order only
+        if (m.determinant() < 0) { const n = g.index ? g.toNonIndexed() : g; for (const name of ['position', 'normal']) { const a = n.attributes[name].array; for (let i = 0; i < a.length; i += 9) for (let j = 0; j < 3; j++) [a[i + 3 + j], a[i + 6 + j]] = [a[i + 6 + j], a[i + 3 + j]]; } add(n); if (n !== g) g.dispose(); }
+        else add(g);
+      }
+    }
     const geometry = new TH.BufferGeometry();
     geometry.setAttribute('position', new TH.Float32BufferAttribute(positions, 3));
     geometry.setAttribute('normal', new TH.Float32BufferAttribute(normals, 3));
@@ -784,8 +800,9 @@
         E(`stages.${i}.carrier.bossT`, '보스 두께 (mm, 0=없음)', s.carrier?.bossT);
         if (shape?.double) {
           E(`stages.${i}.carrier.groove`, '양단 중앙 홈의 축방향 폭 (mm)', s.carrier?.groove, { auto: shape.groove });
-          E(`stages.${i}.carrier.pocket`, '유성 포켓 지름 (mm)', s.carrier?.pocket, { auto: shape.pocket });
-          E(`stages.${i}.carrier.pocketShape`, '포켓 마감', s.carrier?.pocketShape || 'sector', { options: [['sector', '부채꼴 (일체 가공)'], ['slot', '평행 홈']] });
+          E(`stages.${i}.carrier.pocket`, '유성 포켓 (mm)', s.carrier?.pocket, { auto: shape.pocket });
+          E(`stages.${i}.carrier.pocketR`, '포켓 모서리 R (엔드밀 반경, mm)', s.carrier?.pocketR, { auto: shape.pocketR ?? undefined, step: .5 });
+          E(`stages.${i}.carrier.pocketShape`, '포켓 마감', s.carrier?.pocketShape || 'sector', { options: [['slot', '평행 홈 (반경방향 엔드밀)'], ['sector', '부채꼴']] });
         } else E(`stages.${i}.carrier.axialClearance`, '지지판과 기어 사이 간격 (mm)', s.carrier?.axialClearance);
       }
     } else if (id === 'xroller') {

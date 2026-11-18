@@ -1,4 +1,4 @@
-importScripts('carrier-geometry.js?v=pr23-1', 'engine.js?v=pr21-1');
+importScripts('carrier-geometry.js?v=pr24-1', 'engine.js?v=pr21-1');
 self.onmessage = e => {
   const { id, type, design } = e.data;
   try {
