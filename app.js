@@ -102,7 +102,7 @@ function evalMap() {
 }
 function ictx() { const X = procExtra(), EM = evalMap(); return { R, D, X, CK: X.CK || {}, it: id => EM[id], EM }; }
 function expRows(id) {
-  const sp = IT()[id]; if (!sp) return [];
+  const sp = IT()[id] || (typeof gspec === 'function' ? gspec(id) : null); if (!sp) return [];
   const n = D.config.stages, out = [];
   for (const r of sp.rows || []) {
     if (r[0] === 'D' || r[0] === 'M' || r[0] === 'A') {
@@ -236,11 +236,107 @@ function stagePage(k) {
     <div class="pager">${prev ? `<button class="btn" data-v="st-${prev}">← ${prev} ${esc(nameOf(prev))}</button>` : '<span></span>'}${next ? `<button class="btn primary" data-v="st-${next}">${next} ${esc(nameOf(next))} →</button>` : ''}</div>`;
 }
 function bindStagePage(m) { bindItemCommon(m, null); m.querySelectorAll('[data-v]').forEach(b => b.onclick = () => go(b.dataset.v)); }
+// ------------------------------------------------------------------ core review (groups.js): 99 items folded into ~20 linked groups
+const GR = () => window.PGDGroups;
+let GSPEC = {}, GRELC = null;
+function gspec(id) {
+  const g = GR()?.G[id]; if (!g) return null;
+  if (GSPEC[id]) return GSPEC[id];
+  const I = window.PGDItems?.I || {}, rows = [], seen = new Set(), w = [], ws = new Set(), checks = [];
+  for (const m of g.m) {
+    const sp = I[m]; if (!sp) continue;
+    for (const r of sp.rows || []) {
+      if (r[0] === 'J') { rows.push(['J', m + ':' + r[1], r[2]]); continue; }
+      const key = (r[0] === 'D' || r[0] === 'M' || r[0] === 'A') ? r[0] + '|' + (r[2] || r[3]) : r[0] + '|' + r[1];
+      if (seen.has(key)) continue; seen.add(key); rows.push(r);
+    }
+    for (const x of sp.w || []) { if (Array.isArray(x) && x[0] === 'checks') { checks.push(...x.slice(1)); continue; } const k = JSON.stringify(x); if (!ws.has(k)) { ws.add(k); w.push(x); } }
+  }
+  if (checks.length) w.push(['checks', ...new Set(checks)]);
+  return (GSPEC[id] = { what: g.what, how: g.how, why: g.why, rows, w, t: g.t, m: g.m, k: '포함 항목 판정 모두 통과' });
+}
+function gOk(id, c) { const ok = (GR().G[id]?.m || []).map(m => itemOk(m, c)); return ok.includes(false) ? false : ok.includes(true) ? true : null; }
+function grels(id) {
+  if (!GRELC) {
+    const OF = GR().OF, map = new Map(), add = (a, b, t) => { const ga = OF[a], gb = OF[b]; if (!ga || !gb || ga === gb) return; const k = ga + '>' + gb; if (!map.has(k)) map.set(k, [ga, gb, t]); };
+    (window.PGDMap?.REL || []).forEach(([a, b, t]) => add(a, b, t));
+    Object.entries(window.PGDItems?.I || {}).forEach(([k, s]) => (s.up || []).forEach(u => add(u, k, '먼저 정해야 하는 값')));
+    GRELC = [...map.values()];
+  }
+  const O = GR().ORDER, by = (a, b) => O.indexOf(a[0]) - O.indexOf(b[0]);
+  return { up: GRELC.filter(r => r[1] === id).map(r => [r[0], r[2]]).sort(by), down: GRELC.filter(r => r[0] === id).map(r => [r[1], r[2]]).sort(by) };
+}
+const gnum = id => id.slice(1);
+const gChip = (id, t, c, fb) => { const g = GR().G[id], ok = gOk(id, c); return `<button class="rchip" data-gocg="${id}"><span class="dot ${ok === true ? 'ok' : ok === false ? 'bad' : ''}"></span><b>${gnum(id)}</b> ${esc(g.t)}${rvBadge(rvState(id, c))}<small>${fb ? '<i class="fbk">되먹임</i> ' : ''}${esc(t)}</small></button>`; };
+function nextUnreviewedG(from, c) { const o = GR().ORDER, i = o.indexOf(from); for (let k = 1; k <= o.length; k++) { const x = o[(i + k) % o.length]; if (rvState(x, c) !== 'done') return x; } return null; }
+function corePage() {
+  const c = ictx(), Gs = GR(), O = Gs.ORDER, sts = Object.fromEntries(O.map(x => [x, rvState(x, c)])), done = O.filter(x => sts[x] === 'done').length, stale = O.filter(x => sts[x] === 'stale').length;
+  const first = O.find(x => sts[x] !== 'done') || O[0];
+  return `<div class="shead"><span class="snum">핵심</span><div><h2>핵심 검토 ${O.length}</h2><p class="lead">99개 공정 항목을 서로 얽힌 것끼리 ${O.length}개로 묶은 축소 흐름입니다. 검토 완료 ${done} / ${O.length}${stale ? ` · <b class="bad">재검토 ${stale}</b>` : ''}. 묶음 페이지에서 입력·계산·판정을 한 번에 보고, 세부 항목은 99개 항목 페이지로 바로 갈 수 있습니다.</p></div><button class="btn primary" data-gocg="${first}">${gnum(first)}부터 검토 →</button></div>` +
+    (errBox() || '') +
+    Gs.PH.map(p => `<h3 class="cardsh">${p.n}. ${esc(p.name)}</h3><ol class="slist">${p.items.map(id => { const g = Gs.G[id]; return `<li><button data-gocg="${id}"><span class="pid">${gnum(id)}</span><span class="st"><b>${esc(g.t)}</b><small>${esc(g.what)}</small></span><span class="srcs">${srcChips(id)}</span><span class="pval">세부 ${g.m.length}</span>${okMark(gOk(id, c))}${rvBadge(sts[id])}</button></li>`; }).join('')}</ol>`).join('') +
+    `<p class="note" style="margin-top:16px">묶음에 넣지 않은 공정 항목(출력물 12-1~12-6, 커버·플랜지 형상 8-4·8-5, 조립 순서 8-7, 가공·원가 D1·D2·D5·D6)은 '전체 항목'에 그대로 있습니다.</p>`;
+}
+function groupPage(id) {
+  const c = ictx(), Gs = GR(), g = Gs.G[id], sp = gspec(id);
+  if (!g) return head('핵심 검토', '묶음을 찾을 수 없습니다.');
+  const O = Gs.ORDER, idx = O.indexOf(id), prev = O[idx - 1], next = O[idx + 1], ph = Gs.PH.find(p => p.n === g.ph);
+  const st = rvState(id, c), r = rv(id), rl = grels(id), fb = u => O.indexOf(u) > idx;
+  const pend = rl.up.filter(([u]) => !fb(u) && rvState(u, c) !== 'done');
+  const states = Object.fromEntries(O.map(x => [x, rvState(x, c)])), stale = O.filter(x => states[x] === 'stale');
+  const ok = gOk(id, c), oks = g.m.map(m => itemOk(m, c)), nu = nextUnreviewedG(id, c);
+  const prog = `<div class="iprog">${O.map(x => `<i class="${states[x] || 'none'} ${x === id ? 'cur' : ''}" data-gocg="${x}" title="${gnum(x)} ${esc(Gs.G[x].t)} · ${RV[states[x]][1]}"></i>`).join('')}</div>`;
+  const alerts = (pend.length ? `<div class="ialert up"><b>앞 묶음 ${pend.length}개가 아직 검토 전입니다</b> — 이 묶음의 값이 그 결정에 달려 있습니다. ${pend.map(([u]) => `<button class="lnk" data-gocg="${u}">${gnum(u)} ${esc(Gs.G[u].t)}</button>`).join('')}</div>` : '') +
+    (stale.length ? `<div class="ialert re"><b>회귀 검토 ${stale.length}개</b> — 검토 후 값이 바뀐 묶음입니다. ${stale.map(u => `<button class="lnk" data-gocg="${u}">${gnum(u)} ${esc(Gs.G[u].t)}</button>`).join('')}</div>` : '');
+  const subs = g.m.map((m, k) => { const it = c.it(m), o = window.PGDItems?.I?.[m] || {}; return it ? `<tr class="${oks[k] === false ? 'bad' : ''}"><td><button class="lnk" data-goit="${m}">${m}</button></td><td class="l"><b>${esc(it.t)}</b><small class="note" style="display:block">${esc(o.k || '')}</small></td><td class="l">${esc(String(it.val ?? '—'))}</td><td>${okMark(oks[k])}</td></tr>` : ''; }).join('');
+  const ext = g.m.map(m => c.CK[m] ? (c.CK[m].html || '') + extraHTML(m, c.CK[m]) : '').join('');
+  const wid = (sp.w || []).map(widgetHTML).join('');
+  const np = oks.filter(x => x === true).length, nf = oks.filter(x => x === false).length;
+  return `${prog}
+    <div class="ihead"><span class="iid">${gnum(id)}</span><div class="ittl"><div class="ist"><button class="lnk" data-v="core">핵심 검토</button> · ${ph.n}. ${esc(ph.name)} · ${idx + 1} / ${O.length}</div><h2>${esc(g.t)}</h2><div class="isrc">${srcChips(id)}</div></div>
+      <div class="ibadge">${rvBadge(st)}<span>${RV[st][1]}</span></div></div>
+    ${errBox()}${alerts}
+    ${g.m.map(x => window.PGDStructure?.render(x, c) || '').join('')}
+    ${wwwHTML(sp)}
+    <div class="ijud ${ok === true ? 'ok' : ok === false ? 'bad' : ''}"><span class="jm">${ok === true ? '통과' : ok === false ? '미달' : '판정 없음'}</span><span class="jv">세부 ${g.m.length}개 · 통과 ${np} · 미달 ${nf} · 판정 없음 ${g.m.length - np - nf}</span><span class="jk">기준 · 포함된 공정 항목의 판정이 모두 통과</span></div>
+    <div class="card scroll gsub"><h3>세부 확인 <span class="note">— 번호를 누르면 99개 항목 페이지로</span></h3><table><tr><th>항목</th><th class="l">내용 · 기준</th><th class="l">현재 값</th><th>판정</th></tr>${subs}</table></div>
+    <div class="isecs">${itemSections(id, c)}</div>
+    ${ext || wid ? `<h3 class="cardsh">상세 계산·표</h3>${ext ? `<div class="card pcx">${ext}</div>` : ''}${wid}` : ''}
+    <div class="irel"><div><h4>앞 묶음 — 먼저 확인</h4>${rl.up.map(([u, t]) => gChip(u, t, c, fb(u))).join('') || '<p class="note">없음</p>'}</div>
+      <div><h4>뒤 묶음 — 바꾸면 다시 볼 것</h4>${rl.down.map(([u, t]) => gChip(u, t, c, O.indexOf(u) < idx)).join('') || '<p class="note">없음</p>'}</div></div>
+    <div class="card irev"><h3>검토 기록</h3>
+      <div class="rvb">${[['done', '✓ 검토 완료'], ['hold', '⏸ 보류'], ['ng', '! 문제 있음']].map(([s, t]) => `<button class="btn ${r.st === s ? 'on' : ''}" data-rv="${s}">${t}</button>`).join('')}${r.st ? '<button class="btn x" data-rv="">기록 지우기</button>' : ''}</div>
+      <textarea data-rvnote rows="2" placeholder="검토 메모 — 결정 근거, 확인한 자료, 남은 문제">${esc(r.note || '')}</textarea>
+      <p class="note">${r.at ? `마지막 기록 ${esc(r.at)} · ` : ''}검토 완료 뒤 이 페이지의 값(입력·계산·예측)이 바뀌면 자동으로 <b>재검토 필요</b>로 바뀝니다.</p>
+      <button class="btn primary" data-rvnext>검토 완료하고 다음 →</button></div>
+    <div class="pager ipager">${prev ? `<button class="btn" data-gocg="${prev}">← ${gnum(prev)} ${esc(Gs.G[prev].t)}</button>` : '<button class="btn" data-v="core">← 핵심 검토 목록</button>'}
+      ${nu && nu !== next ? `<button class="btn" data-gocg="${nu}">다음 미검토 ${gnum(nu)}</button>` : ''}
+      ${next ? `<button class="btn primary" data-gocg="${next}">${gnum(next)} ${esc(Gs.G[next].t)} →</button>` : ''}</div>`;
+}
+function bindCore(m) { m.querySelectorAll('[data-gocg]').forEach(b => b.onclick = () => go('cg-' + b.dataset.gocg)); m.querySelectorAll('[data-v]').forEach(b => b.onclick = () => go(b.dataset.v)); }
+function bindGroupPage(m, id) {
+  bindItemCommon(m, id); bindCore(m);
+  m.querySelectorAll('[data-rv]').forEach(b => b.onclick = () => { setReview(id, b.dataset.rv); renderRail(); render(true); });
+  const note = m.querySelector('[data-rvnote]'); if (note) note.onchange = e => { e.stopPropagation(); rv(id).note = note.value; save(); };
+  const nx = m.querySelector('[data-rvnext]'); if (nx) nx.onclick = () => { if (note) rv(id).note = note.value; setReview(id, 'done'); const n = nextUnreviewedG(id, ictx()); go('cg-' + (n || id)); };
+  bindProcCards(m);
+  (gspec(id)?.w || []).forEach(w => (WB[wName(w)] || (() => { }))(m));
+}
+function renderCoreRail(c) {
+  const Gs = GR(), O = Gs.ORDER, cur = view.startsWith('cg-') ? view.slice(3) : null, sts = Object.fromEntries(O.map(x => [x, rvState(x, c)])), nd = O.filter(x => sts[x] === 'done').length, ns = O.filter(x => sts[x] === 'stale').length;
+  $('#rail').innerHTML = `<div class="rprog"><div><b>${nd}</b> / ${O.length} 검토${ns ? ` · <span class="bad">재검토 ${ns}</span>` : ''}</div><i style="width:${nd / O.length * 100}%"></i></div>
+    <button data-v="core" class="stg" aria-current="${view === 'core'}"><span class="sn">≡</span>핵심 검토 목록</button>` +
+    Gs.PH.map(p => `<div class="grp">${p.n}. ${esc(p.name)}</div><div class="its core">${p.items.map(id => { const ok = gOk(id, c); return `<button data-v="cg-${id}" class="it ${cur === id ? 'on' : ''}"><span class="dot ${ok === true ? 'ok' : ok === false ? 'bad' : ''}"></span><span class="iid">${gnum(id)}</span><span class="itt">${esc(Gs.G[id].t)}</span>${rvBadge(sts[id])}</button>`; }).join('')}</div>`).join('');
+  $('#rail').querySelectorAll('button[data-v]').forEach(b => b.onclick = () => go(b.dataset.v));
+  $('#rail').querySelector('.it.on')?.scrollIntoView({ block: 'nearest' });
+}
 function renderRail() {
   const E2 = procEval(), c = ictx(), cur = view.startsWith('st-') ? view.slice(3) : view.startsWith('it-') ? itemStage(view.slice(3)) : null, curItem = view.startsWith('it-') ? view.slice(3) : null;
   const tab = (id, t, on) => `<button data-v="${id}" aria-current="${on}">${t}</button>`;
-  $('#tabs').innerHTML = tab('map', '설계 지도', view === 'map') + tab('it-' + LASTITEM, '항목 검토', !!cur) + tab('overview', '3D · 종합판정', view === 'overview') + tab('proc', '체크리스트', view === 'proc');
+  const coreOn = view === 'core' || view.startsWith('cg-');
+  $('#tabs').innerHTML = tab('map', '설계 지도', view === 'map') + tab('core', '핵심 검토', coreOn) + tab('it-' + LASTITEM, '전체 항목', !!cur) + tab('overview', '3D · 종합판정', view === 'overview') + tab('proc', '체크리스트', view === 'proc');
   $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.v));
+  if (coreOn && window.PGDGroups) return renderCoreRail(c);
   const all = ord(), sts = Object.fromEntries(all.map(x => [x, rvState(x, c)])), nd = all.filter(x => sts[x] === 'done').length, ns = all.filter(x => sts[x] === 'stale').length;
   $('#rail').innerHTML = `<div class="rprog"><div><b>${nd}</b> / ${all.length} 검토${ns ? ` · <span class="bad">재검토 ${ns}</span>` : ''}</div><i style="width:${nd / all.length * 100}%"></i></div><div class="grp">설계 단계</div>` +
     E2.map(g => { const k = String(g.n), open = k === cur, d = g.items.filter(i => sts[i.id] === 'done').length, s = g.items.some(i => sts[i.id] === 'stale');
@@ -253,6 +349,7 @@ function go(id, anchor) {
   if (VIEW_ITEM[id]) id = 'it-' + VIEW_ITEM[id];
   if (id.startsWith('st-') && anchor && IT()[anchor]) id = 'it-' + anchor;
   if (id.startsWith('it-') && !IT()[id.slice(3)]) id = 'map';
+  if (id.startsWith('cg-') && !window.PGDGroups?.G[id.slice(3)]) id = 'core';
   view = id; ANCHOR = null;
   try { history.replaceState(null, '', '#' + id); } catch (e) { }
   renderRail(); render(); window.scrollTo(0, 0);
@@ -280,13 +377,22 @@ function render(keepScroll) {
   if (VIEW3D) { if (VIEW3D.full) OVSTATE.view = VIEW3D.getView(); VIEW3D.dispose(); VIEW3D = null; }
   if (MAPV) { MAPSTATE = MAPV.state(); MAPV.dispose(); MAPV = null; }
   MAPKEEP = !!keepScroll && view === 'map';
-  const paged = view.startsWith('st-') || view.startsWith('it-');
+  const core = view === 'core' || view.startsWith('cg-');
+  const paged = core || view.startsWith('st-') || view.startsWith('it-');
   if (view.startsWith('it-')) LASTITEM = view.slice(3);
   document.body.classList.toggle('has-rail', paged);
   document.body.classList.toggle('structure-mode', view === 'st-2' || view.startsWith('it-2-'));
   m.className = view === 'overview' || view === 'map' ? 'wide' : '';
   document.body.classList.toggle('mapmode', view === 'map');
   if (!keepScroll) { void m.offsetWidth; m.classList.add('pg-enter'); }
+  if (core) {
+    const gid = view.startsWith('cg-') ? view.slice(3) : null;
+    m.innerHTML = gid ? groupPage(gid) : corePage();
+    bindInputs(m);
+    if (gid) bindGroupPage(m, gid); else bindCore(m);
+    if (keepScroll) window.scrollTo(0, y);
+    return;
+  }
   if (paged) {
     const it = view.startsWith('it-');
     m.innerHTML = it ? itemPage(view.slice(3)) : stagePage(view.slice(3));
@@ -367,6 +473,30 @@ const tag = s => `<span class="tag ${s}">${s}</span>`;
 const partLabel = r => `${r.stage}단 ${r.mesh} · ${r.partName}`;
 
 const VIEWS = {
+  overviewOld() {
+    if (!R || R.errors?.length) return head('종합 판정', '입력에 오류가 있어 계산하지 못했습니다.') + errBox();
+    const tgt = D.req.Trated, cap = R.capacityLife;
+    const maxV = Math.max(tgt, cap, MC ? MC.capacity.p90 : 0, R.capacityInf) * 1.15 || 1;
+    const pct = v => clampPct(v / maxV * 100);
+    const gov = R.govRated;
+    return head('종합 판정', '실측값 없이, 규격식·물리 모델·명시된 가정만으로 계산합니다. 왼쪽 단계 순서대로 입력을 확정하고, 오른쪽 판정에서 미달 항목을 확인하세요.') +
+      `<div class="card"><h3>정격 출력토크 · 목표 수명 ${D.req.lifeH} h, ${D.req.rpm} rpm 일정 운전</h3>
+       <div class="range" aria-hidden="true">
+        ${MC ? `<div class="bar" style="left:${pct(MC.capacity.p10)}%;width:${pct(MC.capacity.p90) - pct(MC.capacity.p10)}%"></div><div class="mid" style="left:${pct(MC.capacity.p50)}%"></div>` : ''}
+        <div class="iso" style="left:${pct(cap)}%"></div><div class="tgt" style="left:${pct(tgt)}%"></div></div>
+       <div class="legend"><span><i style="background:var(--ink)"></i>ISO 설계 판정 ${fmt(cap, 1)} N·m</span><span><i style="background:var(--brick)"></i>목표 ${tgt} N·m</span>${MC ? `<span><i style="background:var(--accent2)"></i>현실 예측 P10–P90 ${fmt(MC.capacity.p10, 1)}–${fmt(MC.capacity.p90, 1)}, 중앙 ${fmt(MC.capacity.p50, 1)} N·m</span>` : '<span>현실 예측: 14단계에서 실행</span>'}</div>
+       <p class="note">ISO 설계 판정은 피로강도 99 % 신뢰도, 공차 상한(제곱합), 목표 안전율 SH ${D.req.SH} · SF ${D.req.SF} 기준입니다. 현실 예측은 공차·하중분배·재료 산포를 무작위로 뽑아 중앙값 강도로 계산한 분포입니다.</p></div>
+      <div class="two">
+       <div class="card"><h3>지배 부위</h3><p class="big" style="font-size:24px">${gov ? esc(partLabel(gov.row)) + ' ' + gov.mode : '—'}</p>
+        <table><tr><th>항목</th><th>값</th></tr>
+        <tr><td>무한 수명(10¹⁰회) 한계</td><td>${fmt(R.capacityInf)} N·m</td></tr>
+        <tr><td>정적 한계 (피크)</td><td>${fmt(R.staticCap)} N·m</td></tr>
+        <tr><td>출력 베어링 L10</td><td>${fmtH(R.outBearing.L10h)} h</td></tr>
+        <tr><td>유성 베어링 한계 (목표 수명)</td><td>${R.bearingCap.map(v => fmt(v, 1)).join(' / ')} N·m</td></tr>
+        <tr><td>스펙트럼 수명 (기어 최소)</td><td>${fmtH(R.spectrum.minLife)} h</td></tr></table></div>
+       <div class="card"><h3>먼저 손댈 것</h3>${advice()}</div></div>
+      ${R.warns.length ? `<div class="card"><h3>주의</h3><ul class="warns">${R.warns.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>` : ''}`;
+  },
   overview() { return overviewView(); },
   proc() { return procView(); },
   map() { return `<div id="mapHost" class="maphost"></div>`; },
@@ -933,13 +1063,13 @@ function dlg(title, text, note, okLabel, onOk) {
   $('#dlgOk').onclick = async e => { e.preventDefault(); const msg = await onOk(); if (msg) $('#dlgNote').textContent = msg; };
   $('#dlg').showModal();
 }
-const validView = h => STEPS.some(s => s[0] === h) || !!VIEW_ITEM[h] || (h.startsWith('st-') && STAGE_KEYS.includes(h.slice(3))) || (h.startsWith('it-') && !!IT()[h.slice(3)]);
+const validView = h => STEPS.some(s => s[0] === h) || h === 'core' || (h.startsWith('cg-') && !!window.PGDGroups?.G[h.slice(3)]) || !!VIEW_ITEM[h] || (h.startsWith('st-') && STAGE_KEYS.includes(h.slice(3))) || (h.startsWith('it-') && !!IT()[h.slice(3)]);
 window.addEventListener('hashchange', () => { const [h, a] = location.hash.slice(1).split('/'); if (validView(h) && h !== view) go(h, a); });
 { const [h0, a0] = location.hash.slice(1).split('/'); if (validView(h0)) { view = VIEW_ITEM[h0] ? 'it-' + VIEW_ITEM[h0] : h0.startsWith('st-') && a0 && IT()[a0] ? 'it-' + a0 : h0; if (view.startsWith('it-')) LASTITEM = view.slice(3); } }
 $('#vchip').onclick = () => document.body.classList.toggle('vopen');
 document.addEventListener('click', e => { if (document.body.classList.contains('vopen') && !e.target.closest('#verdict,#vchip')) document.body.classList.remove('vopen'); });
 $('#bMore').onclick = e => { e.stopPropagation(); $('#moreMenu').hidden = !$('#moreMenu').hidden; };
 document.addEventListener('click', e => { if (!e.target.closest('#moreMenu')) $('#moreMenu').hidden = true; });
-window.PGDApp = { go, view: () => view, rvState: id => rvState(id), sig: id => sigOf(id, ictx()), mapSelect: id => MAPV?.select(id), mapState: () => MAPV?.state(), items: () => procEval().flatMap(g => g.items.map(i => i.id)) };
+window.PGDApp = { go, view: () => view, rvState: id => rvState(id), sig: id => sigOf(id, ictx()), mapSelect: id => MAPV?.select(id), mapState: () => MAPV?.state(), items: () => procEval().flatMap(g => g.items.map(i => i.id)), groups: () => window.PGDGroups?.ORDER || [] };
 compute(); renderRail(); renderVerdict(); render();
 }
