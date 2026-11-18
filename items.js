@@ -43,13 +43,13 @@
       ['J', 'real', '실제 관절의 링크 길이·자중·가반하중으로 케이스 값이 맞는지 확인했다']],
     w: ['case'], k: '정격 토크가 0보다 크면 통과 (케이스 값의 타당성은 설계자 확인)' };
   I['1-2'] = { what: '정격·반복 피크·비상(충돌) 토크 세 가지 하중 수준을 정한다.',
-    how: '정격 = 연속 운전 토크(피로 수명 판정), 피크 = 반복 가감속 최대(정적 안전율), 비상 = 충돌·급정지(1회 정적). 모터 최대 토크 × 감속비 × 효율이 비상 토크의 상한이다.',
+    how: '정격 = 연속 운전 토크(피로 수명 판정), 피크 = 반복 가감속 최대(정적 안전율), 비상 = 충돌·급정지(1회 정적). 모터 정격 토크 × 감속비 × 효율이 감속기 정격 토크의 기준이다.',
     why: '정격은 기어·베어링 수명을, 피크·비상은 이 부러짐·핀·볼트·결합부를 정한다. 피크를 낮게 잡으면 정적 파손을, 높게 잡으면 과설계를 부른다.',
     rows: [['D', 'num', 'req.Trated', '정격 토크 N·m'], ['D', 'num', 'req.Tpeak', '반복 피크 토크 N·m'], ['D', 'num', 'req.Temerg', '비상·충돌 토크 N·m'],
       ['C', '피크 / 정격 · 비상 / 정격', c => `×${f(c.D.req.Tpeak / c.D.req.Trated, 2)} · ×${f(c.D.req.Temerg / c.D.req.Trated, 2)}`, '배수'],
       ['C', '모터축 환산 (정격 / 비상)', c => c.R?.ratio ? `${f(c.D.req.Trated / c.R.ratio, 3)} / ${f(c.D.req.Temerg / c.R.ratio, 3)} N·m` : '—', 'T / i (효율 무시)'],
-      ['M', 'num', 'req.motorTmax', '모터 최대 토크 N·m (모터 데이터시트)'],
-      ['C', '모터 최대 × 감속비', c => c.D.req.motorTmax && c.R?.ratio ? `${f(c.D.req.motorTmax * c.R.ratio, 1)} N·m (비상 ${c.D.req.Temerg})` : '모터 최대 토크 미입력', 'Tmotor·i — 비상 토크가 이보다 작으면 모터가 감속기를 깰 수 있음'],
+      ['M', 'num', 'req.motorTmax', '모터 정격 토크 N·m (모터 데이터시트)'],
+      ['C', '모터 정격 × 감속비', c => c.D.req.motorTmax && c.R?.ratio ? `${f(c.D.req.motorTmax * c.R.ratio, 1)} N·m (정격 ${c.D.req.Trated})` : '모터 정격 토크 미입력', 'Tmotor·i — 비상 토크가 이보다 작으면 모터가 감속기를 깰 수 있음'],
       ['J', 'emerg', '충돌·급정지 시 토크(모터 최대 × 감속비 또는 시험값)로 비상 토크를 정했다']],
     k: '정격 > 0, 피크 ≥ 정격, 비상 ≥ 피크', ok: c => c.D.req.Trated > 0 && c.D.req.Tpeak >= c.D.req.Trated && c.D.req.Temerg >= c.D.req.Tpeak && (!c.D.req.motorTmax || !c.R?.ratio || c.D.req.Temerg >= c.D.req.motorTmax * c.R.ratio * .9) };
   I['1-3'] = { what: '정격 입력 회전수(모터 rpm)와 그때의 관절 속도를 정한다.',
@@ -255,7 +255,8 @@
     how: '리드 크라우닝은 잇줄 오정렬을 흡수해 KHβ를 줄인다. 근거 수준(fZCa)은 수정량이 하중 변형 해석으로 정해졌는지에 따라 1.20 / 1.07 / 1.00.',
     why: '크라우닝이 과하면 접촉 폭이 줄어 응력이 오르고, 부족하면 끝단 접촉이 생긴다.',
     rows: [['D', 'num', 'stages.{i}.mod.crown', '{s}단 리드 크라우닝 µm', { st: 1 }], ['D', 'num', 'stages.{i}.mod.tip', '{s}단 치끝 수정 µm', { st: 1 }],
-      ['A', 'sel', 'stages.{i}.mod.verified', '{s}단 수정 근거 수준', { st: 1, o: [['none', '근거 없음 · 1.20'], ['qualified', '하중 하 적합 계산 · 1.07'], ['uniform', '3D 균일 접촉 확인 · 1.00']] }],
+      ['A', 'sel', 'stages.{i}.mod.verified', '{s}단 수정 근거 수준 (헬리컬 ZB·ZD의 fZCa)', { st: 1, if: (D, i) => D.stages[i].beta > 0, o: [['none', '근거 없음 · 1.20'], ['qualified', '하중 하 적합 계산 · 1.07'], ['uniform', '3D 균일 접촉 확인 · 1.00']] }],
+      ['C', 'fZCa → ZB / ZD (썬–유성)', c => (c.R?.ctx?.stages || []).map((s, i) => { const ms = s.geo.meshes[0]; return s.st.beta > 0 ? `${i + 1}단 fZCa ${f(ms.fZCa, 2)} → ZB ${f(ms.ZB, 3)} / ZD ${f(ms.ZD, 3)}` : `${i + 1}단 스퍼 — 적용 안 됨`; }).join(' · ') || '—', 'ISO 6336-2:2019 6.2: 헬리컬(εα ≤ 2)의 단일 맞물림 계수에만 들어감'],
       ['C', 'KHβ (최대)', c => rows(c).length ? f(mx(c, 'KHb'), 3) : '—', 'ISO 6336-1 부록 E']],
     up: ['4-5'], k: '판정은 5-4에서' };
   I['4-7'] = { what: '원주 백래시(치합 유격)를 정하고 출력 백래시를 예측·측정한다.',
@@ -442,7 +443,7 @@
   I['8-1'] = { what: '하우징 벽 두께와 바깥 치수를 정한다.',
     how: '하우징 안지름 = 링 외경, 몸체 외경 = 링 외경 + 2·벽. 출력부는 크로스 롤러 외륜을 감싼다.',
     why: '벽이 얇으면 압입(8-2) 응력이 넘고, 두꺼우면 외경(1-6)·중량(10-7)이 늘어난다.',
-    rows: [['D', 'num', 'housing.wall', '하우징 벽 두께 mm'], ['C', '하우징 외경 · 전체 길이', c => { const L = lay(c); return L ? `Ø${f(L.housR * 2, 1)} · ${f(L.zFlange[1] - L.zIn, 1)} mm` : '—'; }, '링 외경 + 2·벽']],
+    rows: [['D', 'num', 'housing.wall', '하우징 벽 두께 mm', { if: D => D.struct.ringHousing !== 'integral' }], ['C', '일체형', c => c.D.struct.ringHousing === 'integral' ? '링기어가 하우징에 직접 가공됨 · 벽 = 링 림 (링 외경 3-9에서)' : '별도 하우징', '2-4 결합 방식'], ['C', '하우징 외경 · 전체 길이', c => { const L = lay(c); return L ? `Ø${f(L.housR * 2, 1)} · ${f(L.zFlange[1] - L.zIn, 1)} mm` : '—'; }, '링 외경 + 2·벽']],
     w: ['housingDims'], up: ['3-6', '3-9'], k: '판정은 8-2·D4에서' };
   I['8-2'] = { what: '링 압입 죔새(또는 볼트)를 정하고 전달 토크·하우징 응력·링 수축을 본다.',
     how: 'Lamé 두꺼운 원통: p = δ / (d·[(1/Eo)((c²+b²)/(c²−b²)+νo) + (1/Ei)((b²+a²)/(b²−a²)−νi)]). 전달 T = μ·p·π·d·L·d/2. 링 내경 수축 → 원주 백래시 감소.',
@@ -455,9 +456,9 @@
   I['8-3'] = { what: '출력 플랜지 볼트의 수·호칭·등급을 정하고 마찰 전달 토크를 본다.',
     how: '축력 F = 이용률 × 항복 × 유효 단면적, 전달 T = n·F·μ·r_bolt. 피크 × 1.5와 비교.',
     why: '볼트 미끄럼은 위치 정밀도 상실, 볼트 파단은 관절 탈락이다.',
-    rows: [['D', 'num', 'housing.boltN', '볼트 수 (커버·플랜지 각각)', { step: 1 }], ['D', 'num', 'housing.boltD', '볼트 호칭 M'],
-      ['D', 'sel', 'bolts.grade', '강도 등급', { o: [['8.8', '8.8'], ['10.9', '10.9'], ['12.9', '12.9']], t: 'numsel' }], ['A', 'num', 'bolts.mu', '접촉면 마찰계수'], ['A', 'num', 'bolts.util', '체결력 / 항복 비'],
-      ['C', '마찰 전달', c => ck(c, '8-3'), 'T = n·F·μ·r']],
+    rows: [['D', 'num', 'housing.boltN', '볼트 수 (커버·플랜지 각각)', { step: 1, if: D => D.struct.ringHousing !== 'integral' }], ['D', 'num', 'housing.boltD', '볼트 호칭 M', { if: D => D.struct.ringHousing !== 'integral' }],
+      ['D', 'sel', 'bolts.grade', '강도 등급', { o: [['8.8', '8.8'], ['10.9', '10.9'], ['12.9', '12.9']], t: 'numsel', if: D => D.struct.ringHousing !== 'integral' }], ['A', 'num', 'bolts.mu', '접촉면 마찰계수', { if: D => D.struct.ringHousing !== 'integral' }], ['A', 'num', 'bolts.util', '체결력 / 항복 비', { if: D => D.struct.ringHousing !== 'integral' }],
+      ['C', '마찰 전달', c => c.D.struct.ringHousing === 'integral' ? '링–하우징 일체형: 볼트 체결 검토 없음' : ck(c, '8-3'), 'T = n·F·μ·r']],
     up: ['1-2'], k: '전달 ≥ 피크 × 1.5' };
   I['8-4'] = { what: '입력 커버 두께와 형상을 정한다.',
     how: '커버는 입력 베어링·오일 실을 품고 하우징에 볼트로 붙는다. 두께는 볼트 자리·실 홈 깊이로 정한다.',
