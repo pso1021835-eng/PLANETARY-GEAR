@@ -1033,26 +1033,47 @@
       duty: c.duty.map(([tq, tm]) => ({ torque: tq, time: tm, rpm: 0 })), ext: { Fr: +(c.ext[0] * T).toFixed(1), Fa: +(c.ext[1] * T).toFixed(1), M: +(c.ext[2] * T).toFixed(2) } });
     return D;
   }
+  // Example = RDP-RH065(9N) as drawn (EasternGear 300001–300009, 2026-06). Values not on the drawings are marked 가정 in the register.
   function defaultDesign() {
-    const mat = () => ({ family: 'NV', surfaceHRC: 60, coreHRC: 28, depth: 0.10 });
-    const stage = b => ({ s: 46, p: 23, n: 3, m: 0.6, beta: 12, alpha: 20, b, xs: 0, xp: 0, xr: 0, autoRingShift: true, grade: 4,
-      mod: { crown: 2, tip: 0, verified: 'none' }, sunBore: null, planetBore: null, ringOD: null,
-      pin: { d: 4, type: 'double', material: 'SUJ2', wall: 4, allow: 1200, holeMode: 'through', depth: null },
-      bearing: { name: '니들 케이지 4×7×7 (예시값)', C: 1600, C0: 1500, count: 1 }, jt: [20, 25], carrier: { webW: 4, webH: 3, material: 'S45C', outerD: null, innerD: null, groove: null, pocket: null, axialClearance: 0, bossD: null, bossT: 4 } });
+    // SCM440 ion-nitrided: surface HRC 58–62, core HRC 25–28, effective case 0.1 mm (gears 3, 5, 7, 8 and housing ring 2)
+    const mat = () => ({ family: 'NV', surfaceHRC: 60, coreHRC: 26.5, depth: 0.10 });
+    const stage = (b, extra) => Object.assign({ s: 46, p: 23, n: 3, m: 0.6, beta: 12, alpha: 20, b, xs: 0, xp: 0, xr: 0, autoRingShift: true,
+      grade: 7,                                         // 정밀도 '-' (hob/skiving, nitrided, not ground) → ISO 7 assumed
+      mod: { crown: 0, tip: 0, verified: 'none' }, sunBore: null, planetBore: 7, ringOD: null,
+      bearing: { name: '풀니들 Ø1.5 × 11 (SUJ2, HRC 58–62)', C: 1600, C0: 1500, count: 1 }, jt: [20, 25] }, extra);
     return {
-      schema: 'pgd/1', name: '9:1 2단 유성감속기 (예제)',
+      schema: 'pgd/1', name: 'RDP-RH065 (9N) · 중공 확장형 · 도면 기준',
       req: { case: 'custom', ext: { Fr: 135, Fa: 45, M: 7.2 }, Trated: 9, Tpeak: 28, Temerg: 40, rpm: 1000, lifeH: 5000, SH: 1.0, SF: 1.4, SHstat: 1.0, SFstat: 1.2, s0: 1.0, SBmin: 1.5, effMin: 85, backlashMax: 15,
         duty: [{ torque: 100, time: 20, rpm: 0 }, { torque: 70, time: 30, rpm: 0 }, { torque: 40, time: 40, rpm: 0 }, { torque: 10, time: 10, rpm: 0 }] },
       config: { stages: 2, sharedRing: true, floatingSun: false },
       design: { quality: 'MQ' },
-      stages: [stage(5), stage(6)],
+      stages: [
+        // 1단: S1 (300004) bore Ø23H7 at the teeth (6703 seat for S2), C1 (300005) single plate t4 Ø52.5, bore Ø17H7, 3×Ø4M7 THRU on PCD 42.325
+        stage(5, { sunBore: 23, ringOD: 61,
+          pin: { d: 4, type: 'single', material: 'SUJ2', wall: 4, allow: 1200, holeMode: 'through', depth: null },
+          carrier: { width: 4, outerD: 52.5, innerD: 17, bossT: 0, bossD: null, axialClearance: 0.3, material: 'S45C' } }),
+        // 2단: S2 (300006) bore Ø15, C2 (300007) one-piece double carrier: input plate 2.2 · planet seat 6.2 · output body,
+        // pockets 3×20 straight slots, pins Ø4M7 blind DP12 from the input face. Plates modelled symmetric (2.9 each = same pin span 9.1 mm).
+        stage(6, { sunBore: 15,
+          pin: { d: 4, type: 'double', material: 'SUJ2', wall: 2.9, allow: 1200, holeMode: 'blind', depth: 12 },
+          carrier: { width: 12, groove: 6.2, pocket: 20, pocketShape: 'slot', outerD: 52.5, innerD: 32, bossD: 50, bossT: 9.6, material: 'S45C' } })
+      ],
       materials: Array.from({ length: 6 }, mat),
       lube: { type: 'grease', nu40: 100, nu100: 11, temp: 50, rho: .88, alphaP: 2.0, starvation: .7, XL: 1, XW: 1, fzg: 12, rzFlank: 2, rzRoot: 6 },
-      loads: { KA: 1.0, kgMode: 'model', kgFixed: 1.1, posError: 6, sunSupport: [{ mode: 'structure', k: 20, play: 0, bearingK: 40, od: 20, id: 14, overhang: 8 }, { mode: 'structure', k: 10, play: 0, bearingK: 20, od: 12, id: 0, overhang: 8 }], fmaMode: 'rss', carrierParallel: 3, extraFsh: [0, 0], reverse: false },
+      // pin holes ⌖Ø0.01 → ±5 µm; ⊥0.01 A → carrier parallelism 10 µm.
+      // S1: 6705DD in the cover (CN radial clearance ≥ 5 µm → free radius 2.5 µm), journal Ø25 / bore Ø17.5.
+      // S2: 6703DD inside the S1 bore + 6705DD inside the C2 bore (straddle); 6703 CN ≥ 3 µm → 1.5 µm. Bearing stiffnesses are assumed.
+      loads: { KA: 1.0, kgMode: 'model', kgFixed: 1.1, posError: 5, sunSupport: [{ mode: 'structure', k: 20, play: 2.5, bearingK: 30, od: 25, id: 17.5, overhang: 7.8 }, { mode: 'structure', k: 20, play: 1.5, bearingK: 30, od: 17, id: 15, overhang: 3 }], fmaMode: 'rss', carrierParallel: 10, extraFsh: [0, 0], reverse: false },
       reliability: { mode: 'iso', covH: 0.08, covF: 0.07 },
       perf: { muMode: 'model', mu: 0.06, otherLoss: 1.5 },
-      outBearing: { name: '크로스 롤러 (예시값)', type: 'roller', C: 8190, C0: 13600, dp: 77, Km: 90, Z: 40, Dw: 4, Lw: 3.6, preload: 2 },
+      // output: RAU5005C0 × 2 between the C2 Ø50g6 seat and the housing Ø61H7 bore, ISTW-50 snap ring. Ratings not on the drawing → 가정.
+      outBearing: { name: 'RAU5005C0 × 2 (Ø50/Ø61, 카탈로그 값 확인 필요)', rows: 2, type: 'roller', C: 4000, C0: 5500, dp: 55.5, Km: 30, Z: 0, Dw: 2.5, Lw: 2.5, preload: 0 },
       carrier: { allowP: 300, allowB: 250 },
+      housing: { wall: 2, coverT: 8.8, flangeT: 4, boltN: 6, boltD: 3 },
+      geom: { inshaft: { id: 15 } },
+      struct: { ringHousing: 'integral', c1s2: 'pin', c1s2Dim: { d: 17, L: 4.5, p: 40, n: 6, dp: 3, pcd: 21.5 }, s1motor: 'flange', s1Dim: { d: 17.5, L: 7.5, p: 40, n: 4, bd: 1.6, pcd: 22 }, c1Support: 'nested', obPos: 'outside' },
+      needle: [{ use: true, apply: true, Dw: 1.5, Lw: null, Z: 11, HRCpin: 60, HRCbore: 58 }, { use: true, apply: true, Dw: 1.5, Lw: null, Z: 11, HRCpin: 60, HRCbore: 58 }],
+      verify: { feaKcar: [null, null], feaSigmaF: null, testT: 28, testNote: '시험성적서 정격 (RDP-RH065 9N)' },
       anim: { rpm: 1000, slow: 0.02 },
       mc: { samples: 200, utilization: 0.7 }
     };

@@ -4,6 +4,11 @@ const E = require('./engine.js');
 require('./viewer3d.js');
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-8, `${a} ≠ ${b}`);
 const test = E.defaultDesign();
+// geometry fixture (independent of the example design)
+test.struct = undefined; test.geom = {}; test.needle = undefined;
+test.stages.forEach((s, i) => Object.assign(s, { b: 5 + i, sunBore: null, planetBore: null, ringOD: null,
+  pin: { d: 4, type: 'double', material: 'SUJ2', wall: 4, allow: 1200, holeMode: 'through', depth: null },
+  carrier: { webW: 4, webH: 3, material: 'S45C', outerD: null, innerD: null, groove: null, pocket: null, axialClearance: 0, bossD: null, bossT: 4 } }));
 const shape = i => E.prepare(test).stages[i].carrier;
 const a = shape(0), b = shape(1);
 assert.deepEqual(a.errors, []);
@@ -56,8 +61,8 @@ assert.equal(single.plates.length, 1);
 close(single.span, 5.5);
 close(single.pinLength, single.hole.depth + 5.5);
 close(single.engagement[0], single.hole.depth);
-close(single.stock[1], 5);
-assert.equal(single.hole.entry, -.5);
+close(single.stock[0], 0);                 // pin runs from the gear's input face …
+assert.equal(single.hole.entry, 5.5);         // … into the plate on the output side
 
 test.stages[1].pin.type = 'single';
 test.stages[1].pin.holeMode = 'blind';
@@ -78,6 +83,7 @@ close(bom.find(p => p.id === 'carrier1').mass, single.materialVolume * 7.85e-6);
 assert.ok(PGD3D.partSchema(rating, test, 'pin1').some(row => row.readonly && Number(row.value) > 5));
 
 const legacy = E.defaultDesign();
+legacy.stages[0].carrier.outerD = null;
 legacy.geom = { carrier1: { plateD: 52 } };
 assert.equal(E.prepare(legacy).stages[0].carrier.outerD, 52);
 console.log('Carrier geometry: PCD, support, opposite boss/drill directions, through and blind pin lengths, load spans, layout and BOM passed.');

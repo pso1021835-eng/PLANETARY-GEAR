@@ -45,11 +45,14 @@
     integral: ['일체 가공', '축 또는 캐리어 허브 끝에 썬 치형을 직접 가공합니다. 토크 경로는 단차를 지나는 연속 재료입니다.', '가공 공구 도피부, 단차 필렛, 축 조립 방향을 확인합니다.'],
     key: ['평행키', '축 홈과 허브 홈에 하나의 키를 끼웁니다. 키 옆면의 면압과 단면 전단으로 토크를 전달합니다.', '키홈 끝의 응력 집중과 썬기어 림의 남는 두께를 확인합니다.'],
     press: ['원통 압입', '축을 허브 보어에 억지끼움합니다. 유효 길이 전체의 원통 접촉 마찰로 토크를 전달합니다.', '맞춤 길이, 조립 죔새, 허브 면압을 확인합니다.'],
-    clamp: ['분할 클램프', '슬릿이 있는 허브의 볼트를 조여 축을 감쌉니다. 허브가 축에 가하는 접촉 압력으로 마찰 토크를 전달합니다.', '슬릿 개방량, 조임 볼트 접근성, 조임 후 보어의 변형을 확인합니다.']
+    clamp: ['분할 클램프', '슬릿이 있는 허브의 볼트를 조여 축을 감쌉니다. 허브가 축에 가하는 접촉 압력으로 마찰 토크를 전달합니다.', '슬릿 개방량, 조임 볼트 접근성, 조임 후 보어의 변형을 확인합니다.'],
+    pin: ['핀 결합', '캐리어 판의 보어를 썬 허브의 파일럿 축에 끼워 중심을 맞추고, 같은 원주 위의 다웰 핀 여러 개를 두 부품에 걸쳐 끼워 핀 전단으로 토크를 전달합니다. 결합부가 썬 허브 끝면에 있어 축 안쪽을 비워 둘 수 있습니다 (중공 확장에 유리).', '핀 구멍의 위치도(⌖)와 끼워맞춤(M7), 파일럿 H7/g6 맞춤, 핀 빠짐 방지를 확인합니다.'],
+    flange: ['볼트 플랜지', '모터 쪽 허브를 썬기어 끝면에 대고 원주 위의 볼트로 조입니다. 접합면 마찰로 토크를 전달하고, 썬 안쪽은 비어 있어 중공을 크게 둘 수 있습니다.', '볼트 예압과 접합면 마찰, 허브와 썬의 동심 맞춤(파일럿)을 확인합니다.']
   };
   const supportOptions = {
     out: ['출력측 1개', 'C1 축의 S2 가까운 쪽에 베어링을 둡니다. 베어링 내륜은 회전하는 저널, 외륜은 하우징 쪽 지지부에 놓입니다.', '베어링 중심에서 S2 치폭 중앙까지의 돌출 길이를 확인합니다.'],
     both: ['양측 2개', 'C1 축을 서로 떨어진 두 베어링으로 받칩니다. 두 지지점과 S2 하중 위치가 축의 기울기를 결정합니다.', '두 지지점의 간격, 조립 방향, 유격 또는 예압을 확인합니다.'],
+    nested: ['S2 양측 지지 (S1·C2 보어 안)', 'C1은 S2 허브에 핀으로 붙고, S2 자체를 입력측은 S1 보어 안의 베어링(6703), 출력측은 C2 보어 안의 베어링(6705)으로 받칩니다. 썬들이 서로의 보어 안에서 지지되는 중첩 구조라 축 중심부를 비울 수 있습니다.', 'S1·C2의 흔들림이 S2 중심으로 그대로 전해지므로 두 보어의 동심도(◎)와 베어링 틈새를 확인합니다.'],
     none: ['C1 전용 지지 없음', '도식의 점선 구역에는 C1을 받치는 전용 베어링이 없습니다. C1과 S2의 반경 구속이 어떤 부품으로 닫히는지 확인해야 합니다.', '이 설계실의 플로팅 썬 금지 조건에서는 별도 반경 지지 경로 확인이 필요합니다.']
   };
   const outputOptions = {
@@ -105,8 +108,14 @@
     return path(`M${points.join('L')}Z`, 'shaft');
   }
 
-  function jointFront(type) {
+  function jointFront(type, dims = {}) {
     const x = 121, y = 110;
+    if (type === 'pin' || type === 'flange') {
+      const n = Number.isInteger(dims.n) && dims.n >= 2 && dims.n <= 24 ? dims.n : type === 'pin' ? 6 : 4, rr = 40;
+      const holes = Array.from({ length: n }, (_, i) => { const a = -Math.PI / 2 + (i + .5) * 2 * Math.PI / n; return circle(x + rr * Math.cos(a), y + rr * Math.sin(a), type === 'pin' ? 5 : 4, type === 'pin' ? 'fastener' : 'outline'); }).join('');
+      return circle(x, y, 75, 'outline') + circle(x, y, 58, 'outline') + circle(x, y, rr, 'axis') + holes
+        + circle(x, y, type === 'pin' ? 27 : 30, 'outline') + (type === 'pin' ? circle(x, y, 22, 'outline') : '') + centerCross(x, y, 79) + cutTrace(x, y, 101);
+    }
     const core = type === 'spline' ? splineOutline(x, y) : circle(x, y, 46, 'shaft');
     const key = type === 'key' ? rect(x - 11, y - 58, 22, 19, 'fastener') : '';
     const slit = type === 'clamp' ? rect(x - 3, y - 76, 6, 30, 'slot')
@@ -115,7 +124,24 @@
       + (type === 'integral' ? '' : core + key + slit) + centerCross(x, y, 79) + cutTrace(x, y, 101);
   }
 
+  function faceJointArt(type, input, dims = {}) {
+    const mid = 113, pin = type === 'pin';
+    const left = pin ? path('M118 36H186V87H176V96H118Z', 'carrier') : path('M66 52H150V97H66Z', 'shaft');
+    const right = pin ? path('M186 70H392V60H418V97H186Z', 'sun') + path('M168 87H186V97H168Z', 'sun')
+      : path('M150 64H392V54H418V97H150Z', 'sun');
+    const fasteners = pin ? rect(160, 68, 52, 9, 'fastener') : rect(104, 70, 70, 7, 'fastener') + rect(96, 66, 10, 15, 'fastener');
+    const contact = line(186, 40, 186, 96, 'contact');
+    const spec = pin ? `${fmt(dims.n)} × Ø${fmt(dims.dp)} · PCD ${fmt(dims.pcd)}` : `${fmt(dims.n)} × M${fmt(dims.bd)} · PCD ${fmt(dims.pcd)}`;
+    return mirror(left + right + fasteners + (pin ? contact : line(150, 52, 150, 97, 'contact')), mid) + line(23, mid, 457, mid, 'axis')
+      + leader(140, 44, 48, 22, pin ? 'C1 캐리어 판' : (input ? '모터 허브' : 'C1 허브'))
+      + leader(330, 64, 352, 32, pin ? 'S2 썬기어 허브' : (input ? 'S1 썬기어' : 'S2 썬기어'))
+      + leader(pin ? 200 : 140, 72, pin ? 236 : 210, 26, pin ? '다웰 핀' : '볼트')
+      + (pin ? leader(178, 92, 250, 196, `파일럿 Ø${fmt(dims.d)} (H7/g6)`) : leader(150, 90, 250, 196, '접합면 (마찰 전달)'))
+      + label(240, 234, spec, 'middle') + label(330, 118, '중공', 'middle');
+  }
+
   function jointArt(type, input, dims = {}) {
+    if (type === 'pin' || type === 'flange') return faceJointArt(type, input, dims);
     const a = input ? '모터축' : 'C1 허브축', b = input ? 'S1 썬기어' : 'S2 썬기어';
     const mid = 113, integral = type === 'integral';
     const solid = path('M49 96H150V88H178V70H346V83H412V113H49Z', 'shaft');
@@ -133,7 +159,22 @@
       + leader(263, type === 'key' ? 87 : 135, 246, 192, point);
   }
 
+  function nestedArt() {
+    const top = path('M60 58H206V100H186V107H60Z', 'sun')                       // S1: journal + teeth, bore Ø23
+      + rect(150, 107, 470, 14, 'sun') + rect(470, 86, 92, 21, 'sun')            // S2 tube (bore Ø15) + teeth
+      + bearing(154, 100, 7)                                                       // 6703 inside the S1 bore
+      + rect(238, 46, 24, 61, 'carrier') + rect(232, 96, 36, 6, 'fastener')        // C1 plate pinned to the S2 hub
+      + path('M418 52H446V97H438V107H418Z', 'carrier') + bearing(416, 99, 8)       // C2 input plate + 6705 in its bore
+      + path('M562 52H640V107H600V86H562Z', 'carrier');                            // C2 output body
+    return mirror(top, 132) + axis(132)
+      + label(78, 50, 'S1') + label(243, 38, 'C1') + label(500, 78, 'S2') + label(590, 44, 'C2')
+      + leader(167, 104, 120, 22, '6703 · S1 보어 안') + leader(429, 103, 382, 22, '6705 · C2 보어 안')
+      + leader(250, 99, 300, 30, '핀 결합') + label(360, 136, '중공', 'middle')
+      + horizontal(290, 222, 364) + label(372, 228, '출력 방향');
+  }
+
   function supportArt(mode) {
+    if (mode === 'nested') return nestedArt();
     const mount = x => rect(x - 11, 47, 48, 43, 'fixed') + bearing(x, 83, 39) + bearing(x, 144, 39) + rect(x - 11, 180, 48, 18, 'fixed');
     return axis(132) + rect(83, 120, 444, 24, 'carrier') + rect(158, 100, 32, 64, 'carrier') + rect(520, 95, 76, 74, 'sun')
       + (mode === 'both' ? mount(221) : '')
@@ -179,8 +220,8 @@
       const hollow = d.stages[i]?.sunBore !== 0;
       const join = i === 1 && d.struct?.c1s2 === 'integral' ? 'carrier' : i === 0 && d.struct?.s1motor === 'integral' ? 'shaft' : 'sun';
       const pinLayout = d.stages[i]?.pin;
-      const inputSupport = pinLayout?.type !== 'single' || i === 0;
-      const outputSupport = pinLayout?.type !== 'single' || i === 1;
+      const inputSupport = pinLayout?.type !== 'single';   // single support: the plate sits on the output side
+      const outputSupport = true;
       const width = g.right - g.left;
       return rect(g.left, 94, width, 23, 'planet') + line(g.left, 96, g.right, 96, 'axis')
         + rect(g.left, g.lower, width, (hollow ? 134 : mid) - g.lower, join)
@@ -194,12 +235,18 @@
     const c2 = path(`M${last.right + 12} 95H${last.right + 30}V86H${bearingX + 28}V79H568V138H535V118H${last.right + 27}V126H${last.right + 12}Z`, 'carrier');
     const mainBearing = rect(bearingX - 5, 51, 35, 21, 'fixed') + bearing(bearingX, 71, 19)
       + rect(bearingX, 90, 28, 5, 'carrier');
-    const c1Bearing = two && d.struct?.c1Support !== 'none' ? bearing(305, 78, 16)
-      + (d.struct?.c1Support === 'both' ? bearing(150, 110, 17) : '') : '';
+    const nested = two && d.struct?.c1Support === 'nested';
+    const c1Bearing = !two || d.struct?.c1Support === 'none' ? ''
+      : nested ? rect(250, 135, 90, 6, 'sun') + bearing(252, 128, 7) + bearing(320, 120, 9)   // S2 journal into the S1 bore (6703) · 6705 in the C2 plate bore
+        : bearing(305, 78, 16) + (d.struct?.c1Support === 'both' ? bearing(150, 110, 17) : '');
+    const c1Pins = two && d.struct?.c1s2 === 'pin' ? rect(300, 122, 40, 4, 'fastener') : '';
+    const inputBolts = d.struct?.s1motor === 'flange' ? rect(150, 122, 34, 4, 'fastener') + rect(146, 119, 6, 10, 'fastener') : '';
+    const rows = Math.max(1, Math.min(3, d.outBearing?.rows || 1));
+    const extraRows = Array.from({ length: rows - 1 }, (_, k) => bearing(bearingX + 28 * (k + 1), 71, 19) + rect(bearingX + 28 * (k + 1), 90, 28, 5, 'carrier')).join('');
     const closing = d.struct?.ringHousing === 'bolt' ? rect(89, 46, 17, 10, 'shaft') + rect(106, 49, 51, 4, 'shaft') : '';
     const boltOrFit = d.struct?.ringHousing === 'press' ? line(165, 69, 451, 69, 'contact') : '';
     const spin = mirror(cover + flange + ring + gear(first, 0) + (two ? gear(second, 1) : '') + c1 + c2
-      + mainBearing + c1Bearing + bearing(123, 111, 20) + closing + boltOrFit, mid);
+      + mainBearing + extraRows + c1Bearing + c1Pins + inputBolts + bearing(123, 111, 20) + closing + boltOrFit, mid);
     const x = position => 176 + position * .56;
     const mark = (px, py, fx, fy, n) => balloon(x(px), py, fx, fy, n);
     const partCallouts = mark(115, 74, 190, 27, '1') + mark(207, 76, 262, 24, '2')
@@ -235,8 +282,8 @@
 
   const variants = {
     '2-4': { title: '링–하우징 결합 단면', values: ringOptions, get: d => d.struct?.ringHousing ?? 'press', draw: ringArt, front: (key, fit) => ringFront(key, fit?.boltN) },
-    '2-5': { title: '1단 캐리어–2단 썬 결합 단면', values: Object.fromEntries(Object.entries(jointOptions).filter(([k]) => k !== 'clamp')), get: d => d.struct?.c1s2 ?? 'spline', draw: (key, dims) => jointArt(key, false, dims), front: jointFront, onlyTwo: true },
-    '2-6': { title: '모터축–1단 썬 결합 단면', values: jointOptions, get: d => d.struct?.s1motor ?? 'key', draw: (key, dims) => jointArt(key, true, dims), front: jointFront },
+    '2-5': { title: '1단 캐리어–2단 썬 결합 단면', values: Object.fromEntries(Object.entries(jointOptions).filter(([k]) => k !== 'clamp' && k !== 'flange')), get: d => d.struct?.c1s2 ?? 'spline', draw: (key, dims) => jointArt(key, false, dims), front: jointFront, onlyTwo: true },
+    '2-6': { title: '모터축–1단 썬 결합 단면', values: Object.fromEntries(Object.entries(jointOptions).filter(([k]) => k !== 'pin')), get: d => d.struct?.s1motor ?? 'key', draw: (key, dims) => jointArt(key, true, dims), front: jointFront },
     '2-7': { title: 'C1 축의 반경 지지', values: supportOptions, get: d => d.struct?.c1Support ?? 'none', draw: supportArt, onlyTwo: true },
     '2-8': { title: '출력 메인 베어링 배치', values: outputOptions, get: d => d.struct?.obPos ?? 'flange', draw: outputArt }
   };
@@ -251,7 +298,7 @@
     const dims = intermediate ? c.D.struct?.c1s2Dim : c.D.struct?.s1Dim;
     const stage = c.R?.ctx?.stages?.[intermediate ? 1 : 0];
     const bore = stage?.geo?.rims?.[0]?.diameter;
-    return { d: dims?.d ?? (bore > 0 ? bore : null), length: dims?.L ?? (intermediate ? stage?.st?.b : null) };
+    return { d: dims?.d ?? (bore > 0 ? bore : null), length: dims?.L ?? (intermediate ? stage?.st?.b : null), n: dims?.n, dp: dims?.dp, bd: dims?.bd, pcd: dims?.pcd };
   }
   function sheet(front, section, title, assembly = false) {
     return `<div class="sc-sheet">
@@ -266,7 +313,7 @@
       const current = optionKey(spec.values, spec.get(c.D));
       const [name, text, check] = spec.values[current];
       const sizes = id === '2-4' ? c.D.struct?.ringFit : id === '2-5' || id === '2-6' ? jointSize(id, c) : undefined;
-      const size = id === '2-4' && current === 'bolt' ? `플랜지 체결 M${fmt(sizes?.boltD)} × ${fmt(sizes?.boltN)}개` : id === '2-8' ? `롤러 피치원 지름 ${fmt(c.D.outBearing?.dp)} mm` : '';
+      const size = id === '2-4' && current === 'bolt' ? `플랜지 체결 M${fmt(sizes?.boltD)} × ${fmt(sizes?.boltN)}개` : id === '2-8' ? `${escape(c.D.outBearing?.name || '')} · 피치원 지름 ${fmt(c.D.outBearing?.dp)} mm` : '';
       const art = spec.draw(current, sizes);
       return `<section class="sc card"><h3>${spec.title} <span class="sc-choice">${name}</span></h3>
         ${spec.front ? sheet(spec.front(current, sizes), art, name) : figure(art, `${spec.title} · ${name}`)}

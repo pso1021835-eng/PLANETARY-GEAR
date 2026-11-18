@@ -59,7 +59,7 @@
 
   function resolve(stage, geo, i, legacyOD) {
     const pin = stage.pin || {}, carrier = stage.carrier || {}, gear = geo.parts[1];
-    const errors = [], warnings = [], double = pin.type !== 'single', direction = i === 0 ? -1 : 1;
+    const errors = [], warnings = [], double = pin.type !== 'single', direction = double && i === 0 ? -1 : 1;  // single support: the plate sits on the output side
     const b = gear.width, orbit = geo.meshes[0].center, count = stage.n;
     const diameter = pin.d;
     const gap = double ? (carrier.groove ?? b + .6) - b : carrier.axialClearance ?? 0;
