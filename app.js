@@ -1021,7 +1021,7 @@ function componentsHTML() {
     <td><label class="sw"><input type="checkbox" data-p="options.${o.key}.lock" data-t="bool" ${D.options?.[o.key]?.lock ? 'checked' : ''}> 잠금</label></td></tr>`).join('');
   return `<div class="card"><h3>기본 구성요소</h3><p class="note" style="margin-top:0">링기어 고정 · 썬 입력 · 캐리어 출력. S·P·R은 4단계 기어 제원에서, C는 10단계 캐리어–핀에서 형상이 정해집니다.</p>
     <table class="comp"><tr><th>단</th><th>썬</th><th>유성</th><th>링</th><th>캐리어</th></tr>${rows}</table></div>
-    <div class="card"><h3>옵션 부품</h3><p class="note" style="margin-top:0">표시를 끄면 3D·BOM·도면에서 빠집니다. 잠금은 치수 입력을 고정합니다. 강도 계산(유성 베어링·출력 베어링·핀 판정)은 표시 여부와 관계없이 그대로 수행합니다.</p>
+    <div class="card"><h3>옵션 부품</h3><p class="note" style="margin-top:0"><b>3D 종합판정 모델은 지금 부품 편집에서 고칠 수 있는 가공 부품(S·P·R·C, 유성 핀)만 표시합니다. 아래 옵션 부품은 하나씩 다시 추가할 예정입니다.</b> 표시를 끄면 BOM·도면에서 빠집니다. 잠금은 치수 입력을 고정합니다. 강도 계산(유성 베어링·출력 베어링·핀 판정)은 표시 여부와 관계없이 그대로 수행합니다.</p>
     <table class="comp opt"><tr><th class="l">부품</th><th>표시</th><th>잠금</th></tr>${opts}</table></div>`;
 }
 // ------------------------------------------------------------------ part drawings
@@ -1193,7 +1193,7 @@ function mountOverview(m) {
   bindDrawing(m, onDwSel);
   const bindBom = () => bom.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { VIEW3D?.select(tr.dataset.id, true); showCard(tr.dataset.id); });
   bom.innerHTML = bomHTML(null); bindBom();
-  mountViewer(host, 'full', { onPick: id => showCard(id), onIssue: g => showIssue(g) });
+  mountViewer(host, 'full', { only: 'sprc', onPick: id => showCard(id), onIssue: g => showIssue(g) });
   VIEW3D?.setIssues(issues);
   if (OVSTATE.sel && bomList().some(p => p.id === OVSTATE.sel)) { VIEW3D?.select(OVSTATE.sel, false); showCard(OVSTATE.sel); }
   const iv = OVSTATE.view;

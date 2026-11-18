@@ -309,6 +309,8 @@
     const TH = T(); if (!TH) return null;
     const { R, D, mode = 'full' } = opt;
     const full = mode === 'full';
+    // only: 'sprc' → machined parts only (sun, planet, ring, carrier + its pins); bearings, housing, covers, shafts, seals, bolts left out for now
+    const extras = full && opt.only !== 'sprc';
     const W0 = host.clientWidth, H0 = host.clientHeight;
     const mobile = Math.min(W0, window.innerWidth) < 760;
     const renderer = new TH.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false });
@@ -419,7 +421,7 @@
       }
       // needle rollers (instanced) between pin and planet bore
       let needles = null;
-      if (full && partOn(D, `needle${sid}`) && x.planetBore > st.pin.d + .6) {
+      if (extras && partOn(D, `needle${sid}`) && x.planetBore > st.pin.d + .6) {
         const rIn = st.pin.d / 2, rOut = x.planetBore / 2, nd = (rOut - rIn) * .92, rc = (rIn + rOut) / 2;
         const cnt = Math.max(6, Math.floor(2 * Math.PI * rc / (nd * 1.08)));
         needles = new TH.InstancedMesh(new TH.CylinderGeometry(nd / 2, nd / 2, b * .9, 10).rotateX(Math.PI / 2), mkMat('roller'), cnt * st.n);
@@ -443,7 +445,7 @@
 
     // ---- housing, cover, input shaft, output bearing, flange, seals, bolts (full mode)
     let outRot = null, cage = null, inRot = null;
-    if (full) {
+    if (extras) {
       const sh = L.sh;
       if (partOn(D, 'housing')) add(new TH.Mesh(lathe(housingProfile(L), 128), mkMat('housing')), 'housing', root, 0, 0);
       if (partOn(D, 'cover')) add(new TH.Mesh(lathe(coverProfile(L), 128), mkMat('housing')), 'cover', root, 3, -unit * 3.2);
