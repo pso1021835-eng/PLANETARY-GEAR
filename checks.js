@@ -223,7 +223,7 @@
       });
       const m0 = S[0].st.m, zr = S[0].st.s + 2 * S[0].st.p;
       th.push(['링 림', (L.ringOD - (m0 * zr + 2.5 * m0)) / 2, 3.5 * m0], ['하우징 벽', L.housR - L.ringOD / 2, .8]);
-      (R.carrierPin || []).forEach((c, i) => { if (c.geometry?.wall) th.push([`C${i + 1} 판`, c.geometry.wall, 1]); if (c.geometry?.pocket) th.push([`C${i + 1} 포켓 폭`, c.geometry.pocket, 2]); });
+      (R.carrierPin || []).forEach((c, i) => { if (c.geometry?.wall) th.push([`C${i + 1} 판 (자동)`, c.geometry.wall, 1]); if (c.geometry?.pocket) th.push([`C${i + 1} 포켓 폭`, c.geometry.pocket, 2]); });
       const bad = th.filter(([, v, mn]) => v < mn - 1e-3);
       put('D4', { kind: 'calc', val: bad.length ? '부족: ' + bad.map(([n, v, mn]) => `${n} ${f(v, 2)} < ${f(mn, 2)} mm`).join(' · ') : `최소 두께 통과 (${th.length}곳)`, ok: !bad.length, th });
     }

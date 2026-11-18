@@ -88,7 +88,8 @@
         if (sh.bossT > 0) M.fd.push(at(`stages.${i}.carrier.bossD`, sh.bossD, '보스 외경'));
         const pcd = ref(sh.orbit * 2, 'PCD'); pcd.prefix = `${sh.pins.length}×Ø${f(hr * 2, 2)} PCD `; M.fd.push(pcd);
         const plates = sv.filter(s => s.drilling.length), boss = sv.find(s => !s.drilling.length);
-        if (plates[0]) M.ad.push(Object.assign(at(`stages.${i}.pin.wall`, plates[0].z[1] - plates[0].z[0], '지지판 두께'), { z0: plates[0].z[0], z1: plates[0].z[1] }));
+        { const pz = sh.plates.map(p => [p[0] - z0, p[1] - z0]), a = Math.min(...pz.map(p => p[0])), b = Math.max(...pz.map(p => p[1]));
+          M.ad.push(Object.assign(at(`stages.${i}.carrier.width`, b - a, '캐리어 두께'), { z0: a, z1: b })); }
         if (boss) M.ad.push(Object.assign(at(`stages.${i}.carrier.bossT`, boss.z[1] - boss.z[0], '보스 두께'), { z0: boss.z[0], z1: boss.z[1] }));
         if (sh.double && plates.length > 1) M.ad.push(Object.assign(at(`stages.${i}.carrier.groove`, plates[1].z[0] - plates[0].z[1], '홈 폭'), { z0: plates[0].z[1], z1: plates[1].z[0] }));
         M.ad.push(Object.assign(ref(sh.axial[1] - sh.axial[0], '전체 길이'), { z0: 0, z1: sh.axial[1] - sh.axial[0] }));

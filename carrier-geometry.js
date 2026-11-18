@@ -61,8 +61,14 @@
     const pin = stage.pin || {}, carrier = stage.carrier || {}, gear = geo.parts[1];
     const errors = [], warnings = [], double = pin.type !== 'single', direction = i === 0 ? -1 : 1;
     const b = gear.width, orbit = geo.meshes[0].center, count = stage.n;
-    const wall = pin.wall ?? 4, diameter = pin.d;
+    const diameter = pin.d;
     const gap = double ? (carrier.groove ?? b + .6) - b : carrier.axialClearance ?? 0;
+    // Carrier thickness (axial, plates + planet seat, boss excluded) is the input. Double support: the plates are
+    // symmetric about the centre of the planet seat, each (thickness − seat width) / 2. Single: thickness = the one plate.
+    // Empty → plate 4 mm (legacy pin.wall if set).
+    const plate0 = pin.wall ?? 4, seat = double ? b + gap : 0;
+    const width = positive(carrier.width) ? carrier.width : seat + (double ? 2 : 1) * plate0;
+    const wall = double ? (width - seat) / 2 : width;
     const outerD = carrier.outerD ?? (positive(legacyOD) ? legacyOD : null) ?? 2 * Math.min(orbit + gear.da * .375, geo.parts[2].da / 2 - .6);
     const innerD = carrier.innerD ?? geo.parts[0].da + 1.2;
     const pocket = carrier.pocket ?? gear.da + 4;
@@ -70,6 +76,7 @@
     const bossD = carrier.bossD ?? Math.min(outerD, Math.max(innerD + .5, 2 * orbit - diameter - 2));
     const radius = diameter / 2, ri = innerD / 2, ro = outerD / 2, rb = bossD / 2;
     const holeMode = pin.holeMode ?? 'through';
+    if (!(wall > EPS)) return { errors: [double ? `캐리어 두께 ${width} mm가 유성 안착 축방향 폭 ${seat.toFixed(2)} mm보다 커야 합니다 (판 두께 = (캐리어 두께 − 안착 폭) / 2).` : '캐리어 두께를 확인하세요.'], warnings };
     if (![b, orbit, wall, diameter, outerD, innerD].every(positive) || outerD <= innerD || !Number.isInteger(count) || count < 2) {
       return { errors: ['캐리어 내·외경, 판 두께, 핀 지름 및 유성 배치를 확인하세요.'], warnings };
     }
@@ -120,7 +127,7 @@
     const firstSupport = midpoint([Math.max(left?.[0] ?? 0, stock[0]), left?.[1] ?? 0]);
     const lastSupport = midpoint([right?.[0] ?? b, Math.min(right?.[1] ?? b, stock[1])]);
     const span = double ? lastSupport - firstSupport : b + gap;
-    return { errors, warnings, double, diameter, outerD, innerD, wall, gap, groove: double ? b + gap : null, pocket: double ? pocket : null,
+    return { errors, warnings, double, diameter, outerD, innerD, wall, width, widthAuto: !positive(carrier.width), seat, gap, groove: double ? b + gap : null, pocket: double ? pocket : null,
       bossD, bossT, boss, bossCoversPin, drivePCD: orbit * 2, orbit, plates, pins, web, slabs, materialVolume,
       hole, stock, pinLength: stock[1] - stock[0], engagement: engage, loadInterval, loadStart: double ? -firstSupport : gap,
       span, axial: [Math.min(stock[0], slabs[0].z[0]), Math.max(stock[1], slabs.at(-1).z[1])] };
