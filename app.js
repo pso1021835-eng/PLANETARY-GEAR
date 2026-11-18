@@ -732,7 +732,7 @@ const W = {
       <label class="f">유성 개수<input type="number" id="fN" value="${D.stages[0].n}"></label>
       <label class="f">썬 잇수 범위<input id="fS" value="12-60"></label>
       <label class="f">최대 링 잇수<input type="number" id="fR" value="140"></label></div>
-      <p><button class="btn" id="fGo">탐색</button> <span class="note">조립 조건 · 인접 간섭 · 헌팅 투스를 만족하는 조합 (모듈 ${D.stages[0].m} mm 기준)</span></p><div id="fOut"></div></div>`;
+      <p><button class="btn" id="fGo">탐색</button> <span class="note">조립 조건 · 인접 간섭을 만족하는 조합 (모듈 ${D.stages[0].m} mm 기준)</span></p><div id="fOut"></div></div>`;
   },
   ratio() {
     const st = R?.ctx?.stages || [];
@@ -924,16 +924,15 @@ const WB = {
     const go_ = m.querySelector('#fGo'); if (!go_) return;
     go_.onclick = () => {
       const target = +m.querySelector('#fRatio').value, n = +m.querySelector('#fN').value, [s0, s1] = m.querySelector('#fS').value.split('-').map(Number), rmax = +m.querySelector('#fR').value;
-      const g = (a, b) => { while (b) [a, b] = [b, a % b]; return a; };
       const res = [];
       for (let s = s0; s <= s1; s++) for (let p = 9; p <= 120; p++) {
         const r = s + 2 * p; if (r > rmax || (s + r) % n) continue;
         const ratio = 1 + r / s, a = (s + p) / 2, gap = 2 * a * Math.sin(Math.PI / n) - (p + 2);
         if (gap <= 0.5) continue;
-        res.push({ s, p, r, ratio, err: Math.abs(ratio - target) / target, hunt: g(s, p) === 1 && g(p, r) === 1 });
+        res.push({ s, p, r, ratio, err: Math.abs(ratio - target) / target });
       }
-      res.sort((a, b) => a.err - b.err || b.hunt - a.hunt);
-      m.querySelector('#fOut').innerHTML = `<div class="scroll"><table><tr><th>S</th><th>P</th><th>R</th><th>감속비</th><th>오차</th><th>헌팅</th><th></th></tr>${res.slice(0, 12).map(x => `<tr><td>${x.s}</td><td>${x.p}</td><td>${x.r}</td><td>${fmt(x.ratio, 4)}</td><td>${fmt(x.err * 100, 2)} %</td><td>${x.hunt ? '예' : ''}</td><td><button class="btn" data-ap="${x.s},${x.p},${n}">1단에 적용</button></td></tr>`).join('')}</table></div>`;
+      res.sort((a, b) => a.err - b.err);
+      m.querySelector('#fOut').innerHTML = `<div class="scroll"><table><tr><th>S</th><th>P</th><th>R</th><th>감속비</th><th>오차</th><th></th></tr>${res.slice(0, 12).map(x => `<tr><td>${x.s}</td><td>${x.p}</td><td>${x.r}</td><td>${fmt(x.ratio, 4)}</td><td>${fmt(x.err * 100, 2)} %</td><td><button class="btn" data-ap="${x.s},${x.p},${n}">1단에 적용</button></td></tr>`).join('')}</table></div>`;
       m.querySelectorAll('[data-ap]').forEach(b => b.onclick = () => { const [s, p, nn] = b.dataset.ap.split(',').map(Number); Object.assign(D.stages[0], { s, p, n: nn }); if (D.config.sharedRing) { D.stages[1].s = s; D.stages[1].n = nn; } changed(); });
     };
   },
@@ -990,7 +989,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=pr24-1');
+    if (!worker) worker = new Worker('worker.js?v=pr26-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });
