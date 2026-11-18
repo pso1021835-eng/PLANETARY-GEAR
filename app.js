@@ -424,6 +424,10 @@ function studioDims(id, S = studioSrc()) {
     const pn = sh.pins[1 % sh.pins.length], pk = sh.pins[2 % sh.pins.length], tA = Math.atan2(pn.y, pn.x), tK = Math.atan2(pk.y, pk.x);
     // pin Ø: across the pin end, tangential direction
     out.push({ a: [pn.x + Math.sin(tA) * sh.diameter / 2, pn.y - Math.cos(tA) * sh.diameter / 2, z1 + .2], b: [pn.x - Math.sin(tA) * sh.diameter / 2, pn.y + Math.cos(tA) * sh.diameter / 2, z1 + .2], at: 'b', text: `핀 Ø${fmt(sh.diameter, 2)}`, path: `stages.${i}.pin.d`, value: get(`stages.${i}.pin.d`), off: [0, -14] });
+    if (sh.hole?.mode === 'blind') {
+      const p0 = sh.pins[0], deg = Math.atan2(p0.y, p0.x) * 180 / Math.PI;
+      axial(deg, sh.orbit + sh.diameter / 2 + .8, Math.min(sh.hole.entry, sh.hole.end), Math.max(sh.hole.entry, sh.hole.end), `핀 홀 깊이 ${fmt(sh.hole.depth, 2)}`, `stages.${i}.pin.depth`, { auto: sh.hole.autoDepth, off: [0, 14] });
+    }
     if (sh.double) {
       const zm = (pl[0][1] + pl[1][0]) / 2;
       axial(0, ro + 1.2, pl[0][1], pl[1][0], `안착 폭 ${fmt(sh.groove, 2)}`, `${c}.groove`, { auto: sh.groove, off: [0, 14] });
