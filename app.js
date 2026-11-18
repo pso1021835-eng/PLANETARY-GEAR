@@ -1127,11 +1127,13 @@ function overviewView() {
     ${VIEWS.overviewOld().replace(/^<h2>.*?<\/h2><p class="lead">.*?<\/p>/s, '')}${componentsHTML()}</div>`;
 }
 
-function bomHTML(sel) {
-  const L = bomList(), tot = L.reduce((s, p) => s + p.mass * p.qty, 0);
+// parts the 3D overview currently draws (machined S·P·R·C + planet pins); the rest return one by one
+const IN3D = id => /^(sun|planet|ring|carrier|pin)\d?$/.test(id);
+function bomHTML(sel, only3d = false) {
+  const L = bomList().filter(p => !only3d || IN3D(p.id)), tot = L.reduce((s, p) => s + p.mass * p.qty, 0);
   return `<div class="bom-h"><b>BOM</b><span class="note">${L.length}종 · ${L.reduce((s, p) => s + p.qty, 0)}개 · 약 ${fmt(tot * 1000, 0)} g</span></div>
     <div class="bom-s"><table><tr><th>No</th><th class="l">부품</th><th>수량</th><th class="l">재료</th><th class="l">열처리</th><th>g</th><th>판정</th></tr>
-    ${L.map(p => `<tr data-id="${p.id}" class="${p.id === sel ? 'sel' : ''}"><td>${p.no}</td><td class="l">${esc(p.name)}</td><td>${p.qty}</td><td class="l">${esc(p.material)}</td><td class="l">${esc(p.heat)}</td><td>${fmt(p.mass * 1000, 1)}</td><td>${p.verdict ? `<span class="${p.verdict.ok ? 'good' : 'bad'}">${p.verdict.ok ? '✓' : '✗'}</span>` : '—'}</td></tr>`).join('')}</table></div>`;
+    ${L.map((p, i) => `<tr data-id="${p.id}" class="${p.id === sel ? 'sel' : ''}"><td>${only3d ? i + 1 : p.no}</td><td class="l">${esc(p.name)}</td><td>${p.qty}</td><td class="l">${esc(p.material)}</td><td class="l">${esc(p.heat)}</td><td>${fmt(p.mass * 1000, 1)}</td><td>${p.verdict ? `<span class="${p.verdict.ok ? 'good' : 'bad'}">${p.verdict.ok ? '✓' : '✗'}</span>` : '—'}</td></tr>`).join('')}</table></div>`;
 }
 function dimsHTML(id, S) {
   let rows = []; try { rows = PGD3D.partSchema(R, D, id); } catch (e) { }
@@ -1176,7 +1178,7 @@ function mountOverview(m) {
   const card = m.querySelector('#pcard'), pop = m.querySelector('#ipop'), bom = m.querySelector('#bom');
   let sel = null;
   const showCard = id => {
-    sel = id; bom.innerHTML = bomHTML(id); bindBom();
+    sel = id; bom.innerHTML = bomHTML(id, true); bindBom();
     OVSTATE.sel = id;
     if (id && id !== DWSTATE.id) { const dw = m.querySelector('#dwg'); if (dw) { dw.outerHTML = drawingHTML(id); bindDrawing(m, onDwSel); } }
     if (!id) { card.hidden = true; return; }
@@ -1192,7 +1194,7 @@ function mountOverview(m) {
   const onDwSel = id => { VIEW3D?.select(id, true); showCard(id); const dw = m.querySelector('#dwg'); if (dw) { dw.outerHTML = drawingHTML(id); bindDrawing(m, onDwSel); } };
   bindDrawing(m, onDwSel);
   const bindBom = () => bom.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { VIEW3D?.select(tr.dataset.id, true); showCard(tr.dataset.id); });
-  bom.innerHTML = bomHTML(null); bindBom();
+  bom.innerHTML = bomHTML(null, true); bindBom();
   mountViewer(host, 'full', { only: 'sprc', onPick: id => showCard(id), onIssue: g => showIssue(g) });
   VIEW3D?.setIssues(issues);
   if (OVSTATE.sel && bomList().some(p => p.id === OVSTATE.sel)) { VIEW3D?.select(OVSTATE.sel, false); showCard(OVSTATE.sel); }

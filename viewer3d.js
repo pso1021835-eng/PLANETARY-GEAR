@@ -92,19 +92,49 @@
       new TH.CylinderGeometry(r1, r0, z1 - z0, segments, 1, true)
         .rotateX(Math.PI / 2).translate(x, y, (z0 + z1) / 2), reversed
     );
+    // Ø outer and Ø inner are each built as ONE turned surface over plates + web on a shared angular grid, so plate and web
+    // meet without T-junction cracks or seam lines. Between the plates only the web spans (outside the pockets) are filled.
+    const RO = shape.outerD / 2, RI = shape.innerD / 2, EPSR = 1e-6, web = shape.web, np = shape.pins.length, pitch = 2 * Math.PI / np;
+    const half = web ? shape.pocket / 2 : 0;
+    const spansFor = R => { if (!web || !web.sections.length || half >= R) return []; const a = Math.asin(half / R); return a < pitch / 2 ? Array.from({ length: np }, (_, i) => [a + i * pitch, pitch - a + i * pitch]) : []; };
+    const inSpan = (t, spans) => spans.some(([a, b]) => { const u = ((t - a) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI); return u <= b - a; });
+    // one angular grid for every face on Ø outer / Ø inner (turned surfaces and plate faces), so their edges coincide exactly
+    const ang = new Set(Array.from({ length: 240 }, (_, k) => k * Math.PI / 120));
+    [...spansFor(RO), ...spansFor(RI)].forEach(([a, b]) => { for (const v of [a, b]) ang.add(((v % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)); });
+    const A = [...ang].sort((x, y) => x - y);
+    const cyl = (R, sg, bands) => {
+      if (!bands.length) return;
+      for (const bd of bands) for (let k = 0; k < A.length; k++) {
+        const t0 = A[k], t1 = k + 1 < A.length ? A[k + 1] : A[0] + 2 * Math.PI;
+        if (t1 - t0 < 1e-9 || (bd.spans && !inSpan((t0 + t1) / 2, bd.spans))) continue;
+        const P = (t, z) => [R * Math.cos(t), R * Math.sin(t), z], N = t => [sg * Math.cos(t), sg * Math.sin(t), 0];
+        const a = P(t0, bd.z[0]), b = P(t1, bd.z[0]), c = P(t1, bd.z[1]), d = P(t0, bd.z[1]);
+        const quad = sg > 0 ? [[a, t0], [b, t1], [c, t1], [a, t0], [c, t1], [d, t0]] : [[a, t0], [c, t1], [b, t1], [a, t0], [d, t0], [c, t1]];
+        for (const [p, t] of quad) { positions.push(...p); normals.push(...N(t)); }
+      }
+    };
+    const roBands = shape.slabs.filter(sl => Math.abs(sl.outer - RO) < EPSR).map(sl => ({ z: sl.z })), riBands = shape.slabs.filter(sl => Math.abs(sl.inner - RI) < EPSR).map(sl => ({ z: sl.z }));
+    if (web && web.sections.length) { roBands.push({ z: web.z, spans: spansFor(RO) }); const si = spansFor(RI); if (si.length) riBands.push({ z: web.z, spans: si }); }
+    cyl(RO, 1, roBands); cyl(RI, -1, riBands);
+    if (opts.spans) Object.assign(opts.spans, { RO, RI, z: web?.z, ro: spansFor(RO), ri: spansFor(RI), inSpan });
     for (const slab of shape.slabs) {
-      wall(slab.outer, slab.outer, slab.z, 0, 0, false);
-      wall(slab.inner, slab.inner, slab.z, 0, 0, true);
+      if (Math.abs(slab.outer - RO) >= EPSR) wall(slab.outer, slab.outer, slab.z, 0, 0, false);
+      if (Math.abs(slab.inner - RI) >= EPSR) wall(slab.inner, slab.inner, slab.z, 0, 0, true);
       for (const high of [false, true]) {
-        const z = slab.z[+high], section = new TH.Shape();
-        section.absarc(0, 0, slab.outer, 0, Math.PI * 2, false);
-        const bore = new TH.Path(); bore.absarc(0, 0, slab.inner, 0, Math.PI * 2, true); section.holes.push(bore);
+        const z = slab.z[+high];
+        // a plate face that touches the web is inside the solid where the web is: pull its rim in by 0.2 mm there, so it can
+        // never tie in depth with the turned surface (that tie showed as a dotted seam line)
+        const inner = web && web.sections.length && web.z.some(wz => Math.abs(wz - z) < 1e-9), so = inner ? spansFor(RO) : [], si = inner ? spansFor(RI) : [];
+        const ring = (R, rev, spans, d) => { const pts = A.map(t => { const r = spans.length && inSpan(t, spans) ? R + d : R; return new TH.Vector2(r * Math.cos(t), r * Math.sin(t)); }); return rev ? pts.reverse() : pts; };
+        const section = Math.abs(slab.outer - RO) < EPSR ? new TH.Shape(ring(RO, false, so, -.2)) : (() => { const sh = new TH.Shape(); sh.absarc(0, 0, slab.outer, 0, Math.PI * 2, false); return sh; })();
+        const bore = Math.abs(slab.inner - RI) < EPSR ? new TH.Path(ring(RI, true, si, .2)) : (() => { const pa = new TH.Path(); pa.absarc(0, 0, slab.inner, 0, Math.PI * 2, true); return pa; })();
+        section.holes.push(bore);
         const band = slab.drilling.find(h => Math.abs(h.z[+high] - z) < 1e-8);
         const radius = band ? (high ? band.r1 : band.r0) : 0;
         if (radius > 1e-8) for (const pin of shape.pins) {
           const hole = new TH.Path(); hole.absarc(pin.x, pin.y, radius, 0, Math.PI * 2, true); section.holes.push(hole);
         }
-        add(new TH.ShapeGeometry(section, 36).translate(0, 0, z), !high);
+        add(new TH.ShapeGeometry(section, 48).translate(0, 0, z), !high);
       }
       for (const band of slab.drilling) for (const pin of shape.pins) wall(band.r0, band.r1, band.z, pin.x, pin.y, true, 72);
     }
@@ -113,7 +143,16 @@
       const [z0, z1] = shape.web.z;
       // side walls only: the web's end caps lie on the plate faces (inside the solid) and would z-fight / draw seams
       const eg = new TH.ExtrudeGeometry(profile, { depth: z1 - z0, bevelEnabled: false }).translate(0, 0, z0), sg = eg.groups.find(g => g.materialIndex === 1);
-      if (sg) { const sub = new TH.BufferGeometry(); for (const name of ['position', 'normal']) { const a = eg.attributes[name]; sub.setAttribute(name, new TH.Float32BufferAttribute(a.array.slice(sg.start * 3, (sg.start + sg.count) * 3), 3)); } add(sub); eg.dispose(); }
+      if (sg) {
+        // keep the pocket walls; faces on Ø outer / Ø inner come from the shared turned surfaces above
+        const P = eg.attributes.position.array, Nn = eg.attributes.normal.array, kp = [], kn = [];
+        const onR = (i, R) => Math.abs(Math.hypot(P[i], P[i + 1]) - R) < 1e-4;
+        for (let i = sg.start * 3; i < (sg.start + sg.count) * 3; i += 9) {
+          if ([0, 3, 6].every(o => onR(i + o, RO)) || [0, 3, 6].every(o => onR(i + o, RI))) continue;
+          for (let o = 0; o < 9; o++) { kp.push(P[i + o]); kn.push(Nn[i + o]); }
+        }
+        const sub = new TH.BufferGeometry(); sub.setAttribute('position', new TH.Float32BufferAttribute(kp, 3)); sub.setAttribute('normal', new TH.Float32BufferAttribute(kn, 3)); add(sub); eg.dispose();
+      }
       else add(eg);
     }
     // end-mill corner radius: material left where a pocket wall meets a plate face, swept along the wall
@@ -429,7 +468,19 @@
       const car = new TH.Group(); car.userData.stage = i;
       const shape = x.carrier;
       const body = new TH.Mesh(carrierBody(shape).translate(0, 0, zb), mkMat('carrier'));
-      body.userData.edgeGeo = () => carrierBody(shape, { fillets: false }).translate(0, 0, zb);   // feature lines without the tangent seams of the pocket R
+      // feature lines from the shape without the pocket R, minus the circles where plate face meets the web on Ø outer / Ø inner (no real edge there)
+      body.userData.edgeLines = () => {
+        const sp = {}, g = carrierBody(shape, { fillets: false, spans: sp }), eg = new TH.EdgesGeometry(g, 28); g.dispose();
+        if (!sp.z) { eg.translate(0, 0, zb); return eg; }
+        const a = eg.attributes.position.array, out = [];
+        for (let i = 0; i < a.length; i += 6) {
+          const r0 = Math.hypot(a[i], a[i + 1]), r1 = Math.hypot(a[i + 3], a[i + 4]), z0 = a[i + 2], z1 = a[i + 5], t = Math.atan2(a[i + 1] + a[i + 4], a[i] + a[i + 3]);
+          const atZ = Math.abs(z0 - z1) < 1e-4 && sp.z.some(z => Math.abs(z - z0) < 1e-4);
+          const seam = atZ && ((Math.abs(r0 - sp.RO) < 2e-3 && Math.abs(r1 - sp.RO) < 2e-3 && sp.inSpan(t, sp.ro)) || (Math.abs(r0 - sp.RI) < 2e-3 && Math.abs(r1 - sp.RI) < 2e-3 && sp.inSpan(t, sp.ri)));
+          if (!seam) for (let o = 0; o < 6; o++) out.push(a[i + o]);
+        }
+        eg.dispose(); const lg = new TH.BufferGeometry(); lg.setAttribute('position', new TH.Float32BufferAttribute(out, 3)); lg.translate(0, 0, zb); return lg;
+      };
       car.add(body);
       const pinMat = mkMat('pin'), pinGeo = new TH.CylinderGeometry(shape.diameter / 2, shape.diameter / 2, shape.pinLength, 72).rotateX(Math.PI / 2);
       const pins = new TH.Group(), pinZ = zb + (shape.stock[0] + shape.stock[1]) / 2;
@@ -528,7 +579,7 @@
       const dark = /^(carrier|bolt)/.test(ms.userData.partId);
       const lm = new TH.LineBasicMaterial({ color: dark ? 0x6b6f76 : 0x2a2724, transparent: true, opacity: dark ? .5 : .42, toneMapped: false });
       lm.userData.op = lm.opacity; edgeMats.push(lm);
-      const eGeo = ms.userData.edgeGeo ? ms.userData.edgeGeo() : ms.geometry, ln = new TH.LineSegments(new TH.EdgesGeometry(eGeo, 28), lm); if (eGeo !== ms.geometry) eGeo.dispose(); ln.raycast = () => { }; ln.userData.edge = true; ms.add(ln);
+      const ln = new TH.LineSegments(ms.userData.edgeLines ? ms.userData.edgeLines() : new TH.EdgesGeometry(ms.geometry, 28), lm); ln.raycast = () => { }; ln.userData.edge = true; ms.add(ln);
     });
     // ---- centre, ground, camera
     const box = new TH.Box3().setFromObject(root), ctr = box.getCenter(new TH.Vector3()), size = box.getSize(new TH.Vector3());
