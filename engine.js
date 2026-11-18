@@ -1070,7 +1070,7 @@
       outBearing: { name: 'RAU5005C0 × 2 (Ø50/Ø61, 카탈로그 값 확인 필요)', rows: 2, type: 'roller', C: 4000, C0: 5500, dp: 55.5, Km: 30, Z: 0, Dw: 2.5, Lw: 2.5, preload: 0 },
       carrier: { allowP: 300, allowB: 250 },
       housing: { wall: 2, coverT: 8.8, flangeT: 4, boltN: 6, boltD: 3 },
-      geom: { inshaft: { id: 15 } },
+      geom: { inshaft: { id: 15 }, sun1: { hubInOD: 25, hubInL: 7.5 }, sun2: { hubInOD: 25, hubInL: 13 } },   // S1 journal Ø25g6 × 7.5, S2 journal Ø25g6 (shape only)
       struct: { ringHousing: 'integral', c1s2: 'pin', c1s2Dim: { d: 17, L: 4.5, p: 40, n: 6, dp: 3, pcd: 21.5 }, s1motor: 'flange', s1Dim: { d: 17.5, L: 7.5, p: 40, n: 4, bd: 1.6, pcd: 22 }, c1Support: 'nested', obPos: 'outside' },
       needle: [{ use: true, apply: true, Dw: 1.5, Lw: null, Z: 11, HRCpin: 60, HRCbore: 58 }, { use: true, apply: true, Dw: 1.5, Lw: null, Z: 11, HRCpin: 60, HRCbore: 58 }],
       verify: { feaKcar: [null, null], feaSigmaF: null, testT: 28, testNote: '시험성적서 정격 (RDP-RH065 9N)' },

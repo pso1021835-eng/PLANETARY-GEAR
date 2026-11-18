@@ -763,7 +763,7 @@
     const m = /^(sun|planet|ring|pin|needle|carrier)(\d?)$/.exec(id);
     if (m) {
       const i = m[2] ? +m[2] - 1 : 0, s = D.stages[i], g = R.ctx.stages[i]?.geo, lock = i === 1 && D.config.sharedRing;
-      if (m[1] === 'sun') { E(`stages.${i}.s`, '잇수', s.s, { step: 1 }); E(`stages.${i}.m`, '모듈', s.m, { lock }); E(`stages.${i}.b`, '치폭', s.b); E(`stages.${i}.beta`, '비틀림각 °', s.beta, { lock }); E(`stages.${i}.xs`, '전위계수', s.xs); E(`stages.${i}.sunBore`, '보어 (0=중실)', s.sunBore, { auto: g?.rims?.[0]?.diameter }); }
+      if (m[1] === 'sun') { E(`stages.${i}.s`, '잇수', s.s, { step: 1 }); E(`stages.${i}.m`, '모듈', s.m, { lock }); E(`stages.${i}.b`, '치폭', s.b); E(`stages.${i}.beta`, '비틀림각 °', s.beta, { lock }); E(`stages.${i}.xs`, '전위계수', s.xs); E(`stages.${i}.sunBore`, '보어 (0=중실)', s.sunBore, { auto: g?.rims?.[0]?.diameter }); Gm(`sun${i + 1}`, 'hubInOD', '입력측 축(허브) 외경'); Gm(`sun${i + 1}`, 'hubInL', '입력측 축(허브) 길이'); Gm(`sun${i + 1}`, 'hubOutOD', '출력측 축 외경'); Gm(`sun${i + 1}`, 'hubOutL', '출력측 축 길이'); }
       if (m[1] === 'planet') { E(`stages.${i}.p`, '잇수', s.p, { step: 1, lock }); E(`stages.${i}.n`, '개수', s.n, { step: 1 }); E(`stages.${i}.xp`, '전위계수', s.xp); E(`stages.${i}.b`, '치폭 (썬과 공통)', s.b); E(`stages.${i}.planetBore`, '보어 (0=중실)', s.planetBore, { auto: g?.rims?.[1]?.diameter }); }
       if (m[1] === 'ring') { E('stages.0.ringOD', '외경', D.stages[0].ringOD, { auto: g?.rims?.[2]?.diameter }); E('stages.0.xr', '전위계수', D.stages[0].xr, { lock: D.stages[0].autoRingShift, note: D.stages[0].autoRingShift ? '자동 (4단계)' : '' }); }
       const shape = R.ctx.stages[i]?.carrier;
@@ -805,5 +805,120 @@
     return out;
   }
 
-  globalThis.PGD3D = { mount, partsList, partSchema, layout, outline, gearGeometry, carrierBody, OPTIONS, optOf, partOn, partLocked, housingProfile, coverProfile, compName };
+
+  // ------------------------------------------------------------------ part studio: one machined part (S · P · R · C) with live dimensions
+  // opt: { R, D, id, dims: [{ a:[x,y,z], b:[x,y,z], text, path?, value?, lock?, kind? }], onEdit(path, value), view, section }
+  // dims are in part coordinates (gear face 0 … b along +Z, axis = Z), the same frame the geometry is built in.
+  function mountPart(host, opt) {
+    const TH = T(); if (!TH || !host) return null;
+    const { R, D, id } = opt, L = layout(R, D);
+    const m = /^(sun|planet|ring|carrier)(\d?)$/.exec(id); if (!m) return null;
+    const i = m[2] ? +m[2] - 1 : 0, x = L.S[i], g = x.g, st = x.st, b = st.b;
+    const W0 = host.clientWidth || 640, H0 = host.clientHeight || 420;
+    const renderer = new TH.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1)); renderer.setSize(W0, H0);
+    renderer.outputEncoding = TH.sRGBEncoding; renderer.toneMapping = TH.ACESFilmicToneMapping; renderer.setClearColor(0x000000, 0);
+    renderer.localClippingEnabled = true;
+    host.prepend(renderer.domElement);
+    const scene = new TH.Scene(); scene.environment = makeEnv(renderer);
+    scene.add(new TH.HemisphereLight(0xfffaf2, 0x5d5a54, .55));
+    const key = new TH.DirectionalLight(0xfff3e4, 2.1); key.position.set(70, 90, 140); scene.add(key);
+    const rim = new TH.DirectionalLight(0xd6a05a, .9); rim.position.set(-90, -40, -80); scene.add(rim);
+    const camera = new TH.PerspectiveCamera(28, W0 / H0, .5, 5000);
+    const clip = new TH.Plane(new TH.Vector3(0, -1, 0), 0);
+    let section = !!opt.section;
+    const mats = [];
+    const mat = (c, metal = .95, rough = .26) => { const mm = new TH.MeshStandardMaterial({ color: c, metalness: metal, roughness: rough, envMapIntensity: 1.15, side: TH.DoubleSide, clippingPlanes: section ? [clip] : [] }); mats.push(mm); return mm; };
+    const COL = { sun: 0xc89b4a, planet: 0x4f7fc4, ring: 0xd2d4d8, carrier: 0x3a3c42, pin: 0xf2f3f5 };
+    const root = new TH.Group(); scene.add(root);
+    const lathe = (ri, ro, z0, z1, c) => new TH.Mesh(new TH.LatheGeometry([new TH.Vector2(ri, z0), new TH.Vector2(ro, z0), new TH.Vector2(ro, z1), new TH.Vector2(ri, z1), new TH.Vector2(ri, z0)].map(v => new TH.Vector2(Math.max(v.x, .01), v.y)), 96).rotateX(Math.PI / 2), mat(c));
+    const G = D.geom || {};
+    if (m[1] === 'sun') {
+      root.add(new TH.Mesh(gearGeometry(g.parts[0], g.at, b, st.beta, false, x.sunBore), mat(COL.sun)));
+      const h = G['sun' + (i + 1)] || {}, rb = (x.sunBore || 0) / 2;
+      if (h.hubInOD > 0 && h.hubInL > 0) root.add(lathe(rb, h.hubInOD / 2, -h.hubInL, 0, COL.sun));
+      if (h.hubOutOD > 0 && h.hubOutL > 0) root.add(lathe(rb, h.hubOutOD / 2, b, b + h.hubOutL, COL.sun));
+    } else if (m[1] === 'planet') {
+      root.add(new TH.Mesh(gearGeometry(g.parts[1], g.at, b, -st.beta, false, x.planetBore), mat(COL.planet)));
+    } else if (m[1] === 'ring') {
+      const depth = L.shared ? L.gearEnd - (L.S[0].z0 || 0) : b;
+      root.add(new TH.Mesh(gearGeometry(g.parts[2], g.at, depth, -st.beta, true, x.ringOD), mat(COL.ring, .9, .2)));
+    } else {
+      const shape = x.carrier;
+      root.add(new TH.Mesh(carrierBody(shape), mat(COL.carrier, .85, .3)));
+      if (opt.pins !== false) {
+        const pg = new TH.CylinderGeometry(shape.diameter / 2, shape.diameter / 2, shape.pinLength, 48).rotateX(Math.PI / 2), pm = mat(COL.pin, 1, .08);
+        shape.pins.forEach(pp => { const q = new TH.Mesh(pg, pm); q.position.set(pp.x, pp.y, (shape.stock[0] + shape.stock[1]) / 2); root.add(q); });
+      }
+    }
+    const box = new TH.Box3().setFromObject(root), ctr = box.getCenter(new TH.Vector3()), size = box.getSize(new TH.Vector3()).length();
+    root.position.sub(ctr);
+    const fitD = () => { const r = size / 2, v = Math.tan(14 * Math.PI / 180), asp = Math.max(.4, (host.clientWidth || W0) / (host.clientHeight || H0)); return r / Math.min(v, v * asp) * 1.12; };
+    const view = Object.assign({ az: .75, el: .42, dist: fitD() }, opt.view || {});
+    const place = () => { const ce = Math.cos(view.el); camera.position.set(view.dist * ce * Math.sin(view.az), view.dist * Math.sin(view.el), view.dist * ce * Math.cos(view.az)); camera.lookAt(0, 0, 0); };
+    // the part axis (Z) lies horizontally on screen: rotate the part so +Z (output side) points to the right
+    root.rotation.y = Math.PI / 2; root.position.applyAxisAngle(new TH.Vector3(0, 1, 0), Math.PI / 2);
+    // ---- overlay: dimension lines + editable labels
+    const ui = document.createElement('div'); ui.className = 'pv-ui'; host.appendChild(ui);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('class', 'pv-dim'); ui.appendChild(svg);
+    const labs = document.createElement('div'); labs.className = 'pv-labs'; ui.appendChild(labs);
+    let dims = opt.dims || [], showDims = opt.showDims !== false, editing = null;
+    const drawLabels = () => {
+      labs.innerHTML = dims.map((d, k) => `<button class="pv-lab ${d.path && !d.lock ? 'ed' : 'ro'} ${d.kind || ''}" data-k="${k}" title="${d.path && !d.lock ? '클릭해서 수정' : '계산값'}">${d.text}</button>`).join('');
+      labs.querySelectorAll('.pv-lab').forEach(btn => btn.onclick = e => {
+        e.stopPropagation(); const d = dims[+btn.dataset.k]; opt.onFocus?.(d);
+        if (!d.path || d.lock) return;
+        editing = +btn.dataset.k;
+        const inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.className = 'pv-in'; inp.value = d.value ?? ''; inp.placeholder = d.auto != null ? '자동 ' + (+d.auto).toFixed(2) : '';
+        inp.style.left = btn.style.left; inp.style.top = btn.style.top; labs.appendChild(inp); inp.focus(); inp.select();
+        const done = ok => { if (editing === null) return; editing = null; const v = inp.value === '' ? null : Number(inp.value); inp.remove(); if (ok && (v === null || Number.isFinite(v))) opt.onEdit?.(d.path, v); };
+        inp.onkeydown = ev => { if (ev.key === 'Enter') done(true); else if (ev.key === 'Escape') done(false); };
+        inp.onblur = () => done(true);
+      });
+    };
+    drawLabels();
+    const v3 = new TH.Vector3(), toScreen = p => { v3.set(p[0], p[1], p[2]).applyMatrix4(root.matrixWorld).project(camera); return { x: (v3.x + 1) / 2 * host.clientWidth, y: (1 - v3.y) / 2 * host.clientHeight, ok: v3.z < 1 }; };
+    function layoutDims() {
+      if (!showDims) { svg.innerHTML = ''; labs.style.display = 'none'; return; }
+      labs.style.display = '';
+      let out = '';
+      const els = labs.querySelectorAll('.pv-lab');
+      dims.forEach((d, k) => {
+        const A = toScreen(d.a), B = toScreen(d.b), el = els[k]; if (!el) return;
+        if (!A.ok || !B.ok) { el.style.display = 'none'; return; }
+        el.style.display = '';
+        const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy) || 1, nx = -dy / len * 5, ny = dx / len * 5;
+        const tick = P => `M${P.x - nx} ${P.y - ny}L${P.x + nx} ${P.y + ny}`;
+        out += `<path class="${d.kind || ''}" d="M${A.x} ${A.y}L${B.x} ${B.y}${tick(A)}${tick(B)}"/>`;
+        const ax = d.at === 'b' ? B.x : (A.x + B.x) / 2, ay = d.at === 'b' ? B.y : (A.y + B.y) / 2;
+        const mx = ax + (d.off?.[0] || 0), my = ay + (d.off?.[1] || 0);
+        el.style.left = mx + 'px'; el.style.top = my + 'px';
+      });
+      svg.innerHTML = out;
+    }
+    // ---- pointer orbit
+    const cv = renderer.domElement; let drag = null;
+    cv.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, az: view.az, el: view.el }; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener('pointermove', e => { if (!drag) return; view.az = drag.az - (e.clientX - drag.x) * .008; view.el = Math.max(-1.45, Math.min(1.45, drag.el + (e.clientY - drag.y) * .008)); });
+    cv.addEventListener('pointerup', () => { drag = null; });
+    cv.addEventListener('wheel', e => { e.preventDefault(); view.dist = Math.max(size * .6, Math.min(size * 8, view.dist * (1 + Math.sign(e.deltaY) * .1))); }, { passive: false });
+    cv.addEventListener('dblclick', () => setView('iso'));
+    function setView(name) {
+      const V = { iso: [.75, .42], front: [-Math.PI / 2, 0], side: [0, 0], top: [0, 1.45] }[name] || [.75, .42];   // front = looking along the axis from the input side
+      view.az = V[0]; view.el = V[1]; view.dist = fitD();
+    }
+    function setSection(on) { section = !!on; mats.forEach(mm => { mm.clippingPlanes = section ? [clip] : []; mm.needsUpdate = true; }); }
+    let raf = 0;
+    const frame = () => { raf = requestAnimationFrame(frame); place(); root.updateMatrixWorld(); renderer.render(scene, camera); layoutDims(); };
+    frame();
+    const ro = new ResizeObserver(() => { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); });
+    ro.observe(host);
+    return {
+      dispose() { cancelAnimationFrame(raf); ro.disconnect(); scene.traverse(o => { o.geometry?.dispose?.(); }); mats.forEach(mm => mm.dispose()); scene.environment?.dispose?.(); renderer.dispose(); renderer.domElement.remove(); ui.remove(); },
+      getView: () => ({ az: view.az, el: view.el, dist: view.dist }), setView, setSection,
+      setDims(list) { dims = list || []; drawLabels(); }, showDims(on) { showDims = !!on; }
+    };
+  }
+
+  globalThis.PGD3D = { mount, mountPart, partsList, partSchema, layout, outline, gearGeometry, carrierBody, OPTIONS, optOf, partOn, partLocked, housingProfile, coverProfile, compName };
 })();

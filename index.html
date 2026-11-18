@@ -378,6 +378,33 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 .fbk{font-style:normal;font-size:10.5px;padding:0 5px;border-radius:4px;background:rgba(127,169,220,.16);color:var(--sM)}
 .mdx .www{grid-template-columns:1fr;gap:8px}.mdx .www p{font-size:13px}.mdx .isec .grid{grid-template-columns:1fr 1fr}.mdx>.btn{margin-top:12px;width:100%}
 .gsub td .lnk{font-variant-numeric:tabular-nums;font-weight:600}.gsub small{margin-top:2px}.its.core{margin:2px 0 6px}
+/* ================= PR21: part studio (S · P · R · C) ================= */
+.studio{display:grid;grid-template-columns:190px minmax(0,1fr) 330px;gap:14px;align-items:start;margin-bottom:16px}
+.st-list{background:var(--panel);border:1px solid var(--rule);border-radius:12px;padding:10px 8px;position:sticky;top:72px}
+.st-h{font-size:12px;letter-spacing:.08em;color:var(--mute);padding:2px 8px 6px}.st-g{font-size:11.5px;color:var(--mute);padding:10px 8px 4px;border-top:1px solid var(--rule);margin-top:6px}.st-g:first-of-type{border-top:0;margin-top:0}
+.st-it{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;border-radius:8px;padding:8px;color:var(--text);font:inherit;font-size:13px;cursor:pointer;text-align:left}
+.st-it b{color:var(--ink);min-width:34px;font-variant-numeric:tabular-nums}.st-it:hover{background:var(--soft)}.st-it.on{background:var(--acc);color:#1a130d}.st-it.on b{color:#1a130d}
+.st-list .note{font-size:11.5px;padding:8px 8px 0;margin:0}
+.st-stage{background:var(--panel);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+.st-tools{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--rule);flex-wrap:wrap}.st-tools b{font-size:14px;color:var(--ink)}.st-tools .sp{flex:1}
+.st-tools .tg{display:flex;gap:5px;align-items:center;font-size:12.5px;color:var(--text);padding:0 4px;cursor:pointer}.st-tools .tg input{accent-color:var(--acc)}
+.pv{position:relative;height:min(68vh,600px);min-height:420px;background:radial-gradient(70% 60% at 50% 45%,#3a2b1d 0%,#1a130e 60%,#110d0a 100%)}
+.pv canvas{display:block;width:100%;height:100%;cursor:grab}.pv canvas:active{cursor:grabbing}
+.pv-hint{position:absolute;left:12px;bottom:10px;font-size:11.5px;color:var(--mute);pointer-events:none;z-index:2}.pv-hint b{color:var(--acc)}
+.pv-ui{position:absolute;inset:0;pointer-events:none;z-index:3}
+.pv-dim{position:absolute;inset:0;width:100%;height:100%;overflow:visible}.pv-dim path{stroke:#f0c27a;stroke-width:1.4;fill:none}.pv-dim path.ref{stroke:rgba(220,205,182,.55);stroke-dasharray:4 3}
+.pv-labs .pv-lab{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;white-space:nowrap;font:600 12px/1 'IBM Plex Sans',system-ui,sans-serif;padding:5px 8px;border-radius:6px;cursor:pointer;border:1px solid transparent;font-variant-numeric:tabular-nums}
+.pv-lab.ed{background:#f0c27a;color:#1a130d;box-shadow:0 2px 8px rgba(0,0,0,.4)}.pv-lab.ed:hover{background:#ffd896}
+.pv-lab.ro,.pv-lab.ref{background:rgba(26,19,14,.78);color:#dccdb6;border-color:rgba(220,205,182,.25);cursor:default;font-weight:500}
+.pv-in{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;width:92px;font:600 13px 'IBM Plex Sans',system-ui,sans-serif;padding:5px 7px;border-radius:6px;border:2px solid #f0c27a;background:#110d0a;color:#fff;outline:0}
+.st-panel{background:var(--panel);border:1px solid var(--rule);border-radius:12px;padding:12px 14px;position:sticky;top:72px;max-height:calc(100vh - 90px);overflow:auto}
+.st-vd{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px}
+.vchip2{display:flex;flex-direction:column;gap:3px;padding:7px 9px;border-radius:8px;background:var(--soft);border:1px solid var(--rule)}.vchip2 small{font-size:11px;color:var(--mute)}.vchip2 b{font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums}
+.vchip2.ok{border-color:rgba(143,184,162,.45)}.vchip2.ok b{color:var(--okt)}.vchip2.bad{border-color:rgba(224,100,74,.55)}.vchip2.bad b{color:#f08a7a}
+.st-sec h4{margin:4px 0 8px;font-size:13px;color:var(--ink)}.st-sec h4 .note{font-weight:400;font-size:11.5px}
+.st-panel table.dims{width:100%}.st-panel table.dims td{padding:4px 2px;font-size:12.5px}.st-panel table.dims input,.st-panel table.dims select{width:100%;box-sizing:border-box}
+.st-panel .flash{outline:2px solid var(--acc);outline-offset:1px;transition:outline-color .8s}
+@media (max-width:1100px){.studio{grid-template-columns:1fr}.st-list,.st-panel{position:static;max-height:none}.st-list{display:flex;flex-wrap:wrap;gap:4px}.st-it{width:auto}.st-g,.st-list .note,.st-h{display:none}}
 </style>
 </head>
 <body>
@@ -407,14 +434,14 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 </form></dialog>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="carrier-geometry.js?v=pr20-1"></script>
-<script src="engine.js?v=pr20-1"></script>
-<script src="viewer3d.js?v=pr19-1"></script>
+<script src="engine.js?v=pr21-1"></script>
+<script src="viewer3d.js?v=pr21-1"></script>
 <script src="drawings.js?v=pr19-1"></script>
 <script src="checks.js?v=pr20-1"></script>
 <script src="process.js?v=pr9-1"></script>
 <script src="map.js?v=pr14-1"></script>
 <script src="items.js?v=pr20-1"></script>
 <script src="groups.js?v=pr17-1"></script>
-<script defer src="app.js?v=pr20-1"></script>
+<script defer src="app.js?v=pr21-1"></script>
 </body>
 </html>

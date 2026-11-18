@@ -330,11 +330,133 @@ function renderCoreRail(c) {
   $('#rail').querySelectorAll('button[data-v]').forEach(b => b.onclick = () => go(b.dataset.v));
   $('#rail').querySelector('.it.on')?.scrollIntoView({ block: 'nearest' });
 }
+// ------------------------------------------------------------------ part studio: machined parts S · P · R · C, one at a time in 3D with editable dimensions
+const STUDIO = { id: null, view: null, section: false, dims: true };
+let PARTV = null;
+function studioParts() {
+  if (!R?.ctx) return [];
+  const n = R.ctx.stages.length, out = [];
+  for (let i = 1; i <= n; i++) out.push(`sun${i}`, `planet${i}`, `carrier${i}`);
+  out.push(...(D.config.sharedRing && n > 1 ? ['ring'] : Array.from({ length: n }, (_, i) => `ring${i + 1}`)));
+  const order = id => ({ sun: 0, planet: 1, ring: 2, carrier: 3 })[id.replace(/\d/g, '')] * 10 + (+id.replace(/\D/g, '') || 0);
+  return out.sort((a, b) => order(a) - order(b));
+}
+const sName = id => { try { return PGD3D.compName(R, D, id); } catch (e) { return id; } };
+const sLetter = id => ({ sun: 'S', planet: 'P', ring: 'R', carrier: 'C' })[id.replace(/\d/g, '')] + (id.replace(/\D/g, '') || (D.config.sharedRing ? '1-2' : ''));
+function studioVerdict(id) {
+  const m = /^(sun|planet|ring|carrier)(\d?)$/.exec(id); if (!m || !R?.rated) return [];
+  const st = m[2] ? +m[2] : null, part = { sun: 0, planet: 1, ring: 2 }[m[1]], out = [];
+  const chip = (t, v, ok) => out.push({ t, v, ok });
+  if (part != null) {
+    const rows = R.rated.rows.filter(r => r.part === part && (st == null || r.stage === st));
+    if (rows.length) {
+      const sh = Math.min(...rows.map(r => r.SH)), sf = Math.min(...rows.map(r => r.SF));
+      chip('피팅 SH', fmt(sh, 2), sh >= D.req.SH); chip('굽힘 SF', fmt(sf, 2), sf >= D.req.SF);
+      const kh = Math.max(...rows.map(r => r.f.KHb)); chip('KHβ', fmt(kh, 2), kh <= 2);
+      const pk = R.peak?.rows?.filter(r => r.part === part && (st == null || r.stage === st)) || [];
+      if (pk.length) { const s = Math.min(...pk.map(r => Math.min(r.SH, r.SF))); chip('피크 정적', fmt(s, 2), s >= 1); }
+    }
+    if (part === 1 && R.bearings?.[st - 1]) { const bb = R.bearings[st - 1]; chip('니들 L10', fmtH(bb.L10h) + ' h', bb.L10h >= D.req.lifeH); }
+    if (part === 0 && R.rated.stages?.[st - 1]) chip('Kγ', fmt(R.rated.stages[st - 1].Kg, 2), R.rated.stages[st - 1].Kg <= 1.3);
+  } else if (m[1] === 'carrier' && R.carrierPin?.[st - 1]) {
+    const c = R.carrierPin[st - 1];
+    chip('핀 굽힘', fmt(c.Sbend, 2), c.Sbend >= 1); chip('구멍 면압', fmt(c.Spress, 2), c.Spress >= 1);
+    if (Number.isFinite(c.Sweb)) chip('기둥', fmt(c.Sweb, 0), c.Sweb >= 1);
+    chip('핀 처짐', fmt(c.rated.defl, 2) + ' µm', null);
+  }
+  const p = bomList().find(x => x.id === id); if (p) chip('중량', fmt(p.mass * 1000, 1) + ' g' + (p.qty > 1 ? ` × ${p.qty}` : ''), null);
+  return out;
+}
+// dimension lines in part coordinates (axis Z, gear face 0…b, input side negative)
+function studioDims(id) {
+  const m = /^(sun|planet|ring|carrier)(\d?)$/.exec(id); if (!m || !R?.ctx) return [];
+  let L; try { L = PGD3D.layout(R, D); } catch (e) { return []; }
+  const i = m[2] ? +m[2] - 1 : 0, x = L.S[i], g = x.g, st = D.stages[i], b = x.b ?? st.b, out = [];
+  const A = (deg, r, z) => [r * Math.cos(deg * Math.PI / 180), r * Math.sin(deg * Math.PI / 180), z];
+  const dia = (deg, r, z, text, path, extra = {}) => out.push(Object.assign({ a: A(deg + 180, r, z), b: A(deg, r, z), at: 'b', text, path, value: path ? get(path) : null }, extra));
+  const axial = (deg, r, z0, z1, text, path, extra = {}) => out.push(Object.assign({ a: A(deg, r, z0), b: A(deg, r, z1), text, path, value: path ? get(path) : null }, extra));
+  const sch = (() => { try { return PGD3D.partSchema(R, D, id); } catch (e) { return []; } })(), autoOf = p => sch.find(r => r.path === p)?.auto;
+  if (m[1] === 'sun' || m[1] === 'planet') {
+    const P = g.parts[m[1] === 'sun' ? 0 : 1], ra = P.da / 2, bore = m[1] === 'sun' ? x.sunBore : x.planetBore, bp = `stages.${i}.${m[1] === 'sun' ? 'sunBore' : 'planetBore'}`;
+    dia(90, ra, b, `이끝원 Ø${fmt(P.da, 2)}`, null, { kind: 'ref', off: [0, -14] });
+    if (bore > 0) dia(35, bore / 2, b, `보어 Ø${fmt(bore, 2)}`, bp, { auto: autoOf(bp), off: [0, 0] });
+    axial(-90, ra + 1.5, 0, b, `치폭 ${fmt(b, 2)}`, `stages.${i}.b`, { off: [0, 14] });
+    if (m[1] === 'sun') {
+      const h = D.geom?.[`sun${i + 1}`] || {};
+      if (h.hubInOD > 0 && h.hubInL > 0) {
+        axial(-90, h.hubInOD / 2 + 1.5, -h.hubInL, 0, `축 길이 ${fmt(h.hubInL, 2)}`, `geom.sun${i + 1}.hubInL`, { off: [0, 14] });
+        dia(120, h.hubInOD / 2, -h.hubInL, `축 Ø${fmt(h.hubInOD, 2)}`, `geom.sun${i + 1}.hubInOD`, { off: [-10, -12] });
+      }
+    }
+    out.push({ a: [0, 0, b], b: A(150, P.d / 2, b), text: `z${P.z} · m${fmt(st.m, 2)} · β${fmt(st.beta, 0)}°`, kind: 'ref', off: [-26, -8] });
+  } else if (m[1] === 'ring') {
+    const P = g.parts[2], depth = L.shared ? L.gearEnd - (L.S[0].z0 || 0) : b;
+    dia(90, x.ringOD / 2, depth, `링 외경 Ø${fmt(x.ringOD, 2)}`, 'stages.0.ringOD', { auto: autoOf('stages.0.ringOD'), off: [0, -14] });
+    dia(35, P.da / 2, depth, `이끝원 Ø${fmt(P.da, 2)}`, null, { kind: 'ref', off: [0, 0] });
+    axial(-90, x.ringOD / 2 + 1.5, 0, depth, `치부 길이 ${fmt(depth, 2)}`, null, { kind: 'ref', off: [0, 14] });
+    out.push({ a: [0, 0, depth], b: A(150, P.d / 2, depth), text: `z${P.z} · 림 ${fmt((x.ringOD - P.df) / 2, 2)}`, kind: 'ref', off: [-26, -8] });
+  } else {
+    const sh = x.carrier, ro = sh.outerD / 2, ri = sh.innerD / 2, pl = sh.plates, z0 = Math.min(...pl.map(p => p[0])), z1 = Math.max(...pl.map(p => p[1])), pin0 = sh.pins[0], c = `stages.${i}.carrier`;
+    dia(90, ro, z1, `외경 Ø${fmt(sh.outerD, 2)}`, `${c}.outerD`, { auto: sh.outerD, off: [0, -14] });
+    dia(200, ri, z1, `내경 Ø${fmt(sh.innerD, 2)}`, `${c}.innerD`, { auto: sh.innerD, off: [0, 0] });
+    axial(150, ro + 1.5, z0, z1, `캐리어 두께 ${fmt(sh.width, 2)}`, `${c}.width`, { auto: sh.widthAuto ? sh.width : undefined, off: [0, -14] });
+    out.push({ a: [0, 0, z1], b: [pin0.x, pin0.y, z1], text: `핀 PCD Ø${fmt(sh.drivePCD, 3)}`, kind: 'ref', off: [0, -12] });
+    const pn = sh.pins[1 % sh.pins.length], pk = sh.pins[2 % sh.pins.length], tA = Math.atan2(pn.y, pn.x), tK = Math.atan2(pk.y, pk.x);
+    // pin Ø: across the pin end, tangential direction
+    out.push({ a: [pn.x + Math.sin(tA) * sh.diameter / 2, pn.y - Math.cos(tA) * sh.diameter / 2, z1 + .2], b: [pn.x - Math.sin(tA) * sh.diameter / 2, pn.y + Math.cos(tA) * sh.diameter / 2, z1 + .2], at: 'b', text: `핀 Ø${fmt(sh.diameter, 2)}`, path: `stages.${i}.pin.d`, value: get(`stages.${i}.pin.d`), off: [0, -14] });
+    if (sh.double) {
+      const zm = (pl[0][1] + pl[1][0]) / 2;
+      axial(0, ro + 1.2, pl[0][1], pl[1][0], `안착 폭 ${fmt(sh.groove, 2)}`, `${c}.groove`, { auto: sh.groove, off: [0, 14] });
+      out.push({ a: [pk.x + Math.sin(tK) * sh.pocket / 2, pk.y - Math.cos(tK) * sh.pocket / 2, zm], b: [pk.x - Math.sin(tK) * sh.pocket / 2, pk.y + Math.cos(tK) * sh.pocket / 2, zm], text: `포켓 ${fmt(sh.pocket, 2)}`, path: `${c}.pocket`, value: get(`${c}.pocket`), auto: sh.pocket, off: [0, -14] });
+    }
+  }
+  return out;
+}
+function studioPage() {
+  const ids = studioParts();
+  if (!ids.length || !R || R.errors?.length) return head('부품 편집', '계산 오류가 없을 때 부품을 편집할 수 있습니다.') + errBox();
+  if (!ids.includes(STUDIO.id)) STUDIO.id = ids[0];
+  const id = STUDIO.id, chips = studioVerdict(id), p = bomList().find(x => x.id === id);
+  const grp = k => ids.filter(x => x.startsWith(k));
+  const list = [['sun', '썬 S'], ['planet', '유성 P'], ['ring', '링 R'], ['carrier', '캐리어 C']].map(([k, t]) => `<div class="st-g">${t}</div>${grp(k).map(x => { const v = studioVerdict(x), bad = v.some(c => c.ok === false); return `<button class="st-it ${x === id ? 'on' : ''}" data-part="${x}"><span class="dot ${bad ? 'bad' : v.length ? 'ok' : ''}"></span><b>${sLetter(x)}</b><span>${esc(sName(x).replace(/^\S+\s/, ''))}</span></button>`; }).join('')}`).join('');
+  return `<div class="studio">
+    <aside class="st-list"><div class="st-h">가공 부품</div>${list}<p class="note">S·P·R·C 4종. 부품을 고르면 그 부품만 3D로 띄웁니다.</p></aside>
+    <section class="st-stage">
+      <div class="st-tools"><b>${esc(sLetter(id))} · ${esc(sName(id))}</b><span class="sp"></span>
+        ${[['iso', '기본'], ['front', '정면 (축방향)'], ['side', '측면']].map(([v, t]) => `<button class="btn" data-pv="${v}">${t}</button>`).join('')}
+        <label class="tg"><input type="checkbox" id="pvSec" ${STUDIO.section ? 'checked' : ''}> 단면</label>
+        <label class="tg"><input type="checkbox" id="pvDim" ${STUDIO.dims ? 'checked' : ''}> 치수</label></div>
+      <div id="partView" class="pv"><div class="pv-hint">드래그: 회전 · 휠: 확대 · 더블클릭: 기본 시점 · <b>밝은 치수</b>를 누르면 바로 수정</div></div>
+    </section>
+    <aside class="st-panel">
+      <div class="st-vd">${chips.map(c => `<span class="vchip2 ${c.ok === true ? 'ok' : c.ok === false ? 'bad' : ''}"><small>${esc(c.t)}</small><b>${esc(c.v)}</b></span>`).join('')}</div>
+      <div class="st-sec"><h4>치수 · 형상 <span class="note">빈칸 = 자동</span></h4>${dimsHTML(id) || '<p class="note">편집할 치수가 없습니다.</p>'}</div>
+      ${p ? `<p class="note">${esc(p.material)} · ${esc(p.heat)} · 수량 ${p.qty}</p>` : ''}
+    </aside>
+  </div>
+  ${drawingHTML(id)}`;
+}
+function bindStudio(m) {
+  m.querySelectorAll('[data-part]').forEach(b => b.onclick = () => { if (PARTV) STUDIO.view = null; STUDIO.id = b.dataset.part; render(true); });
+  const host = m.querySelector('#partView');
+  if (host && window.THREE && window.PGD3D?.mountPart) {
+    try {
+      PARTV = PGD3D.mountPart(host, { R, D, id: STUDIO.id, dims: studioDims(STUDIO.id), view: STUDIO.viewFor === STUDIO.id ? STUDIO.view : null, section: STUDIO.section, showDims: STUDIO.dims,
+        onEdit: (path, v) => { set(path, v); changed(); },
+        onFocus: d => { if (!d.path) return; const el = m.querySelector(`.st-panel [data-p="${d.path}"]`); if (el) { el.scrollIntoView({ block: 'nearest' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 900); } } });
+      if (PARTV) PARTV.partId = STUDIO.id;
+    } catch (e) { console.error(e); host.insertAdjacentHTML('beforeend', `<p class="note" style="padding:12px">3D 생성 오류: ${esc(e.message)}</p>`); }
+  } else if (host) host.insertAdjacentHTML('beforeend', '<p class="note" style="padding:12px">3D 라이브러리(three.js)를 불러오지 못했습니다.</p>');
+  m.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => PARTV?.setView(b.dataset.pv));
+  const sec = m.querySelector('#pvSec'); if (sec) sec.onchange = e => { e.stopPropagation(); STUDIO.section = sec.checked; PARTV?.setSection(sec.checked); };
+  const dm = m.querySelector('#pvDim'); if (dm) dm.onchange = e => { e.stopPropagation(); STUDIO.dims = dm.checked; PARTV?.showDims(dm.checked); };
+  bindDrawing(m, id => { if (studioParts().includes(id)) { STUDIO.id = id; STUDIO.view = null; render(true); } else { const dw = m.querySelector('#dwg'); if (dw) { dw.outerHTML = drawingHTML(id); bindDrawing(m); } } });
+}
 function renderRail() {
   const E2 = procEval(), c = ictx(), cur = view.startsWith('st-') ? view.slice(3) : view.startsWith('it-') ? itemStage(view.slice(3)) : null, curItem = view.startsWith('it-') ? view.slice(3) : null;
   const tab = (id, t, on) => `<button data-v="${id}" aria-current="${on}">${t}</button>`;
   const coreOn = view === 'core' || view.startsWith('cg-');
-  $('#tabs').innerHTML = tab('map', '설계 지도', view === 'map') + tab('core', '핵심 검토', coreOn) + tab('it-' + LASTITEM, '전체 항목', !!cur) + tab('overview', '3D · 종합판정', view === 'overview') + tab('proc', '체크리스트', view === 'proc');
+  $('#tabs').innerHTML = tab('map', '설계 지도', view === 'map') + tab('core', '핵심 검토', coreOn) + tab('it-' + LASTITEM, '전체 항목', !!cur) + tab('studio', '부품 편집', view === 'studio') + tab('overview', '3D · 종합판정', view === 'overview') + tab('proc', '체크리스트', view === 'proc');
   $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.v));
   if (coreOn && window.PGDGroups) return renderCoreRail(c);
   const all = ord(), sts = Object.fromEntries(all.map(x => [x, rvState(x, c)])), nd = all.filter(x => sts[x] === 'done').length, ns = all.filter(x => sts[x] === 'stale').length;
@@ -376,13 +498,14 @@ function render(keepScroll) {
   const y = window.scrollY;
   if (VIEW3D) { if (VIEW3D.full) OVSTATE.view = VIEW3D.getView(); VIEW3D.dispose(); VIEW3D = null; }
   if (MAPV) { MAPSTATE = MAPV.state(); MAPV.dispose(); MAPV = null; }
+  if (PARTV) { STUDIO.view = PARTV.getView(); STUDIO.viewFor = PARTV.partId; PARTV.dispose(); PARTV = null; }
   MAPKEEP = !!keepScroll && view === 'map';
   const core = view === 'core' || view.startsWith('cg-');
   const paged = core || view.startsWith('st-') || view.startsWith('it-');
   if (view.startsWith('it-')) LASTITEM = view.slice(3);
   document.body.classList.toggle('has-rail', paged);
   document.body.classList.toggle('structure-mode', view === 'st-2' || view.startsWith('it-2-'));
-  m.className = view === 'overview' || view === 'map' ? 'wide' : '';
+  m.className = view === 'overview' || view === 'map' || view === 'studio' ? 'wide' : '';
   document.body.classList.toggle('mapmode', view === 'map');
   if (!keepScroll) { void m.offsetWidth; m.classList.add('pg-enter'); }
   if (core) {
@@ -500,6 +623,7 @@ const VIEWS = {
   overview() { return overviewView(); },
   proc() { return procView(); },
   map() { return `<div id="mapHost" class="maphost"></div>`; },
+  studio() { return studioPage(); },
 };
 
 function clampPct(x) { return Math.max(0, Math.min(100, x)); }
@@ -825,13 +949,14 @@ const AFTER = {
   },
   proc(m) { m.querySelectorAll('[data-goit]').forEach(li => { const g = () => go('it-' + li.dataset.goit); li.onclick = g; li.onkeydown = e => { if (e.key === 'Enter') g(); }; }); },
   overview(m) { mountOverview(m); },
+  studio(m) { bindStudio(m); },
 };
 function runJob(type, done) {
   const id = ++jobId, bar = $('#prog');
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=pr20-1');
+    if (!worker) worker = new Worker('worker.js?v=pr21-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });
@@ -1063,13 +1188,13 @@ function dlg(title, text, note, okLabel, onOk) {
   $('#dlgOk').onclick = async e => { e.preventDefault(); const msg = await onOk(); if (msg) $('#dlgNote').textContent = msg; };
   $('#dlg').showModal();
 }
-const validView = h => STEPS.some(s => s[0] === h) || h === 'core' || (h.startsWith('cg-') && !!window.PGDGroups?.G[h.slice(3)]) || !!VIEW_ITEM[h] || (h.startsWith('st-') && STAGE_KEYS.includes(h.slice(3))) || (h.startsWith('it-') && !!IT()[h.slice(3)]);
+const validView = h => STEPS.some(s => s[0] === h) || h === 'core' || h === 'studio' || (h.startsWith('cg-') && !!window.PGDGroups?.G[h.slice(3)]) || !!VIEW_ITEM[h] || (h.startsWith('st-') && STAGE_KEYS.includes(h.slice(3))) || (h.startsWith('it-') && !!IT()[h.slice(3)]);
 window.addEventListener('hashchange', () => { const [h, a] = location.hash.slice(1).split('/'); if (validView(h) && h !== view) go(h, a); });
 { const [h0, a0] = location.hash.slice(1).split('/'); if (validView(h0)) { view = VIEW_ITEM[h0] ? 'it-' + VIEW_ITEM[h0] : h0.startsWith('st-') && a0 && IT()[a0] ? 'it-' + a0 : h0; if (view.startsWith('it-')) LASTITEM = view.slice(3); } }
 $('#vchip').onclick = () => document.body.classList.toggle('vopen');
 document.addEventListener('click', e => { if (document.body.classList.contains('vopen') && !e.target.closest('#verdict,#vchip')) document.body.classList.remove('vopen'); });
 $('#bMore').onclick = e => { e.stopPropagation(); $('#moreMenu').hidden = !$('#moreMenu').hidden; };
 document.addEventListener('click', e => { if (!e.target.closest('#moreMenu')) $('#moreMenu').hidden = true; });
-window.PGDApp = { go, view: () => view, rvState: id => rvState(id), sig: id => sigOf(id, ictx()), mapSelect: id => MAPV?.select(id), mapState: () => MAPV?.state(), items: () => procEval().flatMap(g => g.items.map(i => i.id)), groups: () => window.PGDGroups?.ORDER || [] };
+window.PGDApp = { go, view: () => view, rvState: id => rvState(id), sig: id => sigOf(id, ictx()), mapSelect: id => MAPV?.select(id), mapState: () => MAPV?.state(), items: () => procEval().flatMap(g => g.items.map(i => i.id)), groups: () => window.PGDGroups?.ORDER || [], studio: () => ({ id: STUDIO.id, parts: studioParts(), dims: studioDims(STUDIO.id).length, mounted: !!PARTV }), studioPick: id => { STUDIO.id = id; STUDIO.view = null; render(true); } };
 compute(); renderRail(); renderVerdict(); render();
 }
