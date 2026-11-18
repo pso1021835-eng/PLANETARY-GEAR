@@ -241,7 +241,9 @@
   I['4-4'] = { what: '내접(유성–링) 치합의 간섭을 검사한다.',
     how: '내접 인볼류트 간섭·트로코이드 간섭 여유, 이끝·이뿌리 최소 간극을 본다.',
     why: '내접 간섭은 조립 자체를 막거나 링 이끝을 깎는다. 전위·잇수 차로 조정한다.',
-    rows: [['C', '간섭 여유', c => chv(c, '내접 인볼류트 간섭 여유'), 'ISO 21771 내접 조건'], ['C', '최소 간극', c => chv(c, '이끝·이뿌리 최소 간극 (mm)') + ' mm', 'c ≥ 0.1·m 권장']],
+    rows: [['C', '간섭 여유', c => chv(c, '내접 인볼류트 간섭 여유'), 'ISO 21771 내접 조건'], ['C', '최소 간극', c => chv(c, '이끝·이뿌리 최소 간극 (mm)') + ' mm', 'c ≥ 0.1·m 권장'],
+      ['D', 'num', 'stages.{i}.cutter.z0', '{s}단 링 가공 피니언 커터 잇수 z0 (빈칸 = 링 잇수 × 0.33)', { st: 1, step: 1 }], ['D', 'num', 'stages.{i}.cutter.x0', '{s}단 커터 전위 x0 (빈칸 = 0)', { st: 1 }],
+      ['C', '링 치근 형상 (커터 생성)', c => rows(c).filter(r => r.part === 2).map(r => `${r.stage}단 YF ${f(r.f.YF, 3)} · YS ${f(r.f.YS, 3)} · sFn ${f(r.f.sFn, 3)} · ρF ${f(r.f.rhoF, 3)} · hFe ${f(r.f.hFe, 3)} mm`).join(' / ') || '—', 'ISO 6336-3:2019 내치, 60° 접선']],
     w: [['checks', '내접 인볼류트 간섭 여유', '이끝·이뿌리 최소 간극 (mm)']], up: ['3-9'], k: '여유 > 0, 간극 > 0' };
   I['4-5'] = { what: '기어 정밀도 등급(ISO 1328, JIS N)을 정한다.',
     how: '강도 계산(이론)은 오차 0인 완전한 기어로 한다. 등급에서 나오는 공차(fp, ffα, fHβ)는 11-1 시편 시뮬레이션에서 시편마다 무작위 오차로 뽑혀 Kv·KHβ·KHα·Kγ에 들어간다. 등급 입력도 11-1에 있다.',
@@ -259,7 +261,9 @@
   I['4-7'] = { what: '원주 백래시(치합 유격)를 정하고 출력 백래시를 예측·측정한다.',
     how: '단별 원주 백래시 jt를 출력축 각도로 환산해 합산한다. 링 압입 수축(8-2)은 백래시를 줄인다.',
     why: '백래시 0은 열팽창·편심에서 걸림을, 과대는 위치 정밀도 저하(1-8)를 부른다.',
-    rows: [['D', 'num', 'stages.{i}.jt.0', '{s}단 썬–유성 백래시 µm', { st: 1 }], ['D', 'num', 'stages.{i}.jt.1', '{s}단 유성–링 백래시 µm', { st: 1 }],
+    rows: [['D', 'num', 'stages.{i}.asn.0.1', '{s}단 썬 치두께 하한 치수차 Asn.i mm (예 −0.084, 빈칸 = 0)', { st: 1 }], ['D', 'num', 'stages.{i}.asn.1.1', '{s}단 유성 Asn.i mm', { st: 1 }], ['D', 'num', 'stages.{i}.asn.2.1', '{s}단 링 Asn.i mm', { st: 1 }],
+      ['C', '치근 계산 전위 xE (가장 얇은 이)', c => rows(c).filter((r, k, a) => a.findIndex(q => q.stage === r.stage && q.part === r.part) === k).map(r => `${r.stage}단 ${r.partName} ${f(r.f.xE, 4)}`).join(' · ') || '—', 'xE = x + Asn.i / (2·mn·tan αn) · KISSsoft와 같음'],
+      ['D', 'num', 'stages.{i}.jt.0', '{s}단 썬–유성 백래시 µm', { st: 1 }], ['D', 'num', 'stages.{i}.jt.1', '{s}단 유성–링 백래시 µm', { st: 1 }],
       ['P', '출력 백래시', c => c.R?.backlash ? `${f(c.R.backlash.arcmin, 2)} arcmin` : '—', '단별 jt → 출력축 환산 합'],
       ['M', 'num', 'verify.blMeas', '측정 백래시 arcmin (시제품)']],
     w: ['bl'], up: ['8-2', '4-5'], k: '백래시 ≤ 목표 (1-8)', ok: c => c.R?.backlash ? c.R.backlash.arcmin <= c.D.req.backlashMax : null };
@@ -281,9 +285,11 @@
     why: '고속·저정밀일수록 커진다. 저속 관절에서는 1에 가깝다.',
     rows: [['C', 'Kv (최대)', c => rows(c).length ? f(mx(c, 'Kv'), 3) : '—', 'ISO 6336-1 방법 B']], w: ['kf'], up: ['4-5', '1-3'], k: '판정 없음' };
   I['5-4'] = { what: '치폭 방향 하중분포계수 KHβ를 확인한다.',
-    how: '이론 계산: 잇줄 오차 fma = 0, 핀 처짐·캐리어 비틀림·출력 베어링 기울기로 인한 탄성 변형 fsh만 → 크라우닝으로 보정 → 접촉 폭 → KHβ (ISO 6336-1 부록 E). 공차에 의한 fma는 11-1 시편 시뮬레이션에서 무작위로 더해진다.',
+    how: 'ISO 6336:2019 판정: Fβx = |1.33·B1·fsh − B2·fHβ5| (fHβ5 = 5급 잇줄 기울기 공차, B1·B2 = 리드 수정별), 길들임 yβ를 뺀 Fβy로 KHβ (KISSsoft와 같은 방법 C). 이론 판정: 오차 0, 탄성 변형 fsh(썬 비틀림·핀·캐리어·출력 베어링)만. 공차의 무작위 영향은 11-1 시편 시뮬레이션.',
     why: '강도 계산에서 가장 큰 계수가 되는 경우가 많다. 핀(6-5)·캐리어(6-6)·출력 베어링(2-8)·크라우닝(4-6)이 모두 여기로 모인다.',
-    rows: [['C', 'KHβ (최대)', c => rows(c).length ? f(mx(c, 'KHb'), 3) : '—', 'ISO 6336-1 부록 E'], ['P', 'fsh 핀 / 캐리어 / 출력베어링 (최대)', c => rows(c).length ? `${f(mx(c, 'fshPin'), 2)} / ${f(mx(c, 'fshCar'), 2)} / ${f(mx(c, 'fshOB'), 2)} µm` : '—', '보 처짐·비틀림·롤러 분포 모델']],
+    rows: [['D', 'sel', 'loads.basis', '판정 기준', { o: [['iso', 'ISO 6336:2019 (KISSsoft 방식)'], ['ideal', '이론 (오차 0)']] }],
+      ['C', 'Fβx → Fβy (µm, 최대)', c => rows(c).length ? `${f(mx(c, 'fbx'), 2)} → ${f(mx(c, 'fby'), 2)}` : '—', 'ISO 2019: |1.33·B1·fsh − B2·fHβ5|, yβ = 0.15·Fβx'],
+      ['C', 'KHβ (최대)', c => rows(c).length ? f(mx(c, 'KHb'), 3) : '—', 'ISO 6336-1 부록 E'], ['P', 'fsh 핀 / 캐리어 / 출력베어링 (최대)', c => rows(c).length ? `${f(mx(c, 'fshPin'), 2)} / ${f(mx(c, 'fshCar'), 2)} / ${f(mx(c, 'fshOB'), 2)} µm` : '—', '보 처짐·비틀림·롤러 분포 모델']],
     w: ['kf'], up: ['6-5', '6-6', '2-8', '4-6', '4-5'], k: 'KHβ ≤ 2', ok: c => rows(c).length ? mx(c, 'KHb') <= 2 : null };
   I['5-5'] = { what: '정면 하중분포계수 KHα를 확인한다.',
     how: 'ISO 6336-1: 기초 피치 오차와 물림률 εγ, 치합 강성으로 계산.',
@@ -292,19 +298,21 @@
   I['5-6'] = { what: '유성 간 하중분배계수 Kγ를 확인한다.',
     how: '이론 계산: 유성 위치 오차 0 → 유성 하중 균등, Kγ = 1. 시편 시뮬레이션(11-1)에서 유성 위치 오차를 무작위로 뽑아 치합·핀 강성, 썬 지지 강성·유격의 힘 평형(에너지 최소)으로 시편마다 Kγ를 구한다.',
     why: '가장 많이 걸린 유성이 강도를 정한다. 유성 수(2-9)·지지(2-7)·공차(D3)가 모두 여기로 모인다.',
-    rows: [['C', '시편 Kγ 중앙 / P90', c => c.X?.MC ? `${f(c.X.MC.Kg.p50, 3)} / ${f(c.X.MC.Kg.p90, 3)}` : '11-1 실행 전', '시편 시뮬레이션'],
+    rows: [['A', 'sel', 'loads.kgMode', 'Kγ 산정 (ISO 판정일 때)', { if: D => D.loads.basis !== 'ideal', o: [['model', '물리 모델 (유성 위치 공차·강성)'], ['agma', 'AGMA 6123 표'], ['fixed', '직접 입력']] }],
+      ['A', 'num', 'loads.kgFixed', 'Kγ 직접 입력값', { if: D => D.loads.basis !== 'ideal' && D.loads.kgMode === 'fixed' }],
+      ['C', '시편 Kγ 중앙 / P90', c => c.X?.MC ? `${f(c.X.MC.Kg.p50, 3)} / ${f(c.X.MC.Kg.p90, 3)}` : '11-1 실행 전', '시편 시뮬레이션'],
       ['P', 'Kγ (이론)', c => (c.R?.rated?.stages || []).map((s, i) => `${i + 1}단 ${f(s.Kg, 3)}`).join(' · ') || '—', '힘 평형 모델 / AGMA 표']],
     w: ['kf'], up: ['2-7', '2-9', '2-5', 'D3'], k: 'Kγ ≤ 1.3', ok: c => (c.R?.rated?.stages || []).length ? c.R.rated.stages.every(s => s.Kg <= 1.3) : null };
   I['5-7'] = { what: '치면 피팅 안전율 SH를 목표와 비교한다.',
     how: 'ISO 6336-2 방법 B: σH = ZH·ZE·Zε·Zβ·√(Ft/(d·b)·(u+1)/u)·√(KA·Kv·KHβ·KHα·Kγ). 허용 σHP = σHlim·ZNT·ZL·Zv·ZR·ZW·ZX / SHmin.',
     why: '대부분의 유성감속기에서 정격 토크를 정하는 모드다.',
     rows: [['D', 'num', 'req.SH', '목표 SH (피로 접촉)'], ['C', '최소 SH', c => rows(c).length ? f(mn(c, 'SH'), 3) : '—', 'σHP / σH'], ['C', '지배 부위', c => c.R?.govRated ? `${c.R.govRated.row.stage}단 ${c.R.govRated.row.mesh} · ${c.R.govRated.mode}` : '—', '']],
-    w: ['stress'], up: ['5-4', '5-6', '9-1', '3-7'], k: 'SH ≥ 목표', ok: c => rows(c).length ? mn(c, 'SH') >= c.D.req.SH : null };
+    w: ['stress', 'iso'], up: ['5-4', '5-6', '9-1', '3-7'], k: 'SH ≥ 목표', ok: c => rows(c).length ? mn(c, 'SH') >= c.D.req.SH : null };
   I['5-8'] = { what: '이뿌리 굽힘 안전율 SF를 목표와 비교한다.',
     how: 'ISO 6336-3 방법 B: σF = Ft/(b·m)·YF·YS·Yβ·YB·YDT·K. 유성은 양방향 하중이라 YM 0.7. 썬·링도 매 주기 반전이면 YM 0.7.',
     why: '굽힘 파손은 이가 부러지는 치명 파손이다. 모듈(3-6)·전위(3-9)·림(YB)이 지배한다.',
     rows: [['D', 'num', 'req.SF', '목표 SF (피로 굽힘)'], ['A', 'chk', 'loads.reverse', '썬·링 매 주기 하중 반전 (YM 0.7)'], ['C', '최소 SF', c => rows(c).length ? f(mn(c, 'SF'), 3) : '—', 'σFP / σF']],
-    w: ['stress'], up: ['3-6', '3-9', '9-1'], k: 'SF ≥ 목표', ok: c => rows(c).length ? mn(c, 'SF') >= c.D.req.SF : null };
+    w: ['stress', 'iso'], up: ['3-6', '3-9', '9-1'], k: 'SF ≥ 목표', ok: c => rows(c).length ? mn(c, 'SF') >= c.D.req.SF : null };
   I['5-9'] = { what: '스커핑(섬광 온도) 안전율을 확인한다.',
     how: 'Blok 섬광 온도를 물림 시작·피치점·끝에서 계산, θS = 80 + (0.85 + 1.4·XW)·XL·FZG² (ISO/TR 13989-1 형태). SB = (θS − θ운전) / 섬광온도.',
     why: '고하중·고속에서 치면이 용착한다. 저속 관절에서는 여유가 크지만 피크 토크에서 확인한다.',

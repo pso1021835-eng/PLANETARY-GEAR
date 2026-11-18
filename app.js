@@ -646,7 +646,7 @@ const VIEWS = {
         ${MC ? `<div class="bar" style="left:${pct(MC.capacity.p10)}%;width:${pct(MC.capacity.p90) - pct(MC.capacity.p10)}%"></div><div class="mid" style="left:${pct(MC.capacity.p50)}%"></div>` : ''}
         <div class="iso" style="left:${pct(cap)}%"></div><div class="tgt" style="left:${pct(tgt)}%"></div></div>
        <div class="legend"><span><i style="background:var(--ink)"></i>${BASIS()} ${fmt(cap, 1)} N·m</span><span><i style="background:var(--brick)"></i>목표 ${tgt} N·m</span>${MC ? `<span><i style="background:var(--accent2)"></i>시편 예측 P10–P90 ${fmt(MC.capacity.p10, 1)}–${fmt(MC.capacity.p90, 1)}, 중앙 ${fmt(MC.capacity.p50, 1)} N·m</span>` : '<span>시편 예측: 14단계에서 실행</span>'}</div>
-       ${D.loads?.basis === 'ideal' ? `<p class="note">이론 판정은 오차 0인 완전한 부품·조립(Kγ = 1, 잇줄 오차 0, 탄성 변형만), 피로강도 99 % 신뢰도, 목표 안전율 SH ${D.req.SH} · SF ${D.req.SF} 기준의 상한입니다. 시편 예측은 공차 안의 무작위 오차를 받은 시편 N개의 분포입니다(11-1).</p>` : `<p class="note">ISO 설계 판정은 피로강도 99 % 신뢰도, 공차 상한(제곱합), 목표 안전율 SH ${D.req.SH} · SF ${D.req.SF} 기준입니다. 시편 예측은 공차·하중분배·재료 산포를 무작위로 뽑아 중앙값 강도로 계산한 분포입니다.</p>`}</div>
+       ${D.loads?.basis === 'ideal' ? `<p class="note">이론 판정은 오차 0인 완전한 부품·조립(Kγ = 1, 잇줄 오차 0, 탄성 변형만), 피로강도 99 % 신뢰도, 목표 안전율 SH ${D.req.SH} · SF ${D.req.SF} 기준의 상한입니다. 시편 예측은 공차 안의 무작위 오차를 받은 시편 N개의 분포입니다(11-1).</p>` : `<p class="note">ISO 6336:2019 판정은 KISSsoft와 같은 방법(KHβ 방법 C·fHβ5, 정밀도 등급 공차 기반 Kv·KHα, 치두께 공차를 넣은 치근 형상), 피로강도 99 % 신뢰도, 목표 안전율 SH ${D.req.SH} · SF ${D.req.SF} 기준입니다. 시편 예측은 공차·하중분배·재료 산포를 무작위로 뽑아 중앙값 강도로 계산한 분포입니다.</p>`}</div>
       <div class="two">
        <div class="card"><h3>지배 부위</h3><p class="big" style="font-size:24px">${gov ? esc(partLabel(gov.row)) + ' ' + gov.mode : '—'}</p>
         <table><tr><th>항목</th><th>값</th></tr>
@@ -683,7 +683,7 @@ function advice() {
   if (!out.length) out.push('모든 항목이 목표를 만족합니다. 14단계 가상 검증으로 분포까지 확인하세요.');
   return `<ul class="warns">${out.map(o => `<li>${esc(o)}</li>`).join('')}</ul>`;
 }
-const BASIS = () => D.loads?.basis === 'ideal' ? '이론 판정 (오차 0)' : 'ISO 설계 판정';
+const BASIS = () => D.loads?.basis === 'ideal' ? '이론 판정 (오차 0)' : D.loads?.basis === 'tolerance' ? '공차 한계 판정 (구)' : 'ISO 6336:2019 판정';
 function mcHTML() {
   if (!MC) return '<p class="note">아직 실행하지 않았습니다. 표본 200개 기준 수 초 걸립니다.</p>';
   if (MC.error) return `<p class="bad">${esc(MC.error)}</p>`;
@@ -696,7 +696,7 @@ function mcHTML() {
     <div><h3>스펙트럼 수명 분포</h3><table><tr><td>P10</td><td>${fmtH(MC.life.p10)} h</td></tr><tr><td><b>P50</b></td><td><b>${fmtH(MC.life.p50)} h</b></td></tr><tr><td>P90</td><td>${fmtH(MC.life.p90)} h</td></tr>
       <tr><td>목표 ${D.req.lifeH} h 달성 확률</td><td class="${MC.passLife < .9 ? 'bad' : 'good'}"><b>${fmt(MC.passLife * 100, 0)} %</b></td></tr>
       <tr><td>Kγ 중앙 / P90</td><td>${fmt(MC.Kg.p50, 3)} / ${fmt(MC.Kg.p90, 3)}</td></tr><tr><td>KHβ 중앙 / P90</td><td>${fmt(MC.KHb.p50, 3)} / ${fmt(MC.KHb.p90, 3)}</td></tr></table>
-      <p class="note">${D.loads?.basis === 'ideal' ? `이론 정격 ${fmt(R?.capacityLife, 2)} N·m는 오차 0인 완전한 부품의 상한입니다. 시편은 정밀도 등급·유성 위치·평행도 공차 안에서 오차를 무작위로 받아(3σ = 활용률 × 공차) 그 아래에 분포합니다.` : `ISO 설계 판정 ${fmt(R?.capacityLife, 2)} N·m와의 차이는 99 % 신뢰도·공차 상한 대신 중앙값·공정 분포를 쓴 효과입니다.`}</p></div></div>`;
+      <p class="note">${D.loads?.basis === 'ideal' ? `이론 정격 ${fmt(R?.capacityLife, 2)} N·m는 오차 0인 완전한 부품의 상한입니다. 시편은 정밀도 등급·유성 위치·평행도 공차 안에서 오차를 무작위로 받아(3σ = 활용률 × 공차) 그 아래에 분포합니다.` : `ISO 6336:2019 판정 ${fmt(R?.capacityLife, 2)} N·m와의 차이는 99 % 신뢰도·규격 공차 대신 중앙값·공정 분포를 쓴 효과입니다.`}</p></div></div>`;
 }
 function sensHTML() {
   if (!SENS) return '<p class="note">"민감도 계산"을 누르세요.</p>';
@@ -778,6 +778,27 @@ const W = {
     return `<div class="card scroll"><h3>정격 ${D.req.Trated} N·m에서의 하중계수</h3><table><tr><th>부위</th><th>Kγ</th><th>Kv</th><th>fma µm</th><th>fsh 핀 / 캐리어 / 출력베어링 µm</th><th>접촉폭</th><th>KHβ</th><th>KHα</th><th class="l">근거</th></tr>
       ${R.rated.rows.filter(r => r.part === (r.mesh === '썬–유성' ? 0 : 2)).map(r => `<tr><td>${r.stage}단 ${r.mesh}</td><td>${fmt(r.f.Kg, 3)}</td><td>${fmt(r.f.Kv, 3)}</td><td>${fmt(r.f.fma, 2)}</td><td>${fmt(r.f.fshPin, 2)} / ${fmt(r.f.fshCar, 2)} / ${fmt(r.f.fshOB, 2)}</td><td>${fmt(r.f.frac * 100, 0)} %</td><td>${fmt(r.f.KHb, 3)}</td><td>${fmt(r.f.KHa, 3)}</td><td class="l">${tag(r.f.KgSrc)} ${esc(r.f.KgNote)}</td></tr>`).join('')}</table>
       <p class="note">KHβ는 부하가 낮을수록 커집니다(부분 접촉). Kγ는 유성 위치 공차, 치합·핀 경로 강성, 썬 지지 강성·유격의 힘 평형으로 계산합니다.</p></div>`;
+  },
+  // ISO 6336 detail per flank, laid out like a KISSsoft report so values can be checked line by line
+  iso() {
+    if (!R?.rated) return '';
+    const rs = R.rated.rows, c = (k, d = 3) => rs.map(r => `<td>${fmt(r.f[k], d)}</td>`).join('');
+    const row = (t, k, d, unit = '') => `<tr><td class="l">${t}${unit ? ` <span class="note">${unit}</span>` : ''}</td>${c(k, d)}</tr>`;
+    return `<div class="card scroll"><h3>ISO 6336 상세 (KISSsoft 보고서 대조용) · 정격 ${D.req.Trated} N·m · ${BASIS()}</h3><table class="iso">
+      <tr><th class="l">항목</th>${rs.map(r => `<th>${r.stage}단 ${esc(r.mesh)}<br>${esc(r.partName)}</th>`).join('')}</tr>
+      <tr><td class="l" colspan="${rs.length + 1}"><b>하중 계수</b></td></tr>
+      ${row('c′ 단일 강성', 'cp', 3, 'N/mm/µm')}${row('cγα 치합 강성', 'cg', 3, 'N/mm/µm')}${row('cγβ', 'cb', 3, 'N/mm/µm')}${row('공진비 N', 'Nres', 4)}
+      ${row('Kv', 'Kv', 3)}${row('fsh 변형 합', 'fsh', 2, 'µm')}${row('fsh 썬 비틀림', 'fshSun', 2, 'µm')}${row('Fβx', 'fbx', 2, 'µm')}${row('Fβy (길들임 후)', 'fby', 2, 'µm')}
+      ${row('KHβ', 'KHb', 3)}${row('KFβ', 'KFb', 3)}${row('KHα', 'KHa', 3)}${row('KFα', 'KFa', 3)}${row('Kγ', 'Kg', 3)}
+      <tr><td class="l" colspan="${rs.length + 1}"><b>치면</b></td></tr>
+      ${row('ZH', 'ZH', 3)}${row('ZE', 'ZE', 2)}${row('Zε', 'Zeps', 3)}${row('ZB / ZD', 'ZBD', 3)}${row('σH0', 'H0', 1, 'MPa')}
+      <tr><td class="l">σH</td>${rs.map(r => `<td>${fmt(r.H, 1)}</td>`).join('')}</tr>${row('ZL', 'ZL', 3)}${row('ZV', 'ZV', 3)}${row('ZR', 'ZR', 3)}${row('ZNT', 'ZNT', 3)}
+      <tr><td class="l">σHG (= σHP·SHmin)</td>${rs.map(r => `<td>${fmt(r.HP, 1)}</td>`).join('')}</tr><tr><td class="l"><b>SH</b></td>${rs.map(r => `<td><b>${fmt(r.SH, 3)}</b></td>`).join('')}</tr>
+      <tr><td class="l" colspan="${rs.length + 1}"><b>치근</b></td></tr>
+      ${row('xE (치두께 공차 포함)', 'xE', 4)}${row('YF', 'YF', 3)}${row('YS', 'YS', 3)}${row('sFn', 'sFn', 3, 'mm')}${row('ρF', 'rhoF', 3, 'mm')}${row('hFe', 'hFe', 3, 'mm')}
+      ${row('σF0', 'F0', 1, 'MPa')}<tr><td class="l">σF</td>${rs.map(r => `<td>${fmt(r.F, 1)}</td>`).join('')}</tr>${row('YNT', 'YNT', 3)}${row('YδrelT', 'Ydel', 3)}${row('YRrelT', 'YR', 3)}${row('YM', 'YM', 2)}
+      <tr><td class="l">σFG</td>${rs.map(r => `<td>${fmt(r.FP, 1)}</td>`).join('')}</tr><tr><td class="l"><b>SF</b></td>${rs.map(r => `<td><b>${fmt(r.SF, 3)}</b></td>`).join('')}</tr>
+      </table><p class="note">유성은 썬쪽·링쪽 두 열입니다(하중점이 달라 YF가 다름). 링 YF·YS는 피니언 커터로 생성한 실제 치근 형상(60° 접선)에서 구합니다.</p></div>`;
   },
   stress() {
     if (!R?.rated) return '';
@@ -994,7 +1015,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=pr32-1');
+    if (!worker) worker = new Worker('worker.js?v=pr33-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });
