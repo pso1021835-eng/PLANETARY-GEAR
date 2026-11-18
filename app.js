@@ -337,6 +337,8 @@ let PARTV = null;   // GOOD (declared at the top): last error-free result + desi
 // geometry source for the studio: the current result when it is clean, otherwise the last clean one (or the current one if there never was one)
 function studioSrc() {
   if (R?.ctx && !R.errors?.length) return { R, D, stale: false };
+  // geometry first: even with calculation errors, draw from the dimensions entered now whenever the shape itself can be built
+  if (R?.ctx?.stages?.length && R.ctx.stages.every(s => s.geo?.parts?.length === 3 && s.carrier?.plates)) { try { PGD3D.layout(R, D); return { R, D, stale: false, live: true }; } catch (e) { } }
   if (GOOD) return { R: GOOD.R, D: GOOD.D, stale: true, from: 'last' };
   // no clean result yet in this session (e.g. the saved design already had an error when the page opened):
   // try the same design with the carrier sizes back on automatic, otherwise the built-in example
@@ -436,9 +438,9 @@ function studioPage() {
   if (!ids.includes(STUDIO.id)) STUDIO.id = ids[0];
   const id = STUDIO.id, err = R?.errors?.length ? R.errors : null, chips = err ? [] : studioVerdict(id), p = err ? null : bomList().find(x => x.id === id);
   const stN = +(id.replace(/\D/g, '') || 0), mine = e => stN ? e.startsWith(stN + '단') || !/^\d단/.test(e) : true;
-  const errHTML = err ? `<div class="st-err"><b>계산 오류 — 편집은 계속할 수 있습니다</b>
+  const errHTML = err ? `<div class="st-err"><b>판정 보류 — 형상 편집은 계속됩니다</b>
       <ul>${err.map(e => `<li class="${mine(e) ? 'me' : ''}">${esc(e)}</li>`).join('')}</ul>
-      <p class="note">${{ last: '3D는 마지막으로 계산이 성립한 형상입니다.', auto: '3D는 캐리어 치수를 자동값으로 돌렸을 때의 형상입니다.', example: '3D는 기본 예제의 형상입니다.' }[S.from] || ''} 밝은 치수와 오른쪽 입력칸에는 지금 입력한 값이 표시되고, 오류가 풀리면 형상이 바로 갱신됩니다. 판정 칩은 오류가 풀리면 다시 나타납니다.</p></div>` : '';
+      <p class="note">${S.live ? '3D는 지금 입력한 치수 그대로 그린 형상입니다. 강도·수명 판정만 멈춰 있습니다.' : ({ last: '3D는 마지막으로 계산이 성립한 형상입니다.', auto: '3D는 캐리어 치수를 자동값으로 돌렸을 때의 형상입니다.', example: '3D는 기본 예제의 형상입니다.' }[S.from] || '') + ' (지금 입력으로는 형상 자체를 만들 수 없습니다.) 밝은 치수와 입력칸에는 지금 값이 표시되고, 오류가 풀리면 형상이 바로 갱신됩니다.'} 판정 칩은 오류가 풀리면 다시 나타납니다.</p></div>` : '';
   const grp = k => ids.filter(x => x.startsWith(k));
   const list = [['sun', '썬 S'], ['planet', '유성 P'], ['ring', '링 R'], ['carrier', '캐리어 C']].map(([k, t]) => `<div class="st-g">${t}</div>${grp(k).map(x => { const v = studioVerdict(x), bad = v.some(c => c.ok === false); return `<button class="st-it ${x === id ? 'on' : ''}" data-part="${x}"><span class="dot ${bad ? 'bad' : v.length ? 'ok' : ''}"></span><b>${sLetter(x)}</b><span>${esc(sName(x).replace(/^\S+\s/, ''))}</span></button>`; }).join('')}`).join('');
   return `<div class="studio">
@@ -979,7 +981,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=pr21-1');
+    if (!worker) worker = new Worker('worker.js?v=pr23-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });

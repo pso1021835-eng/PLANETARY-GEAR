@@ -777,7 +777,7 @@
       if (m[1] === 'carrier') {
         E(`stages.${i}.pin.type`, '지지 형식', s.pin.type, { options: [['double', '양단 지지'], ['single', '편단 지지']] });
         E(`stages.${i}.carrier.width`, '캐리어 두께 (mm, 보스 제외)', s.carrier?.width, { auto: shape?.widthAuto ? shape.width : undefined });
-        E('', '판 두께 (자동, mm)', shape ? (shape.double ? `${shape.wall.toFixed(2)} × 2 (안착 폭 중심 기준)` : shape.wall.toFixed(2)) : '—', { readonly: true });
+        E('', '판 두께 (자동, mm)', shape ? shape.wallShort ? '부족 (두께 ≤ 안착 폭) · 0.3으로 표시' : (shape.double ? `${shape.wall.toFixed(2)} × 2` : shape.wall.toFixed(2)) : '—', { readonly: true });
         E(`stages.${i}.carrier.outerD`, '캐리어 최대외경 (mm)', s.carrier?.outerD, { auto: shape?.outerD });
         E(`stages.${i}.carrier.innerD`, '캐리어 내경 (mm)', s.carrier?.innerD, { auto: shape?.innerD });
         E(`stages.${i}.carrier.bossD`, '보스 외경 (mm)', s.carrier?.bossD, { auto: shape?.bossD });
