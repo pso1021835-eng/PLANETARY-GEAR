@@ -189,7 +189,7 @@
       const sF = Math.max(...rows(R).map(r => r.F));
       put('11-3', D.verify.feaSigmaF ? { kind: 'calc', val: `FEA ${D.verify.feaSigmaF} / ISO ${f(sF, 0)} MPa · 비 ${f(D.verify.feaSigmaF / sF, 2)}`, ok: D.verify.feaSigmaF / sF < 1.3 } : { kind: 'in', val: `ISO 최대 σF ${f(sF, 0)} MPa · FEA 미입력`, ok: null });
       const tt = D.verify.testT, cap = R.reducerCap, mc = X.MC?.capacity?.p50;
-      put('11-4', tt ? { kind: 'calc', val: `시험 ${tt} N·m · ISO ${f(cap, 2)} (×${f(tt / cap, 1)})${mc ? ` · 현실 예측 P50 ${f(mc, 1)} (×${f(tt / mc, 2)})` : ''}`, ok: mc ? Math.abs(tt / mc - 1) < .3 : null } : { kind: 'in', val: '시험값 미입력', ok: null });
+      put('11-4', tt ? { kind: 'calc', val: `시험 ${tt} N·m · ${D.loads?.basis === 'ideal' ? '이론' : 'ISO'} ${f(cap, 2)} (×${f(tt / cap, 1)})${mc ? ` · 시편 예측 P50 ${f(mc, 1)} (×${f(tt / mc, 2)})` : ''}`, ok: mc ? Math.abs(tt / mc - 1) < .3 : null } : { kind: 'in', val: '시험값 미입력', ok: null });
       if (tt) {
         const g = R.govRated?.row?.f, kNeed = cap / tt;  // 피팅: 정격 ∝ 1/(Kγ·KHβ)
         put('11-5', { kind: 'calc', val: g ? `Kγ·KHβ = ${f(g.Kg * g.KHb, 2)} → 시험과 맞으려면 ${f(g.Kg * g.KHb * kNeed, 2)} (×${f(kNeed, 2)})` : `보정 배수 ×${f(kNeed, 2)}`, ok: null,
@@ -217,7 +217,9 @@
       if (D.struct.ringHousing === 'integral' && D.dfm.proc.ring === 'shape') iss.push('링 일체 하우징 셰이핑 → 커터 도피 홈 필요');
       put('D2', { kind: 'calc', val: iss.length ? iss.join(' · ') : '표준 공구로 가공 가능', ok: !iss.some(t => /불가|비규격/.test(t)) ? (iss.length ? null : true) : false });
     }
-    put('D3', { kind: 'calc', val: `유성 위치오차 ±${D.loads.posError} µm → Kγ ${(R.rated?.stages || []).map(s => f(s.Kg, 2)).join(' / ')} · 정밀도 ${D.stages.map(s => s.grade).join('/')}급`, ok: (R.rated?.stages || []).every(s => s.Kg <= 1.3) });
+    // ideal basis: the rating has no errors (Kγ = 1); tolerances show up only in the specimen simulation (11-1)
+    if (D.loads?.basis === 'ideal') put('D3', { kind: 'calc', val: X.MC?.Kg ? `유성 위치 ±${D.loads.posError} µm · 정밀도 ${D.stages.map(s => s.grade).join('/')}급 → 시편 Kγ 중앙 ${f(X.MC.Kg.p50, 2)} / P90 ${f(X.MC.Kg.p90, 2)} · KHβ P90 ${f(X.MC.KHb.p90, 2)}` : '시편 시뮬레이션(11-1) 실행 전', ok: X.MC?.Kg ? X.MC.Kg.p90 <= 1.3 : null });
+    else put('D3', { kind: 'calc', val: `유성 위치오차 ±${D.loads.posError} µm → Kγ ${(R.rated?.stages || []).map(s => f(s.Kg, 2)).join(' / ')} · 정밀도 ${D.stages.map(s => s.grade).join('/')}급`, ok: (R.rated?.stages || []).every(s => s.Kg <= 1.3) });
     if (L) {
       const th = [];
       S.forEach((s, i) => {

@@ -336,7 +336,12 @@
       return { i, st, geo, mats, carrier };
     }).filter(Boolean);
     const ratio = stages.reduce((v, s) => v * (s.geo.ratio || NaN), 1);
-    return { D, stages, ratio, errors, warns };
+    // Rating basis. 'ideal' (default): perfect parts and assembly — no pitch/profile/helix deviations, no planet position
+    // error, no carrier-bore misalignment. Only elastic deflections remain. Tolerances act only in the specimen simulation
+    // (monteCarlo), where each specimen draws random errors. 'tolerance' (legacy designs/fixtures): tolerance limits as before.
+    const basis = D.loads?.basis === 'ideal' ? 'ideal' : 'tolerance';
+    const idealSample = basis === 'ideal' ? { ideal: true, pos: stages.map(s => Array(s.st.n).fill(0)), stage: stages.map(() => ({ fma: [0, 0], pitch: [0, 0], profile: [0, 0] })) } : null;
+    return { D, stages, ratio, errors, warns, basis, idealSample };
   }
 
   // Load sharing model (Kγ). sample.pos: per-stage planet position errors (µm) or null → design value.
@@ -350,7 +355,8 @@
     return M.map((r, i) => r[3] / r[i]);
   }
   function kgamma(stg, D, Fmean, kpath, sample) {
-    const n = stg.st.n, mode = D.loads.kgMode;
+    const n = stg.st.n, mode = sample ? 'model' : D.loads.kgMode;   // a specimen (or the ideal part) always uses the force model
+    if (sample?.ideal) return { value: 1, src: '이론', note: '오차 0 (이상 조립) · 유성 하중 균등' };
     if (mode === 'fixed') return { value: D.loads.kgFixed, src: '가정', note: '직접 입력' };
     if (mode === 'agma') return { value: ({ 2: 1.16, 3: 1.23, 4: 1.32, 5: 1.35, 6: 1.38, 7: 1.47, 8: 1.52 })[n] ?? NaN, src: '규격', note: 'AGMA 6123-C16 표 7 Level 1' };
     const delta = D.loads.posError; // µm, carrier pin-hole position tolerance (±)
@@ -398,6 +404,7 @@
   // op: {Tout, rpm (input), static, cycles: function(stg,part)->N or null, sample}
   function evaluate(ctx, op) {
     const D = ctx.D, rows = [], stageOut = [];
+    const smp = op.sample || ctx.idealSample || null;   // explicit specimen, else the ideal part (ideal basis), else tolerance limits
     let Tin = op.Tout / ctx.ratio, nIn = op.rpm || 0;
     const obr = D.outBearing?.Z ? rollerModel(D, Math.max(0, op.Tout / D.req.Trated)) : null;
     for (const stg of ctx.stages) {
@@ -411,13 +418,13 @@
       const cPin = pinModel(st.pin, stg.carrier, 1, 0).compliance * 1000; // µm/N
       const ktan = 1 / (1 / (4 * kser) + cPin + (st.bearing.clearanceCompliance || 0));
       const kpath = ktan / 2; // mesh-load change per µm of planet position error
-      const kg = kgamma(stg, D, Ft, kpath, op.sample);
+      const kg = kgamma(stg, D, Ft, kpath, smp);
       const KA = op.static ? 1 : D.loads.KA, Kg = kg.value;
       const v = Math.abs(rel) * Math.PI * sun.d / 60000;
       const mass = (g, mat, r) => { const dm = (g.da + g.df) / 2; return Math.PI * dm ** 4 / (8 * (g.d * Math.cos(geo.at)) ** 2) * mat.rho * (1 - (r.diameter / dm) ** 4); };
       const ms_ = mass(sun, mats[0], geo.rims[0]), mp = mass(planet, mats[1], geo.rims[1]);
       const modal = [mp * ms_ / (st.n * mp + ms_), mp];
-      const sample = op.sample?.stage?.[stg.i];
+      const sample = smp?.stage?.[stg.i];
       const pre = geo.meshes.map((ms, j) => {
         const ma = [mats[j ? 1 : 0], mats[j ? 2 : 1]], tl = [geo.tol[j ? 1 : 0], geo.tol[j ? 2 : 1]];
         const line = Ft * KA * Kg / ms.b, k = meshStiffness(ms, ma[0], ma[1], line);
@@ -444,12 +451,12 @@
         const pinGap = (Math.abs(pin.tilt) * Math.cos(geo.at) + Math.abs(pin.mtilt) * Math.sin(geo.at)) * b * 1000;
         // manufacturing misalignment fma: design = RSS (ISO eq.66) of helix slope tolerances + carrier bore parallelism
         let fma, fmaSrc;
-        if (sample?.fma?.[j] != null) { fma = sample.fma[j]; fmaSrc = '모델'; }
+        if (sample?.fma?.[j] != null) { fma = sample.fma[j]; fmaSrc = smp.ideal ? '이론' : '시편'; }
         else if (D.loads.fmaMode === 'worst') { fma = tl[0].helixSlope + tl[1].helixSlope + D.loads.carrierParallel; fmaSrc = '규격'; }
         else { fma = Math.hypot(tl[0].helixSlope, tl[1].helixSlope, D.loads.carrierParallel); fmaSrc = '규격'; }
         const fshCar = Math.abs(car.slope) * Math.cos(geo.at) * b * 1000;
         const fshOB = lastStage && obr ? Math.abs(obr.tilt) * Math.cos(geo.at) * b * 1000 : 0;
-        const fsh = pinGap + fshCar + fshOB + (D.loads.extraFsh?.[stg.i] || 0);
+        const fsh = pinGap + fshCar + fshOB + (smp?.ideal ? 0 : (D.loads.extraFsh?.[stg.i] || 0));
         const fbx = fma + 1.33 * fsh;
         const yb = op.static ? 0 : (runin(ma[0], fbx, v, true) + runin(ma[1], fbx, v, true)) / 2;
         const fby = Math.max(0, fbx - yb);
@@ -845,7 +852,8 @@
         return Math.abs(h1 - h2 + cp);
       });
       const pitch = [0, 1].map(j => Math.abs(gauss(r)) * Math.max(stg.geo.tol[j ? 1 : 0].pitch, stg.geo.tol[j ? 2 : 1].pitch) * util / 3 * 2);
-      sample.stage[stg.i] = { fma, pitch };
+      const profile = [0, 1].map(j => Math.abs(gauss(r)) * Math.max(stg.geo.tol[j ? 1 : 0].profileForm, stg.geo.tol[j ? 2 : 1].profileForm) * util / 3);
+      sample.stage[stg.i] = { fma, pitch, profile };
     });
     return sample;
   }
@@ -878,7 +886,7 @@
     const q = (a, p) => { const s = a.filter(Number.isFinite).sort((x, y) => x - y); if (!s.length) return NaN; const k = (s.length - 1) * p, lo = Math.floor(k); return s[lo] + (s[Math.min(lo + 1, s.length - 1)] - s[lo]) * (k - lo); };
     const pass = lives.filter(l => l >= D.req.lifeH).length / lives.length;
     return {
-      n: nSamples, capacity: { p10: q(caps, .1), p50: q(caps, .5), p90: q(caps, .9), all: caps },
+      n: nSamples, capacity: { p10: q(caps, .1), p50: q(caps, .5), p90: q(caps, .9), mean: caps.filter(Number.isFinite).reduce((s, v) => s + v, 0) / Math.max(1, caps.filter(Number.isFinite).length), all: caps },
       life: { p10: q(lives, .1), p50: q(lives, .5), p90: q(lives, .9), all: lives },
       Kg: { p50: q(kgs, .5), p90: q(kgs, .9) }, KHb: { p50: q(khbs, .5), p90: q(khbs, .9) }, passLife: pass
     };
@@ -892,14 +900,17 @@
     const cases = [];
     const C = (label, f) => { const d = JSON.parse(JSON.stringify(D)); f(d); try { const o = analyze(d); cases.push({ label, value: o.errors.length ? NaN : o.capacityLife, life: o.errors.length ? NaN : o.spectrum.minLife }); } catch (e) { cases.push({ label, value: NaN }); } };
     for (const q of ['ML', 'MQ', 'ME']) if (q !== D.design.quality) C('재료 등급 ' + q, d => d.design.quality = q);
+    const tolCases = D.loads?.basis !== 'ideal';   // ideal basis: tolerances do not enter the deterministic rating
+    if (tolCases) {
     C('정밀도 1등급 향상', d => d.stages.forEach(s => s.grade = Math.max(1, s.grade - 1)));
     C('정밀도 1등급 저하', d => d.stages.forEach(s => s.grade = Math.min(11, s.grade + 1)));
+    }
     for (const c of [0, 1, 3]) if (c !== D.stages[0].mod.crown) C('크라우닝 ' + c + ' µm', d => d.stages.forEach(s => s.mod.crown = c));
     C('치형 수정 적합 확인 (fZCa 1.07)', d => d.stages.forEach(s => s.mod.verified = 'qualified'));
-    C(D.loads.fmaMode === 'rss' ? '잇줄 오차 최악합' : '잇줄 오차 제곱합', d => d.loads.fmaMode = D.loads.fmaMode === 'rss' ? 'worst' : 'rss');
+    if (tolCases) C(D.loads.fmaMode === 'rss' ? '잇줄 오차 최악합' : '잇줄 오차 제곱합', d => d.loads.fmaMode = D.loads.fmaMode === 'rss' ? 'worst' : 'rss');
     C('썬 지지 강성 절반', d => d.loads.sunSupport = (D.loads.sunSupport || []).map(s => ({ ...s, k: s.k / 2, bearingK: (s.bearingK || 40) / 2 })));
-    C('썬 지지 유격 +3 µm (베어링 틈새)', d => d.loads.sunSupport = (D.loads.sunSupport || []).map(s => ({ ...s, play: (s.play || 0) + 3 })));
-    C('유성 위치오차 2배', d => d.loads.posError *= 2);
+    if (tolCases) C('썬 지지 유격 +3 µm (베어링 틈새)', d => d.loads.sunSupport = (D.loads.sunSupport || []).map(s => ({ ...s, play: (s.play || 0) + 3 })));
+    if (tolCases) C('유성 위치오차 2배', d => d.loads.posError *= 2);
     C('2단 치폭 +25 %', d => { d.stages[d.stages.length > 1 && d.config.stages === 2 ? 1 : 0].b *= 1.25; });
     C('목표 수명 ½', d => d.req.lifeH /= 2);
     C('침탄강 (Eh, 700 HV)', d => d.materials.forEach(m => { m.family = 'Eh'; m.surfaceHRC = 60; m.coreHRC = 35; m.depth = 0.3; }));
@@ -989,7 +1000,8 @@
     const so = o.rated.stages;
     so.forEach(s => add('하중', `${s.i + 1}단 Kγ`, s.Kg.toFixed(3), s.KgSrc, s.KgNote));
     add('하중', '썬 지지 (플로팅 아님)', ctx.stages.map(s => { const k = sunSupportK(D, s.i); return `${k.k.toFixed(1)} N/µm · 유격 ${k.play} µm`; }).join(' / '), '가정', '축·베어링(1단)·캐리어(2단) 반경 강성 추정 · Kγ에 가장 큰 영향');
-    add('하중', 'fma (잇줄 오차)', D.loads.fmaMode === 'worst' ? '최악합 (식 64)' : '제곱합 (식 66)', '규격', 'ISO 1328 공차 + 캐리어 핀 구멍 평행도 ' + D.loads.carrierParallel + ' µm');
+    if (ctx.basis === 'ideal') add('하중', '오차·공차', '0 (이론 계산)', '이론', '피치·치형·잇줄 오차, 유성 위치 오차, 캐리어 평행도 = 0 · 공차는 시편 시뮬레이션(11-1)에서만 무작위로 반영');
+    else add('하중', 'fma (잇줄 오차)', D.loads.fmaMode === 'worst' ? '최악합 (식 64)' : '제곱합 (식 66)', '규격', 'ISO 1328 공차 + 캐리어 핀 구멍 평행도 ' + D.loads.carrierParallel + ' µm');
     add('하중', 'fsh (지지 변형)', '핀 + 캐리어 + 출력 베어링', '모델', '핀 보 처짐·기울기, 캐리어 기둥 비틀림(양단 지지), 출력 베어링 롤러 모델 기울기(마지막 단)');
     add('요소', '캐리어 기둥', ctx.stages.map(s => s.carrier?.web ? `평행 홈 A ${s.carrier.web.A.toFixed(0)} mm² · I ${s.carrier.web.I.toFixed(0)} mm⁴ ×${s.st.n}` : '편단 (기둥 없음)').join(' / '), '모델', '캐리어 형상(포켓 마감)에서 단면 계산 · 양단 고정 보 · 판 자체 변형은 강체');
     add('요소', '출력 베어링 롤러', `Z ${D.outBearing.Z} · Dw ${D.outBearing.Dw} · Lw ${D.outBearing.Lw} mm · 예압 ${D.outBearing.preload} µm`, '가정', 'Palmgren 선접촉 강성 · 접촉각 45° 교차 배열');
@@ -998,11 +1010,11 @@
     add('윤활', '마찰계수', D.perf.muMode === 'fixed' ? `고정 ${D.perf.mu}` : 'ISO/TR 14179-2 식', D.perf.muMode === 'fixed' ? '가정' : '규격', '하중·속도·점도·조도 반영');
     add('윤활', '스커핑', 'Blok 섬광온도', '모델', `θS = 80 + (0.85 + 1.4·XW)·XL·FZG² · 벌크 온도 = 운전 온도 가정`);
     add('하중', 'KHβ', '탄성 스트립 + 크라우닝', '모델', 'ISO 6336-1 방법 C 보조 + 포물선 크라우닝 적분');
-    add('하중', 'Kv, KHα', 'ISO 6336-1 방법 B', '규격', '정밀도 등급 공차 · 길들이기 포함');
+    add('하중', 'Kv, KHα', 'ISO 6336-1 방법 B', '규격', ctx.basis === 'ideal' ? '오차 0 (이론) · 시편 시뮬레이션에서 등급 공차 반영' : '정밀도 등급 공차 · 길들이기 포함');
     add('강도', 'ZB/ZD · fZCa', (ctx.stages[0].geo.meshes[0].fZCa).toFixed(2), '규격', 'ISO 6336-2:2019 표 3 · 치형 수정 근거 수준');
     add('강도', '수명계수 ZNT·YNT', 'ISO 표 2 곡선', '규격', '정적 → 내구 → 10¹⁰회 0.85 (일반 윤활)');
     add('강도', '재료 등급', D.design.quality, '가정', 'ME는 품질 증빙 필요 · 없으면 MQ');
-    add('강도', '피로강도 산포 (현실 예측)', `σln H ${D.reliability.covH} · F ${D.reliability.covF}`, '가정', 'ISO 값 = 1 % 파손확률 · 중앙값 = ×exp(2.326σ)');
+    add('강도', '피로강도 산포 (시편 예측)', `σln H ${D.reliability.covH} · F ${D.reliability.covF}`, '가정', 'ISO 값 = 1 % 파손확률 · 중앙값 = ×exp(2.326σ)');
     add('요소', '유성 베어링 C / C0', ctx.stages.map(s => `${s.st.bearing.C}/${s.st.bearing.C0} N`).join(', '), '가정', '카탈로그 값 입력');
     add('요구', '관절 케이스', CASES[D.req.case]?.label || '사용자 정의', '가정', CASES[D.req.case]?.note || '직접 입력');
     add('요소', '출력 베어링 외부 하중', `Fr ${fmt0(D.req.ext.Fr)} N · Fa ${fmt0(D.req.ext.Fa)} N · M ${fmt0(D.req.ext.M)} N·m`, '가정', '관절 케이스에서 정격 토크 비례로 설정 · 실제 링크 하중으로 확정 필요');
@@ -1060,7 +1072,7 @@
       // pin holes ⌖Ø0.01 → ±5 µm; ⊥0.01 A → carrier parallelism 10 µm.
       // S1: 6705DD in the cover (CN radial clearance ≥ 5 µm → free radius 2.5 µm), journal Ø25 / bore Ø17.5.
       // S2: 6703DD inside the S1 bore + 6705DD inside the C2 bore (straddle); 6703 CN ≥ 3 µm → 1.5 µm. Bearing stiffnesses are assumed.
-      loads: { KA: 1.0, kgMode: 'model', kgFixed: 1.1, posError: 5, sunSupport: [{ mode: 'structure', k: 20, play: 2.5, bearingK: 30, od: 25, id: 17.5, overhang: 7.8 }, { mode: 'structure', k: 20, play: 1.5, bearingK: 30, od: 17, id: 15, overhang: 3 }], fmaMode: 'rss', carrierParallel: 10, extraFsh: [0, 0], reverse: false },
+      loads: { basis: 'ideal', KA: 1.0, kgMode: 'model', kgFixed: 1.1, posError: 5, sunSupport: [{ mode: 'structure', k: 20, play: 2.5, bearingK: 30, od: 25, id: 17.5, overhang: 7.8 }, { mode: 'structure', k: 20, play: 1.5, bearingK: 30, od: 17, id: 15, overhang: 3 }], fmaMode: 'rss', carrierParallel: 10, extraFsh: [0, 0], reverse: false },
       reliability: { mode: 'iso', covH: 0.08, covF: 0.07 },
       perf: { muMode: 'model', mu: 0.06, otherLoss: 1.5 },
       // output: RAU5005C0 × 2 between the C2 Ø50g6 seat and the housing Ø61H7 bore, ISTW-50 snap ring. Ratings not on the drawing → 가정.

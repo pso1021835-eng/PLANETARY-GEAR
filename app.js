@@ -523,8 +523,8 @@ function renderVerdict() {
   if (!R || R.errors?.length) { el.innerHTML = `<div class="kpi"><div class="label">계산 불가</div></div><ul class="warns">${(R?.errors || []).map(e => `<li>${esc(e)}</li>`).join('')}</ul>`; return; }
   const ok = R.verdict.every(x => x.ok);
   el.innerHTML = `
-   <div class="kpi"><div class="label">감속기 한계 · ISO 설계 판정 (${D.req.lifeH} h)</div><div class="big ${R.reducerCap < D.req.Trated ? 'bad' : ''}">${fmt(R.reducerCap, 1)}<small> N·m</small></div><div class="note">${esc(R.reducerGov)}</div></div>
-   ${MC ? `<div class="kpi"><div class="label">현실 예측 · 중앙값 (P10–P90)</div><div class="big">${fmt(MC.capacity.p50, 1)}<small> N·m</small></div><div class="note">${fmt(MC.capacity.p10, 1)} – ${fmt(MC.capacity.p90, 1)} N·m · 몬테카를로 ${MC.n}회</div></div>` : `<div class="kpi"><div class="label">현실 예측</div><div class="note">11단계 검증에서 가상 검증을 실행하면 표시됩니다.</div></div>`}
+   <div class="kpi"><div class="label">감속기 한계 · ${BASIS()} (${D.req.lifeH} h)</div><div class="big ${R.reducerCap < D.req.Trated ? 'bad' : ''}">${fmt(R.reducerCap, 1)}<small> N·m</small></div><div class="note">${esc(R.reducerGov)}</div></div>
+   ${MC ? `<div class="kpi"><div class="label">시편 예측 · 중앙값 (P10–P90)</div><div class="big">${fmt(MC.capacity.p50, 1)}<small> N·m</small></div><div class="note">${fmt(MC.capacity.p10, 1)} – ${fmt(MC.capacity.p90, 1)} N·m · 몬테카를로 ${MC.n}회</div></div>` : `<div class="kpi"><div class="label">시편 예측</div><div class="note">11단계 검증에서 가상 검증을 실행하면 표시됩니다.</div></div>`}
    <div class="kpi"><div class="label">목표 정격 ${D.req.Trated} N·m · 판정</div><div class="big ${ok ? 'good' : 'bad'}" style="font-size:28px">${ok ? '전 항목 충족' : R.verdict.filter(x => !x.ok).length + '개 항목 미달'}</div></div>
    <ul>${R.verdict.map(x => `<li><span>${esc(x.k)}</span><b class="${x.ok ? 'good' : 'bad'}">${x.ok ? '✓' : '✗'} ${fmtV(x)}</b></li>`).join('')}</ul>`;
 }
@@ -584,7 +584,7 @@ function extraHTML(id, ck) {
 }
 function datasheetHTML() {
   const X = procExtra(), ck = X.CK || {}, v = k => R.verdict.find(x => x.k === k);
-  const rows = [['감속비', `${fmt(R.ratio, 3)} : 1`], ['정격 토크 (ISO 설계 판정)', `${fmt(R.reducerCap, 2)} N·m`], ['현실 예측 P50', MC ? `${fmt(MC.capacity.p50, 1)} N·m` : '가상 검증 실행 후'], ['피크 정적 안전율', fmtV(v('피크 토크 정적 안전율'))],
+  const rows = [['감속비', `${fmt(R.ratio, 3)} : 1`], [`정격 토크 (${BASIS()})`, `${fmt(R.reducerCap, 2)} N·m`], ['시편 예측 P50', MC ? `${fmt(MC.capacity.p50, 1)} N·m` : '가상 검증 실행 후'], ['피크 정적 안전율', fmtV(v('피크 토크 정적 안전율'))],
     ['효율 (정격)', fmtV(v('효율 (정격, 추정)'))], ['백래시', fmtV(v('출력 백래시 (추정)'))], ['비틀림 강성', `${fmt(R.stiffness?.NmPerArcmin, 1)} N·m/arcmin`], ['출력 베어링 L10', fmtV(v('출력 베어링 L10'))],
     ['외경 × 길이', ck['1-6'] ? `Ø${fmt(ck['1-6'].Dout, 1)} × ${fmt(ck['1-6'].Lt, 1)} mm` : '—'], ['중량', X.mass ? `${fmt(X.mass, 0)} g` : '—'], ['정격 운전 온도', ck['10-6'] ? `${fmt(ck['10-6'].T, 1)} °C` : '—'], ['추정 원가', ck.D5?.cost ? `${Math.round(ck.D5.cost.total).toLocaleString('ko-KR')} 원/대` : '—']];
   return `<table class="ptbl ds">${rows.map(([k, x]) => `<tr><th>${k}</th><td>${x}</td></tr>`).join('')}</table>`;
@@ -645,8 +645,8 @@ const VIEWS = {
        <div class="range" aria-hidden="true">
         ${MC ? `<div class="bar" style="left:${pct(MC.capacity.p10)}%;width:${pct(MC.capacity.p90) - pct(MC.capacity.p10)}%"></div><div class="mid" style="left:${pct(MC.capacity.p50)}%"></div>` : ''}
         <div class="iso" style="left:${pct(cap)}%"></div><div class="tgt" style="left:${pct(tgt)}%"></div></div>
-       <div class="legend"><span><i style="background:var(--ink)"></i>ISO 설계 판정 ${fmt(cap, 1)} N·m</span><span><i style="background:var(--brick)"></i>목표 ${tgt} N·m</span>${MC ? `<span><i style="background:var(--accent2)"></i>현실 예측 P10–P90 ${fmt(MC.capacity.p10, 1)}–${fmt(MC.capacity.p90, 1)}, 중앙 ${fmt(MC.capacity.p50, 1)} N·m</span>` : '<span>현실 예측: 14단계에서 실행</span>'}</div>
-       <p class="note">ISO 설계 판정은 피로강도 99 % 신뢰도, 공차 상한(제곱합), 목표 안전율 SH ${D.req.SH} · SF ${D.req.SF} 기준입니다. 현실 예측은 공차·하중분배·재료 산포를 무작위로 뽑아 중앙값 강도로 계산한 분포입니다.</p></div>
+       <div class="legend"><span><i style="background:var(--ink)"></i>${BASIS()} ${fmt(cap, 1)} N·m</span><span><i style="background:var(--brick)"></i>목표 ${tgt} N·m</span>${MC ? `<span><i style="background:var(--accent2)"></i>시편 예측 P10–P90 ${fmt(MC.capacity.p10, 1)}–${fmt(MC.capacity.p90, 1)}, 중앙 ${fmt(MC.capacity.p50, 1)} N·m</span>` : '<span>시편 예측: 14단계에서 실행</span>'}</div>
+       ${D.loads?.basis === 'ideal' ? `<p class="note">이론 판정은 오차 0인 완전한 부품·조립(Kγ = 1, 잇줄 오차 0, 탄성 변형만), 피로강도 99 % 신뢰도, 목표 안전율 SH ${D.req.SH} · SF ${D.req.SF} 기준의 상한입니다. 시편 예측은 공차 안의 무작위 오차를 받은 시편 N개의 분포입니다(11-1).</p>` : `<p class="note">ISO 설계 판정은 피로강도 99 % 신뢰도, 공차 상한(제곱합), 목표 안전율 SH ${D.req.SH} · SF ${D.req.SF} 기준입니다. 시편 예측은 공차·하중분배·재료 산포를 무작위로 뽑아 중앙값 강도로 계산한 분포입니다.</p>`}</div>
       <div class="two">
        <div class="card"><h3>지배 부위</h3><p class="big" style="font-size:24px">${gov ? esc(partLabel(gov.row)) + ' ' + gov.mode : '—'}</p>
         <table><tr><th>항목</th><th>값</th></tr>
@@ -683,6 +683,7 @@ function advice() {
   if (!out.length) out.push('모든 항목이 목표를 만족합니다. 14단계 가상 검증으로 분포까지 확인하세요.');
   return `<ul class="warns">${out.map(o => `<li>${esc(o)}</li>`).join('')}</ul>`;
 }
+const BASIS = () => D.loads?.basis === 'ideal' ? '이론 판정 (오차 0)' : 'ISO 설계 판정';
 function mcHTML() {
   if (!MC) return '<p class="note">아직 실행하지 않았습니다. 표본 200개 기준 수 초 걸립니다.</p>';
   if (MC.error) return `<p class="bad">${esc(MC.error)}</p>`;
@@ -691,11 +692,11 @@ function mcHTML() {
   const mx = Math.max(...bins);
   return `<div class="two"><div><h3>정격 한계 분포 · 목표 수명 ${D.req.lifeH} h</h3><div class="hist">${bins.map(b => `<i style="height:${b / mx * 100}%"></i>`).join('')}</div>
       <div class="legend"><span>${fmt(lo, 1)} N·m</span><span style="margin-left:auto">${fmt(hi, 1)} N·m</span></div>
-      <table><tr><td>P10</td><td>${fmt(MC.capacity.p10, 2)} N·m</td></tr><tr><td><b>P50 (중앙값)</b></td><td><b>${fmt(MC.capacity.p50, 2)} N·m</b></td></tr><tr><td>P90</td><td>${fmt(MC.capacity.p90, 2)} N·m</td></tr></table></div>
+      <table><tr><td>시편 수 N · 평균</td><td>${MC.n} · <b>${fmt(MC.capacity.mean, 2)} N·m</b></td></tr><tr><td>이론 (오차 0)</td><td>${fmt(R?.capacityLife, 2)} N·m</td></tr><tr><td>P10</td><td>${fmt(MC.capacity.p10, 2)} N·m</td></tr><tr><td><b>P50 (중앙값)</b></td><td><b>${fmt(MC.capacity.p50, 2)} N·m</b></td></tr><tr><td>P90</td><td>${fmt(MC.capacity.p90, 2)} N·m</td></tr></table></div>
     <div><h3>스펙트럼 수명 분포</h3><table><tr><td>P10</td><td>${fmtH(MC.life.p10)} h</td></tr><tr><td><b>P50</b></td><td><b>${fmtH(MC.life.p50)} h</b></td></tr><tr><td>P90</td><td>${fmtH(MC.life.p90)} h</td></tr>
       <tr><td>목표 ${D.req.lifeH} h 달성 확률</td><td class="${MC.passLife < .9 ? 'bad' : 'good'}"><b>${fmt(MC.passLife * 100, 0)} %</b></td></tr>
       <tr><td>Kγ 중앙 / P90</td><td>${fmt(MC.Kg.p50, 3)} / ${fmt(MC.Kg.p90, 3)}</td></tr><tr><td>KHβ 중앙 / P90</td><td>${fmt(MC.KHb.p50, 3)} / ${fmt(MC.KHb.p90, 3)}</td></tr></table>
-      <p class="note">ISO 설계 판정 ${fmt(R?.capacityLife, 2)} N·m와의 차이는 99 % 신뢰도·공차 상한 대신 중앙값·공정 분포를 쓴 효과입니다.</p></div></div>`;
+      <p class="note">${D.loads?.basis === 'ideal' ? `이론 정격 ${fmt(R?.capacityLife, 2)} N·m는 오차 0인 완전한 부품의 상한입니다. 시편은 정밀도 등급·유성 위치·평행도 공차 안에서 오차를 무작위로 받아(3σ = 활용률 × 공차) 그 아래에 분포합니다.` : `ISO 설계 판정 ${fmt(R?.capacityLife, 2)} N·m와의 차이는 99 % 신뢰도·공차 상한 대신 중앙값·공정 분포를 쓴 효과입니다.`}</p></div></div>`;
 }
 function sensHTML() {
   if (!SENS) return '<p class="note">"민감도 계산"을 누르세요.</p>';
@@ -943,7 +944,7 @@ const WB = {
   gear3d(m) {
     mountViewer(m.querySelector('#viewer'), 'gears');
     const out = m.querySelector('#aOut'), rd = () => {
-      if (!out || !R?.ctx) return; let n = +D.anim.rpm || 0; const lines = [];
+      if (!out || !R?.ctx || R.errors?.length) return; let n = +D.anim.rpm || 0; const lines = [];
       R.ctx.stages.forEach((s, i) => { const nc = n / s.geo.ratio, np = (n - nc) * s.geo.parts[0].z / s.geo.parts[1].z; lines.push(`${i + 1}단 썬 ${fmt(n, 1)} → 캐리어 ${fmt(nc, 2)} rpm · 유성 자전 ${fmt(np, 1)} rpm`); n = nc; });
       out.innerHTML = lines.join('<br>') + `<br><b>출력 ${fmt(n, 2)} rpm</b> · 화면 ${fmt(D.anim.rpm * D.anim.slow, 2)} rpm`;
     };
@@ -993,7 +994,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=pr28-1');
+    if (!worker) worker = new Worker('worker.js?v=pr32-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });
