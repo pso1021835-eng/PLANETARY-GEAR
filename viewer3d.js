@@ -817,6 +817,10 @@
         E(`stages.${i}.carrier.innerD`, '캐리어 내경 (mm)', s.carrier?.innerD, { auto: shape?.innerD });
         E(`stages.${i}.carrier.bossD`, '보스 외경 (mm)', s.carrier?.bossD, { auto: shape?.bossD });
         E(`stages.${i}.carrier.bossT`, '보스 두께 (mm, 0=없음)', s.carrier?.bossT);
+        E(`stages.${i}.pin.d`, '유성 핀 지름 (mm)', s.pin.d);
+        E(`stages.${i}.pin.holeMode`, '핀 홀 가공', s.pin.holeMode || 'through', { options: [['through', '관통'], ['blind', '깊이 지정 (막힌 홀)']] });
+        if (s.pin.holeMode === 'blind') E(`stages.${i}.pin.depth`, '핀 홀 원통 깊이 (mm, 118° 끝 제외)', s.pin.depth, { auto: shape?.hole?.autoDepth });
+        E('', '핀 길이 (자동, mm)', shape?.pinLength != null ? shape.pinLength.toFixed(2) : '—', { readonly: true });
         if (shape?.double) {
           E(`stages.${i}.carrier.groove`, '양단 중앙 홈의 축방향 폭 (mm)', s.carrier?.groove, { auto: shape.groove });
           E(`stages.${i}.carrier.pocket`, '유성 포켓 (mm)', s.carrier?.pocket, { auto: shape.pocket });
