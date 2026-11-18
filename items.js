@@ -244,9 +244,9 @@
     rows: [['C', '간섭 여유', c => chv(c, '내접 인볼류트 간섭 여유'), 'ISO 21771 내접 조건'], ['C', '최소 간극', c => chv(c, '이끝·이뿌리 최소 간극 (mm)') + ' mm', 'c ≥ 0.1·m 권장']],
     w: [['checks', '내접 인볼류트 간섭 여유', '이끝·이뿌리 최소 간극 (mm)']], up: ['3-9'], k: '여유 > 0, 간극 > 0' };
   I['4-5'] = { what: '기어 정밀도 등급(ISO 1328, JIS N)을 정한다.',
-    how: '등급에서 단일 피치 fp, 치형 ffα, 잇줄 fHβ 공차가 나오고, 이것이 Kv·KHβ·KHα·Kγ 계산의 오차 입력이 된다.',
-    why: '등급 한 단계가 하중계수 전부와 가공 원가(D3)를 바꾼다. 가공처가 달성할 수 있는 등급이어야 한다.',
-    rows: [['D', 'sel', 'stages.{i}.grade', '{s}단 정밀도 등급', { st: 1, o: [3, 4, 5, 6, 7, 8].map(v => [v, 'N' + v]), t: 'numsel' }],
+    how: '강도 계산(이론)은 오차 0인 완전한 기어로 한다. 등급에서 나오는 공차(fp, ffα, fHβ)는 11-1 시편 시뮬레이션에서 시편마다 무작위 오차로 뽑혀 Kv·KHβ·KHα·Kγ에 들어간다. 등급 입력도 11-1에 있다.',
+    why: '등급 한 단계가 실제 시편의 강도 분포와 가공 원가(D3)를 바꾼다. 가공처가 달성할 수 있는 등급이어야 한다.',
+    rows: [['C', '정밀도 등급 (입력은 11-1)', c => c.D.stages.slice(0, c.D.config.stages).map((s, i) => `${i + 1}단 N${s.grade}`).join(' · '), '이론 계산에는 영향 없음 · 시편 시뮬레이션 공차'],
       ['M', 'str', 'dfm.capability', '가공처 공정능력 (측정 성적서 등급)'], ['J', 'cap', '가공처 기어 측정 성적서로 등급 달성을 확인했다']],
     w: ['tol'], k: '판정 없음 (5단계 계수로 반영)' };
   I['4-6'] = { what: '치형·리드 수정(크라우닝, 치끝 수정)을 정한다.',
@@ -281,21 +281,19 @@
     why: '고속·저정밀일수록 커진다. 저속 관절에서는 1에 가깝다.',
     rows: [['C', 'Kv (최대)', c => rows(c).length ? f(mx(c, 'Kv'), 3) : '—', 'ISO 6336-1 방법 B']], w: ['kf'], up: ['4-5', '1-3'], k: '판정 없음' };
   I['5-4'] = { what: '치폭 방향 하중분포계수 KHβ를 확인한다.',
-    how: '잇줄 오차 fma(공차 제곱합 또는 최악합) + 핀 처짐·캐리어 비틀림·출력 베어링 기울기로 인한 fsh → 크라우닝으로 보정 → 접촉 폭 → KHβ (ISO 6336-1 부록 E).',
+    how: '이론 계산: 잇줄 오차 fma = 0, 핀 처짐·캐리어 비틀림·출력 베어링 기울기로 인한 탄성 변형 fsh만 → 크라우닝으로 보정 → 접촉 폭 → KHβ (ISO 6336-1 부록 E). 공차에 의한 fma는 11-1 시편 시뮬레이션에서 무작위로 더해진다.',
     why: '강도 계산에서 가장 큰 계수가 되는 경우가 많다. 핀(6-5)·캐리어(6-6)·출력 베어링(2-8)·크라우닝(4-6)이 모두 여기로 모인다.',
-    rows: [['A', 'sel', 'loads.fmaMode', '잇줄 오차 결합', { o: [['rss', '제곱합 · ISO 식 66'], ['worst', '최악합 · ISO 식 64']] }], ['D', 'num', 'loads.carrierParallel', '캐리어 핀 구멍 평행도 µm'],
-      ['C', 'KHβ (최대)', c => rows(c).length ? f(mx(c, 'KHb'), 3) : '—', 'ISO 6336-1 부록 E'], ['P', 'fsh 핀 / 캐리어 / 출력베어링 (최대)', c => rows(c).length ? `${f(mx(c, 'fshPin'), 2)} / ${f(mx(c, 'fshCar'), 2)} / ${f(mx(c, 'fshOB'), 2)} µm` : '—', '보 처짐·비틀림·롤러 분포 모델']],
+    rows: [['C', 'KHβ (최대)', c => rows(c).length ? f(mx(c, 'KHb'), 3) : '—', 'ISO 6336-1 부록 E'], ['P', 'fsh 핀 / 캐리어 / 출력베어링 (최대)', c => rows(c).length ? `${f(mx(c, 'fshPin'), 2)} / ${f(mx(c, 'fshCar'), 2)} / ${f(mx(c, 'fshOB'), 2)} µm` : '—', '보 처짐·비틀림·롤러 분포 모델']],
     w: ['kf'], up: ['6-5', '6-6', '2-8', '4-6', '4-5'], k: 'KHβ ≤ 2', ok: c => rows(c).length ? mx(c, 'KHb') <= 2 : null };
   I['5-5'] = { what: '정면 하중분포계수 KHα를 확인한다.',
     how: 'ISO 6336-1: 기초 피치 오차와 물림률 εγ, 치합 강성으로 계산.',
     why: '정밀도가 낮고 물림률이 클수록 커진다.',
     rows: [['C', 'KHα (최대)', c => rows(c).length ? f(mx(c, 'KHa'), 3) : '—', 'ISO 6336-1 §8']], w: ['kf'], up: ['4-5', '4-2'], k: '판정 없음' };
   I['5-6'] = { what: '유성 간 하중분배계수 Kγ를 확인한다.',
-    how: '유성 위치 공차·치합 강성·핀 강성·썬 지지 강성·유격의 힘 평형(에너지 최소)으로 계산한다. AGMA 6123 표나 직접 입력도 고를 수 있다.',
+    how: '이론 계산: 유성 위치 오차 0 → 유성 하중 균등, Kγ = 1. 시편 시뮬레이션(11-1)에서 유성 위치 오차를 무작위로 뽑아 치합·핀 강성, 썬 지지 강성·유격의 힘 평형(에너지 최소)으로 시편마다 Kγ를 구한다.',
     why: '가장 많이 걸린 유성이 강도를 정한다. 유성 수(2-9)·지지(2-7)·공차(D3)가 모두 여기로 모인다.',
-    rows: [['A', 'sel', 'loads.kgMode', 'Kγ 산정 방식', { o: [['model', '물리 모델 (권장)'], ['agma', 'AGMA 6123 표'], ['fixed', '직접 입력']] }],
-      ['A', 'num', 'loads.kgFixed', 'Kγ 직접 입력값', { if: D => D.loads.kgMode === 'fixed' }], ['D', 'num', 'loads.posError', '유성 위치 공차 ± µm'],
-      ['P', 'Kγ', c => (c.R?.rated?.stages || []).map((s, i) => `${i + 1}단 ${f(s.Kg, 3)}`).join(' · ') || '—', '힘 평형 모델 / AGMA 표']],
+    rows: [['C', '시편 Kγ 중앙 / P90', c => c.X?.MC ? `${f(c.X.MC.Kg.p50, 3)} / ${f(c.X.MC.Kg.p90, 3)}` : '11-1 실행 전', '시편 시뮬레이션'],
+      ['P', 'Kγ (이론)', c => (c.R?.rated?.stages || []).map((s, i) => `${i + 1}단 ${f(s.Kg, 3)}`).join(' · ') || '—', '힘 평형 모델 / AGMA 표']],
     w: ['kf'], up: ['2-7', '2-9', '2-5', 'D3'], k: 'Kγ ≤ 1.3', ok: c => (c.R?.rated?.stages || []).length ? c.R.rated.stages.every(s => s.Kg <= 1.3) : null };
   I['5-7'] = { what: '치면 피팅 안전율 SH를 목표와 비교한다.',
     how: 'ISO 6336-2 방법 B: σH = ZH·ZE·Zε·Zβ·√(Ft/(d·b)·(u+1)/u)·√(KA·Kv·KHβ·KHα·Kγ). 허용 σHP = σHlim·ZNT·ZL·Zv·ZR·ZW·ZX / SHmin.',
@@ -408,7 +406,7 @@
     rows: [['M', 'num', 'loads.sunSupport.{i}.bearingK', '{s}단 지지 베어링 반경 강성 N/µm (카탈로그·측정)', { st: 1, if: (D, i) => D.loads.sunSupport?.[i]?.mode === 'structure' }],
       ['D', 'num', 'loads.sunSupport.{i}.od', '{s}단 축 외경 mm', { st: 1, if: (D, i) => D.loads.sunSupport?.[i]?.mode === 'structure' }], ['D', 'num', 'loads.sunSupport.{i}.id', '{s}단 축 내경 mm (중공)', { st: 1, if: (D, i) => D.loads.sunSupport?.[i]?.mode === 'structure' }],
       ['D', 'num', 'loads.sunSupport.{i}.overhang', '{s}단 베어링 → 치폭 중앙 mm', { st: 1, if: (D, i) => D.loads.sunSupport?.[i]?.mode === 'structure' }],
-      ['A', 'num', 'loads.sunSupport.{i}.k', '{s}단 썬 지지 반경 강성 N/µm (직접)', { st: 1, if: (D, i) => D.loads.sunSupport?.[i]?.mode !== 'structure' }], ['A', 'num', 'loads.sunSupport.{i}.play', '{s}단 반경 유격 µm (베어링 틈새)', { st: 1 }],
+      ['A', 'num', 'loads.sunSupport.{i}.k', '{s}단 썬 지지 반경 강성 N/µm (직접)', { st: 1, if: (D, i) => D.loads.sunSupport?.[i]?.mode !== 'structure' }], ['C', '반경 유격 (입력은 11-1)', c => (c.D.loads.sunSupport || []).slice(0, c.D.config.stages).map((s, i) => `S${i + 1} ${s.play ?? 0} µm`).join(' · '), '오차가 있을 때만 Kγ에 영향 → 시편 시뮬레이션'],
       ['P', '지지 강성', c => S(c).map((s, i) => { try { const k = globalThis.PGD.sunSupportK(c.D, i); return `S${i + 1} ${f(k.k, 1)}${k.kShaft ? ` (축 ${f(k.kShaft, 0)})` : ''} N/µm`; } catch (e) { return ''; } }).join(' · '), '직렬 강성 1/k = 1/k_brg + 1/k_shaft']],
     up: ['2-7', '1-7'], k: '판정은 5-6에서' };
   I['7-5'] = { what: '출력 메인 베어링(크로스 롤러)의 형식·크기·정격을 정한다.',
@@ -541,11 +539,15 @@
     w: ['bom'], k: '중량 ≤ 목표 (입력 시)', ok: c => c.D.req.massMax && c.X?.mass ? c.X.mass <= c.D.req.massMax : null };
 
   // ============================================================== 11 검증
-  I['11-1'] = { what: '공차·재료 산포를 반영한 현실 예측 분포를 몬테카를로로 구한다.',
-    how: '공차(잇줄·피치·유성 위치)를 공정 분포로, 피로강도를 대수정규 산포로 뽑아 정격 한계·수명 분포(P10·P50·P90)를 구한다. 민감도는 결정 하나씩 바꿔 영향 순위를 본다.',
-    why: 'ISO 판정(최악 조건)과 실제(중앙값)의 차이를 설명하고, 어떤 결정이 결과를 가장 크게 바꾸는지 알려준다.',
-    rows: [['A', 'num', 'mc.samples', '표본 수'], ['A', 'num', 'mc.utilization', '공차 활용률 (3σ / 공차)'], ['A', 'num', 'reliability.covH', '접촉 피로 산포 σln'], ['A', 'num', 'reliability.covF', '굽힘 피로 산포 σln'],
-      ['P', '정격 P50 (P10–P90)', c => c.X?.MC ? `${f(c.X.MC.capacity.p50, 1)} (${f(c.X.MC.capacity.p10, 1)}–${f(c.X.MC.capacity.p90, 1)}) N·m` : '실행 전', '몬테카를로']],
+  I['11-1'] = { what: '공차 시편 시뮬레이션: 가공·조립·정렬 오차를 무작위로 넣은 시편 N개로 강도 분포를 구한다.',
+    how: '이론 계산(오차 0) 위에, 시편마다 잇줄·피치·치형 오차(정밀도 등급), 유성 위치 오차, 캐리어 평행도를 공정 분포(3σ = 활용률 × 공차)로, 피로강도를 대수정규 산포로 뽑는다. 시편별 정격 한계를 모아 평균·P10·P50·P90을 본다.',
+    why: '이론값은 상한(완전한 부품)이고, 실제 제품은 오차만큼 그 아래에 분포한다. 그 분포의 아래쪽(P10)이 양산 품질 기준이 된다.',
+    rows: [['D', 'sel', 'stages.{i}.grade', '{s}단 정밀도 등급 (ISO 1328)', { st: 1, o: [3, 4, 5, 6, 7, 8].map(v => [v, 'N' + v]), t: 'numsel' }],
+      ['D', 'num', 'loads.posError', '유성 위치 공차 ± µm (핀 구멍)'], ['D', 'num', 'loads.carrierParallel', '캐리어 핀 구멍 평행도 µm'],
+      ['A', 'num', 'loads.sunSupport.{i}.play', '{s}단 썬 지지 반경 유격 µm (베어링 틈새)', { st: 1 }],
+      ['A', 'num', 'mc.samples', '시편 수 N'], ['A', 'num', 'mc.utilization', '공차 활용률 (3σ / 공차)'], ['A', 'num', 'reliability.covH', '접촉 피로 산포 σln'], ['A', 'num', 'reliability.covF', '굽힘 피로 산포 σln'],
+      ['C', '이론 정격 (오차 0)', c => c.R?.capacityLife != null ? `${f(c.R.capacityLife, 2)} N·m` : '—', '완전한 부품·조립'],
+      ['P', '시편 정격 평균 · P10 / P50 / P90', c => c.X?.MC ? `${f(c.X.MC.capacity.mean, 1)} · ${f(c.X.MC.capacity.p10, 1)} / ${f(c.X.MC.capacity.p50, 1)} / ${f(c.X.MC.capacity.p90, 1)} N·m (N = ${c.X.MC.n})` : '실행 전', '몬테카를로 시편']],
     w: ['mc', 'sens'], k: '목표 수명 달성 확률 ≥ 90 %', ok: c => c.X?.MC ? c.X.MC.passLife >= .9 : null };
   I['11-2'] = { what: '캐리어 강성을 FEA 결과와 비교한다.',
     how: 'FEA(판 굽힘 포함) 비틀림 강성 / 모델 강성 비가 0.7~1.3 안이면 모델을 쓴다. 벗어나면 6-3 기둥 등가 단면을 조정한다.',
@@ -557,7 +559,7 @@
     why: 'ISO 식은 얇은 림·내접 링에서 오차가 크다.',
     rows: [['M', 'num', 'verify.feaSigmaF', 'FEA 최대 이뿌리 응력 MPa (정격)'], ['C', 'FEA / ISO', c => ck(c, '11-3'), '비']], up: ['5-8', '3-9'], k: '비 < 1.3' };
   I['11-4'] = { what: '시제품 시험 정격 토크를 예측값과 비교한다.',
-    how: '시험값을 ISO 판정(보수적)과 현실 예측 P50(11-1)에 각각 비교한다.',
+    how: '시험값을 ISO 판정(보수적)과 시편 예측 P50(11-1)에 각각 비교한다.',
     why: '모델이 실제를 얼마나 맞히는지 보는 유일한 근거다. 차이가 크면 11-5로 가정을 역산한다.',
     rows: [['M', 'num', 'verify.testT', '시험 정격 토크 N·m'], ['M', 'str', 'verify.testNote', '시험 조건 (수명 기준·판정 방법·시편 수)'], ['C', '시험 / 예측', c => ck(c, '11-4'), '비']],
     up: ['10-1', '11-1'], k: '시험 / P50 = 0.7 ~ 1.3' };
@@ -610,10 +612,10 @@
     why: '설계는 맞아도 가공이 안 되거나 공구비가 폭증하는 경우를 미리 잡는다.',
     rows: [['C', '제약', c => ck(c, 'D2'), '규칙 검사'], ['J', 'vendor', '가공처와 공구 보유 여부를 확인했다']], up: ['D1', '3-6', '3-8'], k: '불가·비규격 없음' };
   I['D3'] = { what: '공차 배분이 강도에 주는 영향을 확인한다.',
-    how: '유성 위치 공차(5-6)와 정밀도 등급(4-5)이 Kγ·KHβ에 들어가는 결과를 본다. 입력은 해당 항목에서만 바꾼다.',
+    how: '유성 위치 공차와 정밀도 등급이 시편 시뮬레이션(11-1)에서 Kγ·KHβ 분포를 얼마나 넓히는지 본다. 입력은 11-1에서 바꾼다.',
     why: '공차를 풀면 원가는 내려가지만 Kγ가 올라 강도가 떨어진다.',
-    rows: [['C', '공차 → Kγ', c => ck(c, 'D3'), '5-6 모델'], ['C', '현재 공차', c => `유성 위치 ±${c.D.loads.posError} µm (5-6) · 정밀도 ${c.D.stages.slice(0, c.D.config.stages).map(s => 'N' + s.grade).join('/')} (4-5)`, '입력은 5-6·4-5']],
-    up: ['5-6', '4-5'], k: 'Kγ ≤ 1.3' };
+    rows: [['C', '공차 → Kγ', c => ck(c, 'D3'), '5-6 모델'], ['C', '현재 공차', c => `유성 위치 ±${c.D.loads.posError} µm · 평행도 ${c.D.loads.carrierParallel} µm · 정밀도 ${c.D.stages.slice(0, c.D.config.stages).map(s => 'N' + s.grade).join('/')}`, '입력은 11-1']],
+    up: ['11-1'], k: '시편 Kγ P90 ≤ 1.3' };
   I['D4'] = { what: '최소 두께(림·판·벽·포켓)로 가공 가능 여부를 검사한다.',
     how: '썬·유성 림 ≥ 1.2·h, 링 림 ≥ 3.5·m, 하우징 벽 ≥ 0.8, 캐리어 판 ≥ 1, 포켓 ≥ 2 mm.',
     why: '얇은 부위는 열처리 변형·가공 떨림으로 정밀도를 잃는다.',
