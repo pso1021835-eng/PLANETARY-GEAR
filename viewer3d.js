@@ -783,7 +783,8 @@
         E(`stages.${i}.carrier.bossT`, '보스 두께 (mm, 0=없음)', s.carrier?.bossT);
         if (shape?.double) {
           E(`stages.${i}.carrier.groove`, '양단 중앙 홈의 축방향 폭 (mm)', s.carrier?.groove, { auto: shape.groove });
-          E(`stages.${i}.carrier.pocket`, '유성 안착부 폭 (mm)', s.carrier?.pocket, { auto: shape.pocket });
+          E(`stages.${i}.carrier.pocket`, '유성 포켓 지름 (mm)', s.carrier?.pocket, { auto: shape.pocket });
+          E(`stages.${i}.carrier.pocketShape`, '포켓 마감', s.carrier?.pocketShape || 'sector', { options: [['sector', '부채꼴 (일체 가공)'], ['slot', '평행 홈']] });
         } else E(`stages.${i}.carrier.axialClearance`, '지지판과 기어 사이 간격 (mm)', s.carrier?.axialClearance);
       }
     } else if (id === 'xroller') {

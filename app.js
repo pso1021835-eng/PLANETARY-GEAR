@@ -699,9 +699,9 @@ const W = {
   },
   carStiff() {
     if (!R?.carrierPin) return '';
-    return `<div class="card scroll"><h3>캐리어 강성 (양단 지지)</h3><table><tr><th>단</th><th>기둥 강성 N/mm</th><th>와인드업 정격 µrad</th><th>핀 기울기 정격 µrad</th><th>fsh 기여 µm</th><th>기둥 굽힘 피크 MPa</th><th>안전율</th><th>비틀림 강성 N·m/rad</th></tr>
-      ${R.carrierPin.map(c => { const r = c.car.rated, pk = c.car.peak; return r.double ? `<tr class="${c.Sweb < 1 ? 'bad' : ''}"><td>${c.stage}단</td><td>${fmt(r.kweb, 0)}</td><td>${fmt(r.windup * 1e6, 1)}</td><td>${fmt(r.slope * 1e6, 1)}</td><td>${fmt(R.rated.rows.find(x => x.stage === c.stage)?.f.fshCar, 2)}</td><td>${fmt(pk.sigma, 0)}</td><td>${fmt(c.Sweb, 2)}</td><td>${fmt(r.ktor, 0)}</td></tr>` : `<tr><td>${c.stage}단</td><td colspan="7" class="l note">편단 지지: 기둥 없음 · 핀 외팔보 처짐만 반영</td></tr>`; }).join('')}</table>
-      <p class="note">중앙 연결부를 등가 단면의 양단 고정 보(굽힘 + 전단)로 보고 두 판 사이 와인드업을 구합니다. 판 자체 굽힘은 포함하지 않습니다(FEA로 11-2에서 검증).</p></div>`;
+    return `<div class="card scroll"><h3>캐리어 강성 (양단 지지)</h3><table><tr><th>단</th><th>기둥 단면</th><th>기둥 강성 N/mm</th><th>와인드업 정격 µrad</th><th>핀 기울기 정격 µrad</th><th>fsh 기여 µm</th><th>기둥 굽힘 피크 MPa</th><th>안전율</th><th>비틀림 강성 N·m/rad</th></tr>
+      ${R.carrierPin.map(c => { const r = c.car.rated, pk = c.car.peak; return r.double ? `<tr class="${c.Sweb < 1 ? 'bad' : ''}"><td>${c.stage}단</td><td>${r.fromShape ? `${r.webShape === 'slot' ? '평행 홈' : '부채꼴'} · I ${fmt(r.I, 0)} mm⁴` : `사각 ${r.w}×${r.h}`}</td><td>${fmt(r.kweb, 0)}</td><td>${fmt(r.windup * 1e6, 1)}</td><td>${fmt(r.slope * 1e6, 1)}</td><td>${fmt(R.rated.rows.find(x => x.stage === c.stage)?.f.fshCar, 2)}</td><td>${fmt(pk.sigma, 0)}</td><td>${fmt(c.Sweb, 2)}</td><td>${fmt(r.ktor, 0)}</td></tr>` : `<tr><td>${c.stage}단</td><td colspan="8" class="l note">편단 지지: 기둥 없음 · 핀 외팔보 처짐만 반영</td></tr>`; }).join('')}</table>
+      <p class="note">기둥 단면은 캐리어 형상(포켓 마감)에서 계산하고, 양단 고정 보(굽힘 + 전단)로 두 판 사이 와인드업을 구합니다. 부채꼴 기둥은 매우 단단해 캐리어 변형은 이제 판 자체 굽힘이 주가 되는데, 이것은 모델에 없어 FEA(11-2)로 확인해야 합니다.</p></div>`;
   },
   pinLoad() {
     if (!R?.carrierPin) return '';
@@ -831,7 +831,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=carrier-pin-1');
+    if (!worker) worker = new Worker('worker.js?v=pr18-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });
