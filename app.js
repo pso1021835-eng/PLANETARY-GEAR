@@ -6,7 +6,7 @@ const fmt = (x, n = 2) => Number.isFinite(x) ? x.toFixed(n) : (x === Infinity ? 
 const fmtH = h => !Number.isFinite(h) ? (h === Infinity ? '∞' : '—') : h >= 1e6 ? (h / 1e6).toFixed(1) + 'M' : h >= 1e4 ? (h / 1e3).toFixed(0) + 'k' : h.toFixed(0);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const KEY = 'pgd-design-v1';
-let D = load(), R = null, MC = null, SENS = null, view = 'map', worker = null, jobId = 0;
+let D = load(), R = null, MC = null, SENS = null, view = 'map', worker = null, jobId = 0, GOOD = null;
 
 function fillMissing(dst, src) { for (const k in src) { if (dst[k] === undefined || dst[k] === null && src[k] !== null && typeof src[k] === 'object') dst[k] = JSON.parse(JSON.stringify(src[k])); else if (Array.isArray(src[k]) && Array.isArray(dst[k])) { dst[k].forEach((v, i) => { if (v && typeof v === 'object' && src[k][i] && typeof src[k][i] === 'object' && !Array.isArray(v)) fillMissing(v, src[k][i]); }); } else if (src[k] && typeof src[k] === 'object' && dst[k] && typeof dst[k] === 'object') fillMissing(dst[k], src[k]); } return dst; }
 function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.schema === 'pgd/1') { s.config.floatingSun = false; return fillMissing(s, E.defaultDesign()); } } catch (e) { } return E.defaultDesign(); }
@@ -18,6 +18,7 @@ function compute() {
   ensureD();
   if (window.PGDChecks) { PGDChecks.ensure(D); PGDChecks.applyNeedles(D); }
   try { R = E.analyze(D); } catch (e) { R = { errors: ['계산 오류: ' + e.message], warns: [] }; console.error(e); }
+  if (R?.ctx && !R.errors?.length) GOOD = { R, D: JSON.parse(JSON.stringify(D)) };
   MC = null; SENS = null; XC = null;
 }
 
@@ -332,12 +333,26 @@ function renderCoreRail(c) {
 }
 // ------------------------------------------------------------------ part studio: machined parts S · P · R · C, one at a time in 3D with editable dimensions
 const STUDIO = { id: null, view: null, section: false, dims: true };
-let PARTV = null;
+let PARTV = null;   // GOOD (declared at the top): last error-free result + design, used to keep drawing the part while the current design has a calculation error
+// geometry source for the studio: the current result when it is clean, otherwise the last clean one (or the current one if there never was one)
+function studioSrc() {
+  if (R?.ctx && !R.errors?.length) return { R, D, stale: false };
+  if (GOOD) return { R: GOOD.R, D: GOOD.D, stale: true, from: 'last' };
+  // no clean result yet in this session (e.g. the saved design already had an error when the page opened):
+  // try the same design with the carrier sizes back on automatic, otherwise the built-in example
+  const key = JSON.stringify(D);
+  if (STUDIO.fbKey !== key) {
+    STUDIO.fbKey = key; STUDIO.fb = null;
+    const tries = [['auto', () => { const d = JSON.parse(key); d.stages.forEach(st => { if (st.carrier) ['width', 'groove', 'pocket', 'outerD', 'innerD', 'bossD'].forEach(k => st.carrier[k] = null); }); return d; }], ['example', () => E.defaultDesign()]];
+    for (const [from, mk] of tries) { try { const d = mk(); if (window.PGDChecks) { PGDChecks.ensure(d); PGDChecks.applyNeedles(d); } const r = E.analyze(d); if (r?.ctx && !r.errors?.length) { STUDIO.fb = { R: r, D: d, stale: true, from }; break; } } catch (e) { } }
+  }
+  return STUDIO.fb;
+}
 function studioParts() {
-  if (!R?.ctx) return [];
-  const n = R.ctx.stages.length, out = [];
+  const S = studioSrc(); if (!S) return [];
+  const n = S.R.ctx.stages.length, out = [];
   for (let i = 1; i <= n; i++) out.push(`sun${i}`, `planet${i}`, `carrier${i}`);
-  out.push(...(D.config.sharedRing && n > 1 ? ['ring'] : Array.from({ length: n }, (_, i) => `ring${i + 1}`)));
+  out.push(...(S.D.config.sharedRing && n > 1 ? ['ring'] : Array.from({ length: n }, (_, i) => `ring${i + 1}`)));
   const order = id => ({ sun: 0, planet: 1, ring: 2, carrier: 3 })[id.replace(/\d/g, '')] * 10 + (+id.replace(/\D/g, '') || 0);
   return out.sort((a, b) => order(a) - order(b));
 }
@@ -368,8 +383,9 @@ function studioVerdict(id) {
   return out;
 }
 // dimension lines in part coordinates (axis Z, gear face 0…b, input side negative)
-function studioDims(id) {
-  const m = /^(sun|planet|ring|carrier)(\d?)$/.exec(id); if (!m || !R?.ctx) return [];
+function studioDims(id, S = studioSrc()) {
+  const m = /^(sun|planet|ring|carrier)(\d?)$/.exec(id); if (!m || !S) return [];
+  const { R, D } = S;
   let L; try { L = PGD3D.layout(R, D); } catch (e) { return []; }
   const i = m[2] ? +m[2] - 1 : 0, x = L.S[i], g = x.g, st = D.stages[i], b = x.b ?? st.b, out = [];
   const A = (deg, r, z) => [r * Math.cos(deg * Math.PI / 180), r * Math.sin(deg * Math.PI / 180), z];
@@ -410,13 +426,19 @@ function studioDims(id) {
       out.push({ a: [pk.x + Math.sin(tK) * sh.pocket / 2, pk.y - Math.cos(tK) * sh.pocket / 2, zm], b: [pk.x - Math.sin(tK) * sh.pocket / 2, pk.y + Math.cos(tK) * sh.pocket / 2, zm], text: `포켓 ${fmt(sh.pocket, 2)}`, path: `${c}.pocket`, value: get(`${c}.pocket`), auto: sh.pocket, off: [0, -14] });
     }
   }
+  // drawn from an older clean shape: editable labels show the value now entered, so the edit you just made is visible even though the shape could not be rebuilt
+  if (S.stale) out.forEach(d => { if (d.path) { const v = get(d.path); if (Number.isFinite(v)) d.text = d.text.replace(/[\d.]+$/, fmt(v, 2)); d.value = v; } });
   return out;
 }
 function studioPage() {
-  const ids = studioParts();
-  if (!ids.length || !R || R.errors?.length) return head('부품 편집', '계산 오류가 없을 때 부품을 편집할 수 있습니다.') + errBox();
+  const ids = studioParts(), S = studioSrc();
+  if (!ids.length) return head('부품 편집', '부품 형상을 만들 수 있는 계산 결과가 아직 없습니다. 잇수·모듈·치폭부터 확인하세요.') + errBox();
   if (!ids.includes(STUDIO.id)) STUDIO.id = ids[0];
-  const id = STUDIO.id, chips = studioVerdict(id), p = bomList().find(x => x.id === id);
+  const id = STUDIO.id, err = R?.errors?.length ? R.errors : null, chips = err ? [] : studioVerdict(id), p = err ? null : bomList().find(x => x.id === id);
+  const stN = +(id.replace(/\D/g, '') || 0), mine = e => stN ? e.startsWith(stN + '단') || !/^\d단/.test(e) : true;
+  const errHTML = err ? `<div class="st-err"><b>계산 오류 — 편집은 계속할 수 있습니다</b>
+      <ul>${err.map(e => `<li class="${mine(e) ? 'me' : ''}">${esc(e)}</li>`).join('')}</ul>
+      <p class="note">${{ last: '3D는 마지막으로 계산이 성립한 형상입니다.', auto: '3D는 캐리어 치수를 자동값으로 돌렸을 때의 형상입니다.', example: '3D는 기본 예제의 형상입니다.' }[S.from] || ''} 밝은 치수와 오른쪽 입력칸에는 지금 입력한 값이 표시되고, 오류가 풀리면 형상이 바로 갱신됩니다. 판정 칩은 오류가 풀리면 다시 나타납니다.</p></div>` : '';
   const grp = k => ids.filter(x => x.startsWith(k));
   const list = [['sun', '썬 S'], ['planet', '유성 P'], ['ring', '링 R'], ['carrier', '캐리어 C']].map(([k, t]) => `<div class="st-g">${t}</div>${grp(k).map(x => { const v = studioVerdict(x), bad = v.some(c => c.ok === false); return `<button class="st-it ${x === id ? 'on' : ''}" data-part="${x}"><span class="dot ${bad ? 'bad' : v.length ? 'ok' : ''}"></span><b>${sLetter(x)}</b><span>${esc(sName(x).replace(/^\S+\s/, ''))}</span></button>`; }).join('')}`).join('');
   return `<div class="studio">
@@ -429,8 +451,8 @@ function studioPage() {
       <div id="partView" class="pv"><div class="pv-hint">드래그: 회전 · 휠: 확대 · 더블클릭: 기본 시점 · <b>밝은 치수</b>를 누르면 바로 수정</div></div>
     </section>
     <aside class="st-panel">
-      <div class="st-vd">${chips.map(c => `<span class="vchip2 ${c.ok === true ? 'ok' : c.ok === false ? 'bad' : ''}"><small>${esc(c.t)}</small><b>${esc(c.v)}</b></span>`).join('')}</div>
-      <div class="st-sec"><h4>치수 · 형상 <span class="note">빈칸 = 자동</span></h4>${dimsHTML(id) || '<p class="note">편집할 치수가 없습니다.</p>'}</div>
+      ${errHTML}<div class="st-vd">${chips.map(c => `<span class="vchip2 ${c.ok === true ? 'ok' : c.ok === false ? 'bad' : ''}"><small>${esc(c.t)}</small><b>${esc(c.v)}</b></span>`).join('')}</div>
+      <div class="st-sec"><h4>치수 · 형상 <span class="note">빈칸 = 자동</span></h4>${dimsHTML(id, S) || '<p class="note">편집할 치수가 없습니다.</p>'}</div>
       ${p ? `<p class="note">${esc(p.material)} · ${esc(p.heat)} · 수량 ${p.qty}</p>` : ''}
     </aside>
   </div>
@@ -441,7 +463,8 @@ function bindStudio(m) {
   const host = m.querySelector('#partView');
   if (host && window.THREE && window.PGD3D?.mountPart) {
     try {
-      PARTV = PGD3D.mountPart(host, { R, D, id: STUDIO.id, dims: studioDims(STUDIO.id), view: STUDIO.viewFor === STUDIO.id ? STUDIO.view : null, section: STUDIO.section, showDims: STUDIO.dims,
+      const S = studioSrc();
+      PARTV = PGD3D.mountPart(host, { R: S.R, D: S.D, id: STUDIO.id, dims: studioDims(STUDIO.id, S), view: STUDIO.viewFor === STUDIO.id ? STUDIO.view : null, section: STUDIO.section, showDims: STUDIO.dims,
         onEdit: (path, v) => { set(path, v); changed(); },
         onFocus: d => { if (!d.path) return; const el = m.querySelector(`.st-panel [data-p="${d.path}"]`); if (el) { el.scrollIntoView({ block: 'nearest' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 900); } } });
       if (PARTV) PARTV.partId = STUDIO.id;
@@ -1096,8 +1119,10 @@ function bomHTML(sel) {
     <div class="bom-s"><table><tr><th>No</th><th class="l">부품</th><th>수량</th><th class="l">재료</th><th class="l">열처리</th><th>g</th><th>판정</th></tr>
     ${L.map(p => `<tr data-id="${p.id}" class="${p.id === sel ? 'sel' : ''}"><td>${p.no}</td><td class="l">${esc(p.name)}</td><td>${p.qty}</td><td class="l">${esc(p.material)}</td><td class="l">${esc(p.heat)}</td><td>${fmt(p.mass * 1000, 1)}</td><td>${p.verdict ? `<span class="${p.verdict.ok ? 'good' : 'bad'}">${p.verdict.ok ? '✓' : '✗'}</span>` : '—'}</td></tr>`).join('')}</table></div>`;
 }
-function dimsHTML(id) {
+function dimsHTML(id, S) {
   let rows = []; try { rows = PGD3D.partSchema(R, D, id); } catch (e) { }
+  // current result has no usable shape (calculation error): take the rows from the last clean shape, but show the values entered now
+  if (!rows.length && S?.stale) { try { rows = PGD3D.partSchema(S.R, S.D, id).map(r => r.path && !r.readonly ? { ...r, value: r.options ? (get(r.path) ?? r.value) : get(r.path) } : r); } catch (e) { } }
   if (!rows.length) return '';
   const field = r => {
     if (r.readonly) return esc(r.value ?? '—');
