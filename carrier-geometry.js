@@ -28,6 +28,25 @@
     });
   }
 
+  // Sector-finished pockets (one-piece double carrier): each planet pocket is a sector whose radial edges are tangent
+  // to the pocket circle (Ø = pocket) on the pin PCD, so the web left between neighbouring pockets is an annular sector.
+  function sectorSections(inner, outer, width, count, orbit) {
+    const pitch = 2 * Math.PI / count, phi = width / 2 < orbit ? Math.asin(width / 2 / orbit) : Infinity, half = pitch / 2 - phi;
+    if (!(half > EPS)) return [];
+    return Array.from({ length: count }, (_, i) => {
+      const c = pitch / 2 + i * pitch, arc = (r, a, b) => Array.from({ length: 25 }, (_, k) => { const t = a + (b - a) * k / 24; return { x: r * Math.cos(t), y: r * Math.sin(t) }; });
+      return [...arc(outer, c - half, c + half), ...arc(inner, c + half, c - half)];
+    });
+  }
+  // Section properties of one web, in the web's own frame (x radial through its middle, y tangential).
+  // I = ∫y² dA governs bending under the tangential web force; ymax is the extreme fibre.
+  function webProps(points, centre) {
+    const q = points.map(p => ({ x: p.x * Math.cos(-centre) - p.y * Math.sin(-centre), y: p.x * Math.sin(-centre) + p.y * Math.cos(-centre) }));
+    let A = 0, I = 0;
+    q.forEach((p, i) => { const n = q[(i + 1) % q.length], cr = p.x * n.y - n.x * p.y; A += cr / 2; I += cr * (p.y * p.y + p.y * n.y + n.y * n.y) / 12; });
+    return { A: Math.abs(A), I: Math.abs(I), ymax: Math.max(...q.map(p => Math.abs(p.y))), rmin: Math.min(...q.map(p => Math.hypot(p.x, p.y))), rmax: Math.max(...q.map(p => Math.hypot(p.x, p.y))) };
+  }
+
   function holeBands(hole, z) {
     const cylinder = hole.cylinder, lo = Math.max(z[0], cylinder[0]), hi = Math.min(z[1], cylinder[1]);
     const out = hi > lo + EPS ? [{ z: [lo, hi], r0: hole.radius, r1: hole.radius }] : [];
@@ -84,7 +103,9 @@
     const loadInterval = [0, b];
     if (overlap(stock, loadInterval) < b - EPS) errors.push('핀이 유성기어 지지 구간 전체를 덮지 않습니다.');
 
-    const web = double ? { z: [left[1], right[0]], sections: webSections(ri, ro, pocket, count) } : null;
+    const pocketShape = carrier.pocketShape === 'slot' ? 'slot' : 'sector';
+    const web = double ? { z: [left[1], right[0]], shape: pocketShape, sections: pocketShape === 'slot' ? webSections(ri, ro, pocket, count) : sectorSections(ri, ro, pocket, count, orbit) } : null;
+    if (web?.sections.length) { Object.assign(web, webProps(web.sections[0], Math.PI / count)); web.angle = pocketShape === 'sector' ? 2 * (Math.PI / count - Math.asin(pocket / 2 / orbit)) : null; }
     if (web && !web.sections.length) errors.push('유성 안착 홈이 겹쳐 두 지지판을 연결할 재료가 남지 않습니다.');
     const pins = Array.from({ length: count }, (_, j) => {
       const angle = j * 2 * Math.PI / count;
@@ -105,7 +126,7 @@
       span, axial: [Math.min(stock[0], slabs[0].z[0]), Math.max(stock[1], slabs.at(-1).z[1])] };
   }
 
-  const api = { resolve, webSections };
+  const api = { resolve, webSections, sectorSections, webProps };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PGDCarrier = api;
 })(globalThis);
