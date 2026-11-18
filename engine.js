@@ -179,12 +179,9 @@
     const clr = Math.min(sp.center - (parts[0].da + parts[1].df) / 2, sp.center - (parts[1].da + parts[0].df) / 2, (parts[2].df - parts[1].da) / 2 - pr.center, (parts[2].da - parts[1].df) / 2 - pr.center);
     chk('이끝·이뿌리 최소 간극 (mm)', clr, clr >= 0.15 * m);
     if (!(clr > 0)) errors.push('이끝·이뿌리 간극이 없습니다');
-    const hunting = gcd(s, p) === 1 && gcd(p, r) === 1;
-    chk('헌팅 투스 (공약수 없음)', hunting ? '예' : '아니오', hunting, '권장 조건 · 강도 계산과 무관 (아래 설명)');
     [sp, pr].forEach(ms => { if (!(ms.ea >= 1 && ms.ea <= 2.5)) errors.push(ms.label + ' 물림률이 계산 범위 밖입니다'); });
     return { parts, meshes, ratio, at, an, bb, br, errors, warns, checks, r };
   }
-  function gcd(a, b) { while (b) [a, b] = [b, a % b]; return a; }
   // ring profile shift that makes the internal working centre distance equal the external one
   function matchRingShift(st) {
     const g = { ...st, xr: 0 };
