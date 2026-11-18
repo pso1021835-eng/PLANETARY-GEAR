@@ -714,7 +714,7 @@
     const { double, span, groove } = stg.carrier;
     if (!double || D.loads.rigidCarrier) return { double, kweb: NaN, windup: 0, slope: 0, ktor: Infinity, sigma: 0, span };
     const E = PIN_E[cg.material] || 206000, G = E / 2.6;
-    // web section from the carrier shape (sector- or slot-finished pockets); the old equivalent rectangle is only a fallback
+    // web section from the carrier shape (slot pockets cut by a radial end mill); the old equivalent rectangle is only a fallback
     const wb = stg.carrier.web, fromShape = wb?.I > 0 && wb?.A > 0;
     const w = cg.webW || 4, h = cg.webH || 3, Lw = groove, rw = a;     // web between planets on the pin PCD
     const I = fromShape ? wb.I : h * w ** 3 / 12, A = fromShape ? wb.A : w * h, cmax = fromShape ? wb.ymax : w / 2;
@@ -991,7 +991,7 @@
     add('하중', '썬 지지 (플로팅 아님)', ctx.stages.map(s => { const k = sunSupportK(D, s.i); return `${k.k.toFixed(1)} N/µm · 유격 ${k.play} µm`; }).join(' / '), '가정', '축·베어링(1단)·캐리어(2단) 반경 강성 추정 · Kγ에 가장 큰 영향');
     add('하중', 'fma (잇줄 오차)', D.loads.fmaMode === 'worst' ? '최악합 (식 64)' : '제곱합 (식 66)', '규격', 'ISO 1328 공차 + 캐리어 핀 구멍 평행도 ' + D.loads.carrierParallel + ' µm');
     add('하중', 'fsh (지지 변형)', '핀 + 캐리어 + 출력 베어링', '모델', '핀 보 처짐·기울기, 캐리어 기둥 비틀림(양단 지지), 출력 베어링 롤러 모델 기울기(마지막 단)');
-    add('요소', '캐리어 기둥', ctx.stages.map(s => s.carrier?.web ? `${s.carrier.web.shape === 'slot' ? '평행 홈' : '부채꼴'} A ${s.carrier.web.A.toFixed(0)} mm² · I ${s.carrier.web.I.toFixed(0)} mm⁴ ×${s.st.n}` : '편단 (기둥 없음)').join(' / '), '모델', '캐리어 형상(포켓 마감)에서 단면 계산 · 양단 고정 보 · 판 자체 변형은 강체');
+    add('요소', '캐리어 기둥', ctx.stages.map(s => s.carrier?.web ? `평행 홈 A ${s.carrier.web.A.toFixed(0)} mm² · I ${s.carrier.web.I.toFixed(0)} mm⁴ ×${s.st.n}` : '편단 (기둥 없음)').join(' / '), '모델', '캐리어 형상(포켓 마감)에서 단면 계산 · 양단 고정 보 · 판 자체 변형은 강체');
     add('요소', '출력 베어링 롤러', `Z ${D.outBearing.Z} · Dw ${D.outBearing.Dw} · Lw ${D.outBearing.Lw} mm · 예압 ${D.outBearing.preload} µm`, '가정', 'Palmgren 선접촉 강성 · 접촉각 45° 교차 배열');
     add('윤활', '윤활제', `${D.lube.type === 'grease' ? '그리스' : '오일'} · ν40 ${D.lube.nu40} / ν100 ${D.lube.nu100} mm²/s · ${D.lube.temp} °C`, '가정', '제품 데이터시트 값 입력 · 운전 온도는 가정');
     add('윤활', '유막 두께', 'Dowson–Higginson (피치점)', '모델', `압력점도계수 ${D.lube.alphaP}e-8 /Pa · ${D.lube.type === 'grease' ? '그리스 기유 결핍 ×' + D.lube.starvation : '오일'} · Ra ≈ Rz/6`);

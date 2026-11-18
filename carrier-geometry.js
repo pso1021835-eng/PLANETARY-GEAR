@@ -111,7 +111,7 @@
     const loadInterval = [0, b];
     if (overlap(stock, loadInterval) < b - EPS) errors.push('핀이 유성기어 지지 구간 전체를 덮지 않습니다.');
 
-    const pocketShape = carrier.pocketShape === 'slot' ? 'slot' : 'sector';
+    const pocketShape = 'slot';   // pockets are cut by a radially plunged end mill → parallel walls (the sector option was retired)
     const web = double ? { z: [left[1], right[0]], shape: pocketShape, sections: pocketShape === 'slot' ? webSections(ri, ro, pocket, count) : sectorSections(ri, ro, pocket, count, orbit) } : null;
     if (web?.sections.length) { Object.assign(web, webProps(web.sections[0], Math.PI / count)); web.angle = pocketShape === 'sector' ? 2 * (Math.PI / count - Math.asin(pocket / 2 / orbit)) : null; }
     if (web && !web.sections.length) errors.push('유성 안착 홈이 겹쳐 두 지지판을 연결할 재료가 남지 않습니다.');
