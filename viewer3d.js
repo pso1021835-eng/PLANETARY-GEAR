@@ -776,7 +776,8 @@
       if (m[1] === 'needle') { E(`stages.${i}.bearing.C`, '동정격 C N', s.bearing.C); E(`stages.${i}.bearing.C0`, '정정격 C0 N', s.bearing.C0); E(`stages.${i}.bearing.count`, '유성당 개수', s.bearing.count, { step: 1 }); }
       if (m[1] === 'carrier') {
         E(`stages.${i}.pin.type`, '지지 형식', s.pin.type, { options: [['double', '양단 지지'], ['single', '편단 지지']] });
-        E(`stages.${i}.pin.wall`, '지지판 한 장 두께 (mm)', s.pin.wall);
+        E(`stages.${i}.carrier.width`, '캐리어 두께 (mm, 보스 제외)', s.carrier?.width, { auto: shape?.widthAuto ? shape.width : undefined });
+        E('', '판 두께 (자동, mm)', shape ? (shape.double ? `${shape.wall.toFixed(2)} × 2 (안착 폭 중심 기준)` : shape.wall.toFixed(2)) : '—', { readonly: true });
         E(`stages.${i}.carrier.outerD`, '캐리어 최대외경 (mm)', s.carrier?.outerD, { auto: shape?.outerD });
         E(`stages.${i}.carrier.innerD`, '캐리어 내경 (mm)', s.carrier?.innerD, { auto: shape?.innerD });
         E(`stages.${i}.carrier.bossD`, '보스 외경 (mm)', s.carrier?.bossD, { auto: shape?.bossD });
