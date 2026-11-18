@@ -42,8 +42,12 @@
     }
     const geo = new TH.ExtrudeGeometry(shape, { depth: b, bevelEnabled: false, curveSegments: 40, steps: Math.max(2, Math.round(b)) });
     const tb = Math.tan(betaDeg * Math.PI / 180), rp = g.d / 2, pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i), zz = pos.getZ(i), a = zz * tb / rp, c = Math.cos(a), s = Math.sin(a); pos.setXY(i, x * c - y * s, x * s + y * c); }
+    // ring gear: the outer diameter is a plain straight cylinder — only the teeth follow the helix
+    const Rout = internal ? Math.max(g.df / 2 + .5 * g.m, (rimDia || g.df + 8 * g.m) / 2) : Infinity;
+    const onOD = i => Math.hypot(pos.getX(i), pos.getY(i)) > Rout - 1e-4;
+    for (let i = 0; i < pos.count; i++) { if (onOD(i)) continue; const x = pos.getX(i), y = pos.getY(i), zz = pos.getZ(i), a = zz * tb / rp, c = Math.cos(a), s = Math.sin(a); pos.setXY(i, x * c - y * s, x * s + y * c); }
     geo.computeVertexNormals();
+    if (internal) { const nm = geo.attributes.normal; for (let i = 0; i < pos.count; i++) if (onOD(i) && Math.abs(nm.getZ(i)) < .5) { const x = pos.getX(i), y = pos.getY(i), r = Math.hypot(x, y); nm.setXYZ(i, x / r, y / r, 0); } nm.needsUpdate = true; }
     return geo;
   }
   // revolved solid from an (r, z) outline (closed), chamfered corners look crisp under the environment map
@@ -75,7 +79,7 @@
     }
     return g;
   }
-  function carrierBody(shape) {
+  function carrierBody(shape, opts = {}) {
     const TH = T(), positions = [], normals = [];
     const add = (source, reversed = false) => {
       const geometry = reversed ? reverseFaces(source) : (source.index ? source.toNonIndexed() : source);
@@ -107,11 +111,14 @@
     if (shape.web) for (const section of shape.web.sections) {
       const profile = new TH.Shape(section.map(p => new TH.Vector2(p.x, p.y)));
       const [z0, z1] = shape.web.z;
-      add(new TH.ExtrudeGeometry(profile, { depth: z1 - z0, bevelEnabled: false }).translate(0, 0, z0));
+      // side walls only: the web's end caps lie on the plate faces (inside the solid) and would z-fight / draw seams
+      const eg = new TH.ExtrudeGeometry(profile, { depth: z1 - z0, bevelEnabled: false }).translate(0, 0, z0), sg = eg.groups.find(g => g.materialIndex === 1);
+      if (sg) { const sub = new TH.BufferGeometry(); for (const name of ['position', 'normal']) { const a = eg.attributes[name]; sub.setAttribute(name, new TH.Float32BufferAttribute(a.array.slice(sg.start * 3, (sg.start + sg.count) * 3), 3)); } add(sub); eg.dispose(); }
+      else add(eg);
     }
     // end-mill corner radius: material left where a pocket wall meets a plate face, swept along the wall
     const r = shape.pocketR;
-    if (r > 1e-6 && shape.fillets?.length) {
+    if (r > 1e-6 && shape.fillets?.length && opts.fillets !== false) {
       // profile in (s = into the pocket from the wall, h = away from the plate face): corner minus the tool circle
       const prof = [[0, 0], [r, 0]];
       for (let k = 1; k < 12; k++) { const a = -Math.PI / 2 - k * Math.PI / 24; prof.push([r + r * Math.cos(a), r + r * Math.sin(a)]); }
@@ -138,11 +145,22 @@
         };
         for (let j = 0; j < ends.length; j++) {
           const k = (j + 1) % ends.length, ds = prof[k][0] - prof[j][0], dh = prof[k][1] - prof[j][1];
+          // the flat faces of the corner (on the plate face h = 0 and on the pocket wall s = 0) are inside the solid: skip them so the R blends into plate and wall
+          if ((Math.abs(prof[j][1]) < 1e-9 && Math.abs(prof[k][1]) < 1e-9) || (Math.abs(prof[j][0]) < 1e-9 && Math.abs(prof[k][0]) < 1e-9)) continue;
           const ns = orient * dh, nh = -orient * ds, want = [f.n[0] * ns, f.n[1] * ns, f.dir * nh];
           tri(ends[j][0], ends[k][0], ends[k][1], want); tri(ends[j][0], ends[k][1], ends[j][1], want);
         }
         for (const [x, y, z] of tris) { tri(ends[x][0], ends[y][0], ends[z][0], [-u[0], -u[1], 0]); tri(ends[x][1], ends[y][1], ends[z][1], [u[0], u[1], 0]); }
       }
+    }
+    // one continuous outer / inner diameter: every face lying on Ø outer or Ø inner (plates, web, end of the pocket R) gets the
+    // cylinder's radial normal, so the web between the plates shades like the same turned surface instead of flat facets
+    const ro = shape.outerD / 2, ri = shape.innerD / 2;
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i], y = positions[i + 1], r = Math.hypot(x, y);
+      if (Math.abs(normals[i + 2]) > .5 || r < 1e-6) continue;
+      const sg = Math.abs(r - ro) < 2e-3 ? 1 : Math.abs(r - ri) < 2e-3 ? -1 : 0;
+      if (sg) { normals[i] = sg * x / r; normals[i + 1] = sg * y / r; normals[i + 2] = 0; }
     }
     const geometry = new TH.BufferGeometry();
     geometry.setAttribute('position', new TH.Float32BufferAttribute(positions, 3));
@@ -411,6 +429,7 @@
       const car = new TH.Group(); car.userData.stage = i;
       const shape = x.carrier;
       const body = new TH.Mesh(carrierBody(shape).translate(0, 0, zb), mkMat('carrier'));
+      body.userData.edgeGeo = () => carrierBody(shape, { fillets: false }).translate(0, 0, zb);   // feature lines without the tangent seams of the pocket R
       car.add(body);
       const pinMat = mkMat('pin'), pinGeo = new TH.CylinderGeometry(shape.diameter / 2, shape.diameter / 2, shape.pinLength, 72).rotateX(Math.PI / 2);
       const pins = new TH.Group(), pinZ = zb + (shape.stock[0] + shape.stock[1]) / 2;
@@ -509,7 +528,7 @@
       const dark = /^(carrier|bolt)/.test(ms.userData.partId);
       const lm = new TH.LineBasicMaterial({ color: dark ? 0x6b6f76 : 0x2a2724, transparent: true, opacity: dark ? .5 : .42, toneMapped: false });
       lm.userData.op = lm.opacity; edgeMats.push(lm);
-      const ln = new TH.LineSegments(new TH.EdgesGeometry(ms.geometry, 28), lm); ln.raycast = () => { }; ln.userData.edge = true; ms.add(ln);
+      const eGeo = ms.userData.edgeGeo ? ms.userData.edgeGeo() : ms.geometry, ln = new TH.LineSegments(new TH.EdgesGeometry(eGeo, 28), lm); if (eGeo !== ms.geometry) eGeo.dispose(); ln.raycast = () => { }; ln.userData.edge = true; ms.add(ln);
     });
     // ---- centre, ground, camera
     const box = new TH.Box3().setFromObject(root), ctr = box.getCenter(new TH.Vector3()), size = box.getSize(new TH.Vector3());
