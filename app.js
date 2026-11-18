@@ -425,7 +425,14 @@ function studioDims(id, S = studioSrc()) {
     if (sh.double) {
       const zm = (pl[0][1] + pl[1][0]) / 2;
       axial(0, ro + 1.2, pl[0][1], pl[1][0], `안착 폭 ${fmt(sh.groove, 2)}`, `${c}.groove`, { auto: sh.groove, off: [0, 14] });
-      out.push({ a: [pk.x + Math.sin(tK) * sh.pocket / 2, pk.y - Math.cos(tK) * sh.pocket / 2, zm], b: [pk.x - Math.sin(tK) * sh.pocket / 2, pk.y + Math.cos(tK) * sh.pocket / 2, zm], text: `포켓 ${fmt(sh.pocket, 2)}`, path: `${c}.pocket`, value: get(`${c}.pocket`), auto: sh.pocket, off: [0, -14] });
+      out.push({ a: [pk.x + Math.sin(tK) * sh.pocket / 2, pk.y - Math.cos(tK) * sh.pocket / 2, zm], b: [pk.x - Math.sin(tK) * sh.pocket / 2, pk.y + Math.cos(tK) * sh.pocket / 2, zm], text: `유성 포켓 ${fmt(sh.pocket, 2)}`, path: `${c}.pocket`, value: get(`${c}.pocket`), auto: sh.pocket, off: [0, -14] });
+      // end-mill corner R: leader from the corner of the pocket on the next pin
+      const fi = sh.fillets?.[((3 % sh.pins.length) * 4) % sh.fillets.length];
+      if (fi && sh.pocketR > 0) {
+        const t = .5, P = [fi.A[0] + (fi.B[0] - fi.A[0]) * t, fi.A[1] + (fi.B[1] - fi.A[1]) * t], k = sh.pocketR * (1 - Math.SQRT1_2);
+        out.push({ a: [P[0] + fi.n[0] * k, P[1] + fi.n[1] * k, fi.z + fi.dir * k], b: [P[0] + fi.n[0] * sh.pocketR * 1.6, P[1] + fi.n[1] * sh.pocketR * 1.6, fi.z + fi.dir * sh.pocketR * 1.6], at: 'b',
+          text: `모서리 R${fmt(sh.pocketR, 2)}`, path: `${c}.pocketR`, value: get(`${c}.pocketR`), auto: sh.pocketRAuto ? sh.pocketR : undefined, off: [8, 10] });
+      }
     }
   }
   // drawn from an older clean shape: editable labels show the value now entered, so the edit you just made is visible even though the shape could not be rebuilt
@@ -981,7 +988,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=pr23-1');
+    if (!worker) worker = new Worker('worker.js?v=pr24-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });

@@ -115,6 +115,29 @@
     const web = double ? { z: [left[1], right[0]], shape: pocketShape, sections: pocketShape === 'slot' ? webSections(ri, ro, pocket, count) : sectorSections(ri, ro, pocket, count, orbit) } : null;
     if (web?.sections.length) { Object.assign(web, webProps(web.sections[0], Math.PI / count)); web.angle = pocketShape === 'sector' ? 2 * (Math.PI / count - Math.asin(pocket / 2 / orbit)) : null; }
     if (web && !web.sections.length) errors.push('유성 안착 홈이 겹쳐 두 지지판을 연결할 재료가 남지 않습니다.');
+    // The pocket is cut by an end mill plunged radially (tool axis = radial), so each corner where a pocket wall meets a
+    // plate face keeps the tool radius r. Empty → the largest whole-mm tool that fits the seat width.
+    let pocketR = null, pocketRAuto = false, fillets = [];
+    if (web?.sections.length) {
+      pocketRAuto = !(Number.isFinite(carrier.pocketR) && carrier.pocketR >= 0);
+      pocketR = pocketRAuto ? Math.max(.5, Math.floor(Math.min(web.z[1] - web.z[0], pocket) + EPS)) / 2 : carrier.pocketR;
+      const half = pocket / 2, seatW = web.z[1] - web.z[0];
+      if (2 * pocketR > seatW + EPS) errors.push(`엔드밀 R${pocketR} (Ø${2 * pocketR})가 유성 안착 축방향 폭 ${seatW.toFixed(2)} mm보다 커서 포켓을 가공할 수 없습니다.`);
+      else if (2 * pocketR > pocket + EPS) errors.push(`엔드밀 R${pocketR}가 유성 포켓 ${pocket} mm보다 큽니다.`);
+      // planet envelope in the pocket's (tangential, axial) section: |t| ≤ da/2, gap/2 … gap/2 + b from each plate face
+      const t = gear.da / 2, zg = gap / 2, c = half - pocketR;
+      if (pocketR > zg + EPS && t > c + EPS && (t - c) ** 2 + (zg - pocketR) ** 2 > pocketR ** 2 + EPS) warnings.push(`포켓 모서리 R${pocketR}가 유성기어 이끝(Ø${gear.da.toFixed(2)})과 겹칠 수 있습니다. 포켓 폭 또는 안착 홈 폭을 늘리거나 작은 엔드밀을 쓰세요.`);
+      if (pocketR > EPS) {
+        const pitch = 2 * Math.PI / count, U = a => [Math.cos(a), Math.sin(a)];
+        for (const pin of Array.from({ length: count }, (_, j) => j * pitch)) {
+          const walls = pocketShape === 'slot'
+            ? [1, -1].map(sg => { const e = U(pin), tn = [-e[1], e[0]], x0 = Math.max(Math.sqrt(Math.max(ri * ri - half * half, 0)), half / Math.tan(pitch / 2)), x1 = Math.sqrt(Math.max(ro * ro - half * half, 0));
+              const P = x => [e[0] * x + tn[0] * sg * half, e[1] * x + tn[1] * sg * half]; return { A: P(x0), B: P(x1), n: [-tn[0] * sg, -tn[1] * sg] }; })
+            : [1, -1].map(sg => { const ph = Math.asin(Math.min(1, half / orbit)), a = pin + sg * ph, e = U(a); return { A: [e[0] * ri, e[1] * ri], B: [e[0] * ro, e[1] * ro], n: [sg * Math.sin(a), -sg * Math.cos(a)] }; });
+          for (const w of walls) if (Math.hypot(w.B[0] - w.A[0], w.B[1] - w.A[1]) > EPS) for (const [z, dir] of [[web.z[0], 1], [web.z[1], -1]]) fillets.push({ ...w, z, dir });
+        }
+      }
+    }
     const pins = Array.from({ length: count }, (_, j) => {
       const angle = j * 2 * Math.PI / count;
       return { x: orbit * Math.cos(angle), y: orbit * Math.sin(angle), angle };
@@ -124,11 +147,12 @@
     slabs.sort((x, y) => x.z[0] - y.z[0]);
     const materialVolume = slabs.reduce((sum, s) => sum + Math.PI * (s.outer ** 2 - s.inner ** 2) * (s.z[1] - s.z[0])
       - count * s.drilling.reduce((v, h) => v + Math.PI * (h.z[1] - h.z[0]) * (h.r0 ** 2 + h.r0 * h.r1 + h.r1 ** 2) / 3, 0), 0)
-      + (web ? (web.z[1] - web.z[0]) * web.sections.reduce((v, points) => v + area(points), 0) : 0);
+      + (web ? (web.z[1] - web.z[0]) * web.sections.reduce((v, points) => v + area(points), 0) : 0)
+      + fillets.reduce((v, f) => v + (1 - Math.PI / 4) * pocketR ** 2 * Math.hypot(f.B[0] - f.A[0], f.B[1] - f.A[1]), 0);
     const firstSupport = midpoint([Math.max(left?.[0] ?? 0, stock[0]), left?.[1] ?? 0]);
     const lastSupport = midpoint([right?.[0] ?? b, Math.min(right?.[1] ?? b, stock[1])]);
     const span = double ? lastSupport - firstSupport : b + gap;
-    return { errors, warnings, double, diameter, outerD, innerD, wall, wallShort, width, widthAuto: !positive(carrier.width), seat, gap, groove: double ? b + gap : null, pocket: double ? pocket : null,
+    return { errors, warnings, double, diameter, outerD, innerD, wall, wallShort, width, widthAuto: !positive(carrier.width), seat, gap, groove: double ? b + gap : null, pocket: double ? pocket : null, pocketR, pocketRAuto, fillets,
       bossD, bossT, boss, bossCoversPin, drivePCD: orbit * 2, orbit, plates, pins, web, slabs, materialVolume,
       hole, stock, pinLength: stock[1] - stock[0], engagement: engage, loadInterval, loadStart: double ? -firstSupport : gap,
       span, axial: [Math.min(stock[0], slabs[0].z[0]), Math.max(stock[1], slabs.at(-1).z[1])] };
