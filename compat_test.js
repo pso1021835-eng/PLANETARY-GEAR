@@ -1,5 +1,7 @@
 const P=require('./engine.js');
 const D=P.defaultDesign();
+// legacy fixture geometry (baseline values predate the drawing-based example)
+D.stages.forEach(s=>{Object.assign(s,{sunBore:null,planetBore:null,ringOD:null,carrier:{webW:4,webH:3,material:'S45C',outerD:null,innerD:null,groove:null,pocket:null,axialClearance:0,bossD:null,bossT:4}});});
 Object.assign(D.req,{rpm:3000,SH:1,SF:1.25});
 D.design.quality='ME';
 D.stages.forEach(s=>{s.grade=4;s.mod={crown:0,tip:0,verified:'none'};s.pin={d:10,type:'double',material:'SUJ2',wall:4,allow:1200};});
