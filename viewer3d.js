@@ -825,7 +825,6 @@
           E(`stages.${i}.carrier.groove`, '양단 중앙 홈의 축방향 폭 (mm)', s.carrier?.groove, { auto: shape.groove });
           E(`stages.${i}.carrier.pocket`, '유성 포켓 (mm)', s.carrier?.pocket, { auto: shape.pocket });
           E(`stages.${i}.carrier.pocketR`, '포켓 모서리 R (엔드밀 반경, mm)', s.carrier?.pocketR, { auto: shape.pocketR ?? undefined, step: .5 });
-          E(`stages.${i}.carrier.pocketShape`, '포켓 마감', s.carrier?.pocketShape || 'sector', { options: [['slot', '평행 홈 (반경방향 엔드밀)'], ['sector', '부채꼴']] });
         } else E(`stages.${i}.carrier.axialClearance`, '지지판과 기어 사이 간격 (mm)', s.carrier?.axialClearance);
       }
     } else if (id === 'xroller') {

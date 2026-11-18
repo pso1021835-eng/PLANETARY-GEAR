@@ -350,11 +350,10 @@
       ['C', '캐리어 두께 → 판 두께 · 외경', c => (c.R?.carrierPin || []).map((x, i) => { const g = x.geometry || {}; return `${i + 1}단 ${f(g.width, 1)}${g.double ? ` − 안착 ${f(g.seat, 1)} → 판 ${f(g.wall, 2)} × 2` : ` (판 1장)`} · Ø${f(g.outerD, 1)}`; }).join(' · ') || '—', '양단: 판 = (캐리어 두께 − 유성 안착 축방향 폭) / 2, 안착 폭 중심(= 유성 치폭 중심) 기준 대칭']],
     w: ['carGeo'], up: ['6-1', '3-9'], k: '판정은 D4·6-6에서' };
   I['6-3'] = { what: '양단 캐리어의 기둥(유성 포켓 사이에 남는 연결부) 형상과 강도를 확인한다.',
-    how: '일체 가공 캐리어는 유성 포켓을 부채꼴로 마감하므로 기둥도 부채꼴(내경~외경, 포켓 사이 각도)이 된다. 그 단면의 I·A를 형상에서 계산하고, 핀 하중의 절반이 반대쪽 판에서 기둥을 지나 출력 판으로 간다고 보아 양단 고정 보(굽힘 + 전단)로 응력·와인드업을 구한다.',
+    how: '일체 가공 캐리어의 유성 포켓은 반경방향으로 세운 엔드밀로 평행 홈 가공하고, 포켓 벽과 판 사이 모서리에 엔드밀 R이 남는다. 포켓 사이에 남는 기둥 단면은 내경~외경 사이 평행 홈 사이 영역이다. 그 단면의 I·A를 형상에서 계산하고, 핀 하중의 절반이 반대쪽 판에서 기둥을 지나 출력 판으로 간다고 보아 양단 고정 보(굽힘 + 전단)로 응력·와인드업을 구한다.',
     why: '기둥이 약하면 캐리어 비틀림 → 핀 기울기 → KHβ가 커지고, 피크에서 기둥이 부러진다.',
-    rows: [['D', 'sel', 'stages.{i}.carrier.pocketShape', '{s}단 유성 포켓 마감', { st: 1, if: (D, i) => D.stages[i].pin.type !== 'single', o: [['slot', '평행 홈 (반경방향 엔드밀)'], ['sector', '부채꼴 (기둥도 부채꼴)']] }],
-      ['D', 'num', 'stages.{i}.carrier.pocketR', '{s}단 포켓 모서리 R mm (엔드밀 반경, 빈칸 = 안착 폭에 들어가는 최대 정수 mm 공구)', { st: .5, if: (D, i) => D.stages[i].pin.type !== 'single' }],
-      ['C', '기둥 단면 (형상에서 자동)', c => S(c).map((s, i) => { const w = s.carrier?.web; return w ? `${i + 1}단 ${w.shape === 'slot' ? '평행 홈' : `부채꼴 ${f(w.angle * 180 / Math.PI, 1)}°`} · R${f(w.rmin, 1)}~${f(w.rmax, 1)} · A ${f(w.A, 0)} mm² · I ${f(w.I, 0)} mm⁴` : `${i + 1}단 편단 (기둥 없음)`; }).join(' / '), 'I = ∫y²dA (기둥 대칭축 기준), 부채꼴: (R₂⁴−R₁⁴)/4·(β − sinβ·cosβ)'],
+    rows: [['D', 'num', 'stages.{i}.carrier.pocketR', '{s}단 포켓 모서리 R mm (엔드밀 반경, 빈칸 = 안착 폭에 들어가는 최대 정수 mm 공구)', { st: .5, if: (D, i) => D.stages[i].pin.type !== 'single' }],
+      ['C', '기둥 단면 (형상에서 자동)', c => S(c).map((s, i) => { const w = s.carrier?.web; return w ? `${i + 1}단 평행 홈 · R${f(w.rmin, 1)}~${f(w.rmax, 1)} · A ${f(w.A, 0)} mm² · I ${f(w.I, 0)} mm⁴` : `${i + 1}단 편단 (기둥 없음)`; }).join(' / '), 'I = ∫y²dA (기둥 대칭축 기준, 단면 다각형 적분)'],
       ['A', 'num', 'carrier.allowB', '기둥 허용 굽힘 MPa (재료 근거)'],
       ['C', '기둥 굽힘 안전율 (피크)', c => (c.R?.carrierPin || []).map((x, i) => `${i + 1}단 ${x.car?.rated?.double ? f(x.Sweb, 2) : '편단'}`).join(' · ') || '—', '양단 고정 보, σ = M/Z']],
     w: ['carStiff'], up: ['6-1', '2-9'], k: '기둥 안전율 ≥ 1', ok: c => (c.R?.carrierPin || []).length ? c.R.carrierPin.every(x => !x.car?.rated?.double || x.Sweb >= 1) : null };
