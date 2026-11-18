@@ -1138,6 +1138,11 @@ function overviewView() {
         <span class="sep"></span>
         <button class="btn" id="tHome">기본 시점</button>
         <button class="btn" id="tPlay">회전 정지</button>
+        <span class="sep"></span>
+        <label class="rng spd">입력 rpm<input type="number" id="tRpm" min="0" step="any" value="${D.anim.rpm}"></label>
+        <label class="rng spd">배속<select id="tSlow">${[[1, '1× 실속도'], [.2, '0.2×'], [.05, '0.05×'], [.02, '0.02×'], [.005, '0.005×']].map(([v, l]) => `<option value="${v}" ${+D.anim.slow === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <span class="note spdOut" id="tSpd"></span>
+        <span class="sep"></span>
         <button class="btn" id="tBom" aria-expanded="true">BOM</button>
       </div>
       <div class="v3-bom" id="bom"></div>
@@ -1230,6 +1235,12 @@ function mountOverview(m) {
   sb.onclick = () => { const on = !VIEW3D?.state.section; VIEW3D?.setSection(on, +sa.value); sb.classList.toggle('on', on); };
   sa.oninput = () => VIEW3D?.setSectionAngle(+sa.value);
   m.querySelector('#tHome').onclick = () => VIEW3D?.resetView();
+  // speed panel: input rpm (1st sun) and playback scale; the viewer reads D.anim every frame
+  const spd = m.querySelector('#tSpd'), spdTxt = () => { if (!spd || !R?.ratio) return; const out = (+D.anim.rpm || 0) / R.ratio; spd.textContent = `출력 ${fmt(out, 1)} rpm · 화면 입력 ${fmt(D.anim.rpm * D.anim.slow, 2)} rpm`; };
+  const tr = m.querySelector('#tRpm'), ts = m.querySelector('#tSlow');
+  if (tr) tr.onchange = e => { e.stopPropagation(); D.anim.rpm = Math.max(0, +tr.value || 0); tr.value = D.anim.rpm; save(); spdTxt(); };
+  if (ts) ts.onchange = e => { e.stopPropagation(); D.anim.slow = +ts.value; save(); spdTxt(); };
+  spdTxt();
   const pb = m.querySelector('#tPlay'); pb.onclick = () => { const on = VIEW3D?.togglePlay(); pb.textContent = on ? '회전 정지' : '회전 재생'; };
   const tb = m.querySelector('#tBom'); tb.onclick = () => { const hid = bom.classList.toggle('closed'); tb.setAttribute('aria-expanded', String(!hid)); };
 }
