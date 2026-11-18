@@ -169,27 +169,38 @@
       const hit = (P, u, R, far) => { const bq = P[0] * u[0] + P[1] * u[1], c = P[0] * P[0] + P[1] * P[1] - R * R, d = bq * bq - c; return d < 0 ? null : far ? -bq + Math.sqrt(d) : -bq - Math.sqrt(d); };
       for (const f of shape.fillets) {
         const L = Math.hypot(f.B[0] - f.A[0], f.B[1] - f.A[1]), u = [(f.B[0] - f.A[0]) / L, (f.B[1] - f.A[1]) / L];
+        // neighbouring pocket whose wall meets this one at A (web tip between two pockets): the two R strips run on past A and
+        // meet in a mitre, where a point stays only while it is also inside the neighbour's R (s₂ ≤ r − √(r² − (r − h)²))
+        const g = shape.fillets.find(o => o !== f && o.z === f.z && Math.hypot(o.A[0] - f.A[0], o.A[1] - f.A[1]) < 1e-6);
+        const gu = g ? g.n[0] * u[0] + g.n[1] * u[1] : 0, mitre = g && gu < -1e-9;
         const ends = prof.map(([sv, h]) => {
           const P = [f.A[0] + f.n[0] * sv, f.A[1] + f.n[1] * sv], z = f.z + f.dir * h;
-          const l1 = hit(P, u, ro, true) ?? L, l0 = Math.max(0, hit(P, u, ri, true) ?? 0);
+          const sMax = r - Math.sqrt(Math.max(0, r * r - (r - h) ** 2)), c2 = mitre ? g.n[0] * (P[0] - g.A[0]) + g.n[1] * (P[1] - g.A[1]) : 0;
+          const l1 = hit(P, u, ro, true) ?? L, l0 = mitre ? Math.max(hit(P, u, ri, true) ?? -Infinity, (sMax - c2) / gu) : Math.max(0, hit(P, u, ri, true) ?? 0);
           return [[P[0] + u[0] * l0, P[1] + u[1] * l0, z], [P[0] + u[0] * l1, P[1] + u[1] * l1, z]];
         });
         // orient each triangle by its intended outward normal (side: profile edge normal, caps: ∓u)
-        const tri = (a, b, c, want) => {
+        const tri = (a, b, c, want, vn) => {
           const ab = [0, 1, 2].map(k => b[k] - a[k]), ac = [0, 1, 2].map(k => c[k] - a[k]);
           let n = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
           const len = Math.hypot(...n); if (len < 1e-12) return; n = n.map(v => v / len);
-          if (n[0] * want[0] + n[1] * want[1] + n[2] * want[2] < 0) { [b, c] = [c, b]; n = n.map(v => -v); }
-          for (const p of [a, b, c]) { positions.push(...p); normals.push(...n); }
+          let V = vn || [n, n, n];
+          if (n[0] * want[0] + n[1] * want[1] + n[2] * want[2] < 0) { [b, c] = [c, b]; V = [V[0], V[2], V[1]]; if (!vn) V = V.map(() => n.map(v => -v)); }
+          [a, b, c].forEach((p, i) => { positions.push(...p); normals.push(...V[i]); });
         };
+        // smooth R: the normal at each profile point points at the tool centre (r, r), so the round shades as one surface and
+        // meets the plate face and the pocket wall tangentially (no faceted bands)
+        const vnorm = j => { const [sv, h] = prof[j], a = r - sv, b = r - h, L = Math.hypot(a, b) || 1; return [f.n[0] * a / L, f.n[1] * a / L, f.dir * b / L]; };
         for (let j = 0; j < ends.length; j++) {
           const k = (j + 1) % ends.length, ds = prof[k][0] - prof[j][0], dh = prof[k][1] - prof[j][1];
           // the flat faces of the corner (on the plate face h = 0 and on the pocket wall s = 0) are inside the solid: skip them so the R blends into plate and wall
           if ((Math.abs(prof[j][1]) < 1e-9 && Math.abs(prof[k][1]) < 1e-9) || (Math.abs(prof[j][0]) < 1e-9 && Math.abs(prof[k][0]) < 1e-9)) continue;
           const ns = orient * dh, nh = -orient * ds, want = [f.n[0] * ns, f.n[1] * ns, f.dir * nh];
-          tri(ends[j][0], ends[k][0], ends[k][1], want); tri(ends[j][0], ends[k][1], ends[j][1], want);
+          const nj = vnorm(j), nk = vnorm(k);
+          tri(ends[j][0], ends[k][0], ends[k][1], want, [nj, nk, nk]); tri(ends[j][0], ends[k][1], ends[j][1], want, [nj, nk, nj]);
         }
-        for (const [x, y, z] of tris) { tri(ends[x][0], ends[y][0], ends[z][0], [-u[0], -u[1], 0]); tri(ends[x][1], ends[y][1], ends[z][1], [u[0], u[1], 0]); }
+        // the mitre cap is shared with the neighbour's strip (inside the solid): only open ends get a cap
+        for (const [x, y, z] of tris) { if (!mitre) tri(ends[x][0], ends[y][0], ends[z][0], [-u[0], -u[1], 0]); tri(ends[x][1], ends[y][1], ends[z][1], [u[0], u[1], 0]); }
       }
     }
     // one continuous outer / inner diameter: every face lying on Ø outer or Ø inner (plates, web, end of the pocket R) gets the
