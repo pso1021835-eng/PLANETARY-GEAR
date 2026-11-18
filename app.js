@@ -897,7 +897,7 @@ const W = {
     if (!R?.eff) return '';
     return `<div class="card"><h3>효율 (정격) ${fmt(R.eff.total * 100, 1)} %</h3>
       <table><tr><th>단</th><th>썬–유성</th><th>유성–링</th><th>기어만</th><th>단 효율</th></tr>${R.eff.stages.map(s => `<tr><td>${s.stage}단</td><td>${fmt(s.etaMesh[0] * 100, 2)}</td><td>${fmt(s.etaMesh[1] * 100, 2)}</td><td>${fmt(s.gear * 100, 2)}</td><td>${fmt(s.eta * 100, 2)}</td></tr>`).join('')}</table>
-      <p class="note">치합 손실: Ohlendorf 손실계수 × μ. 고정 링·썬 입력 유성 효율식.</p></div>`;
+      <p class="note">치합 손실: Ohlendorf 손실계수 HV × μ. 고정 링·썬 입력 유성 효율식. '기어만'이 KISSsoft 치합 효율 ηz에 대응하고, '단 효율'은 기타 손실 ${fmt(D.perf.otherLoss, 1)} %/단(베어링·씰·교반)을 더 뺀 값입니다. HV는 KISSsoft와 같고 μ 모델(ISO/TR 14179-2)은 KISSsoft의 Niemann μ보다 낮게 나옵니다.</p></div>`;
   },
   bl() {
     if (!R?.backlash) return '';
@@ -1015,7 +1015,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=pr33-1');
+    if (!worker) worker = new Worker('worker.js?v=pr36-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });

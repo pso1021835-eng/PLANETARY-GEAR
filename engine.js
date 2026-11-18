@@ -127,14 +127,16 @@
       const aa = Math.acos(Math.min(1, db / da));
       const th = Math.PI / 2 + (g.internal ? -2 : 2) * x[i] * Math.tan(an);
       const sa = da * (th / z + (g.internal ? -1 : 1) * (inv(at) - inv(aa))) * Math.cos(br);
-      return { ...g, da, df, db, x: x[i], width: widths[i], tipThickness: sa, name: NAMES[i] };
+      // tip chamfer hK (45°): the active tip form diameter dFa replaces da for contact ratio and load point
+      const hK = Math.max(0, +((st.tipChamfer || [])[i]) || 0), dFa = g.internal ? da + 2 * hK : da - 2 * hK;
+      return { ...g, da, dFa, hK, df, db, x: x[i], width: widths[i], tipThickness: sa, name: NAMES[i] };
     });
     const meshes = [false, true].map(internal => {
       const a = internal ? parts[1] : parts[0], c = internal ? parts[2] : parts[1], sign = internal ? -1 : 1;
       const aw = workingAngle(at, an, a.x + sign * c.x, a.z + sign * c.z);
       const center = Math.abs(a.db + sign * c.db) / (2 * Math.cos(aw));
       const b = Math.min(a.width, c.width);
-      const r1 = a.da * a.da - a.db * a.db, r2 = c.da * c.da - c.db * c.db;
+      const r1 = a.dFa * a.dFa - a.db * a.db, r2 = c.dFa * c.dFa - c.db * c.db;
       const path = (Math.sqrt(r1) + sign * Math.sqrt(r2)) / 2 - sign * center * Math.sin(aw);
       const pbt = Math.PI * a.mt * Math.cos(at);
       const ea = path / pbt, eb = b * Math.sin(br) / (Math.PI * m), eg = ea + eb, ean = ea / Math.cos(bb) ** 2;
@@ -150,7 +152,7 @@
       const [fM, sM] = contactPointFactors(t1, t2, a.z, sign * c.z, ea, aw);
       const pinionFirst = internal || a.z <= c.z;
       const M1 = pinionFirst ? fM : sM, M2 = internal ? 1 : (pinionFirst ? sM : fM);
-      const use2019 = !internal && ea > 1 && ea <= 2 && br > 0;
+      const use2019 = ea > 1 && ea <= 2 && br > 0;   // helical fZCa also for the planet in the internal mesh (KISSsoft: ZB 1.10)
       const mod = st.mod || {};
       const fZCa = use2019 ? (mod.verified === 'qualified' ? 1.07 : mod.verified === 'uniform' ? 1 : 1.2) : 1;
       const join = M => eb >= 1 ? Math.sqrt(fZCa) : Math.max(1, M) * (1 - eb) + Math.sqrt(fZCa) * eb;
@@ -174,7 +176,7 @@
     const undercut = parts.slice(0, 2).some(g => g.z / Math.cos(br) ** 3 < 2 * (1 - g.x) / Math.sin(an) ** 2);
     chk('외접 언더컷', undercut ? '발생' : '없음', !undercut);
     if (undercut) warns.push('언더컷 가능 · 전위를 늘리거나 잇수를 늘리세요');
-    const ringAlpha = Math.acos(pr.c.db / parts[2].da);
+    const ringAlpha = Math.acos(pr.c.db / parts[2].dFa);
     const margin = p / r - 1 + Math.tan(ringAlpha) / Math.tan(pr.aw);
     chk('내접 인볼류트 간섭 여유', margin, margin >= 0);
     if (margin < 0) errors.push('내접 인볼류트 간섭');
@@ -218,7 +220,7 @@
     if (g.internal) return internalRootFactors(g, mesh, rho, hfp, cutter || {});
     const an = mesh.an, sign = g.internal ? -1 : 1;
     const zn = sign * g.z / (Math.cos(mesh.bb) ** 2 * Math.cos(g.beta)), dn = zn * g.m, dbn = dn * Math.cos(an);
-    const dan = dn + sign * g.da - sign * g.d;
+    const dan = dn + sign * (g.dFa ?? g.da) - sign * g.d;
     const rv = g.internal ? rho + (hfp - rho) ** 1.95 / (3.156 * 1.036 ** cutter) : rho;
     const E = Math.PI / 4 - hfp * Math.tan(an) - (1 - Math.sin(an)) * rv / Math.cos(an), G = rv - hfp + (g.x || 0);
     const tau = g.internal ? Math.PI / 6 : Math.PI / 3, H = 2 / zn * (Math.PI / 2 - E) - tau;
@@ -251,7 +253,7 @@
     const z2 = g.z / (cb * cb * Math.cos(g.beta)), x2 = g.x || 0;          // virtual spur internal gear (our sign: +x = thinner tooth)
     const z0 = Math.max(10, Math.round(pos(cut.z0) ? cut.z0 : 0.33 * g.z)), x0 = fin(cut.x0) ? cut.x0 : 0;
     const zn0 = z0 / (cb * cb * Math.cos(g.beta));
-    const key = [z2, x2, m, an, zn0, x0, rho, hfp, mesh.ean, mesh.c?.da, mesh.c?.db, mesh.a?.z].map(v => fin(v) ? v.toFixed(6) : v).join('|');
+    const key = [z2, x2, m, an, zn0, x0, rho, hfp, mesh.ean, g.dFa ?? g.da, g.d, mesh.a?.z].map(v => fin(v) ? v.toFixed(6) : v).join('|');
     if (IRF_CACHE.has(key)) return IRF_CACHE.get(key);
     const r0 = m * zn0 / 2, r2 = m * z2 / 2, rb0 = r0 * Math.cos(an), rb2 = r2 * Math.cos(an);
     const aw0 = invSolve(inv(an) + 2 * Math.tan(an) * (x2 - x0) / (z2 - zn0));
@@ -273,7 +275,10 @@
     }
     const curve = bins.filter(Boolean);
     let best = null;
-    for (let i = 4; i < curve.length - 4; i++) { const a = curve[i - 4], c = curve[i + 4], ang = Math.atan2(Math.abs(c[0] - a[0]), Math.abs(c[1] - a[1])) / rad, d = Math.abs(ang - 60); if (!best || d < best.d) best = { d, i }; }
+    // the 60° tangent lies on the generated fillet just above the root circle (a0 + ra0); points farther in belong to the
+    // flank or to cutter positions that do not bound the space
+    const rRoot = a0 + ra0, rMin = rRoot - .6 * m;
+    for (let i = 4; i < curve.length - 4; i++) { if (curve[i][2] < rMin) continue; const Q = curve[i], a = env(Q[3] - 1e-5, Q[4], Q[5]), c = env(Q[3] + 1e-5, Q[4], Q[5]), ang = Math.atan2(Math.abs(c[0] - a[0]), Math.abs(c[1] - a[1])) / rad, d = Math.abs(ang - 60); if (!best || d < best.d) best = { d, i }; }
     const fail = { YF: NaN, YS: NaN, Ybeta: 1, qs: NaN, L: NaN, error: '내접 치근 형상계수 계산 범위 밖', source: 'ISO 6336-3:2019 내치 (피니언 커터 생성)' };
     if (!best || best.d > 3) { IRF_CACHE.set(key, fail); return fail; }
     const P = curve[best.i], hh = 2e-4, e0 = env(P[3] - hh, P[4], P[5]), e2 = env(P[3] + hh, P[4], P[5]);
@@ -282,7 +287,8 @@
         uy = ((a[0] ** 2 + a[1] ** 2) * (c[0] - b[0]) + (b[0] ** 2 + b[1] ** 2) * (a[0] - c[0]) + (c[0] ** 2 + c[1] ** 2) * (b[0] - a[0])) / d; return Math.hypot(a[0] - ux, a[1] - uy); };
     const rhoF = circ(e0, [P[0], P[1]], e2), sFn = 2 * Math.abs(P[0]);
     // load point: single contact nearest the internal tooth tip, one (εα − 1) base pitch beyond the tip along the line of action
-    const ra2 = Math.abs(g.da) / 2, tipLen = Math.sqrt(Math.max(0, ra2 * ra2 - rb2 * rb2));
+    // virtual spur gear tip: dan = dn + (dFa − d) (internal: tip lies inside d)
+    const ra2 = (z2 * m + Math.abs(g.dFa ?? g.da) - Math.abs(g.d)) / 2, tipLen = Math.sqrt(Math.max(0, ra2 * ra2 - rb2 * rb2));
     const rL = Math.hypot(rb2, tipLen + (mesh.ean - 1) * Math.PI * m * Math.cos(an)), aL = Math.acos(Math.min(1, rb2 / rL));
     const half = (Math.PI / 2 - 2 * x2 * Math.tan(an)) / z2 - inv(an) + inv(aL);
     const Lp = [rL * Math.sin(half), rL * Math.cos(half)], tg = [Math.cos(half), -Math.sin(half)], rd = [Math.sin(half), Math.cos(half)];
@@ -362,6 +368,12 @@
     const zm = zs.reduce((s, z) => s + z, 0) / zs.length, zz = zs.reduce((s, z) => s + (z - zm) ** 2, 0);
     const slope = k => { const m = ys.reduce((s, y) => s + y[k], 0) / ys.length; return zs.reduce((s, z, i) => s + (z - zm) * (ys[i][k] - m), 0) / zz; };
     const tilt = slope(0), mtilt = slope(1);
+    // bow over the face width: deviation of the deflection line from its best-fit straight line (ISO 6336-1 annex D idea)
+    // pins pressed into both plates bend as built-in (fixed–fixed) beams; a cantilever pin as a cantilever
+    const fixed = (x, t) => { const A = x <= t ? t : L - t, B = L - A, X = x <= t ? x : L - x; return B * B * X * X * (3 * A * L - (3 * A + B) * X) / (6 * L ** 3 * E * I); };
+    const bowY = zs.map(z => nodes.reduce((s, t) => s + (single ? green(z, t) : fixed(z, t)) * force / n, 0));
+    const bm = bowY.reduce((s, y) => s + y, 0) / bowY.length, bs = zs.reduce((s, z, i) => s + (z - zm) * (bowY[i] - bm), 0) / zz;
+    const resid = bowY.map((y, i) => y - bm - bs * (zs[i] - zm)), bow = Math.max(...resid) - Math.min(...resid);
     const left = single ? 1 : 1 - mid / L, right = single ? 0 : mid / L;
     const c = L - a - b, m0 = left * a, k = -1 / (2 * b);
     // Integrate the squared unit-load bending moment for mean compliance.
@@ -370,7 +382,7 @@
       left ** 2 * a ** 3 / 3 + right ** 2 * c ** 3 / 3 + m0 ** 2 * b + m0 * left * b ** 2
       + (left ** 2 + 2 * m0 * k) * b ** 3 / 3 + left * k * b ** 4 / 2 + k ** 2 * b ** 5 / 5;
     const compliance = energy / (E * I), Mmax = force * (single ? mid : m0 + b * left ** 2 / 2);
-    return { tilt, mtilt, meanDefl: force * compliance, compliance, sigma: Math.hypot(Mmax, Math.abs(moment)) * 32 / (Math.PI * d ** 3), span: L, reactions: single ? [1] : [left, right] };
+    return { tilt, mtilt, bow, meanDefl: force * compliance, compliance, sigma: Math.hypot(Mmax, Math.abs(moment)) * 32 / (Math.PI * d ** 3), span: L, reactions: single ? [1] : [left, right] };
   }
 
   // ------------------------------------------------------------ preparation
@@ -518,7 +530,7 @@
       const lastStage = stg.i === ctx.stages.length - 1, meshK = [];
       geo.meshes.forEach((ms, j) => {
         const P = pre[j], { ma, tl, line, k } = P, Kv = P.dyn.Kv, b = ms.b;
-        const pinGap = (Math.abs(pin.tilt) * Math.cos(geo.at) + Math.abs(pin.mtilt) * Math.sin(geo.at)) * b * 1000;
+        const pinGap = (Math.abs(pin.tilt) * Math.cos(geo.at) + Math.abs(pin.mtilt) * Math.sin(geo.at)) * b * 1000 + (pin.bow || 0) * Math.cos(geo.at) * 1000;
         // manufacturing misalignment fma: design = RSS (ISO eq.66) of helix slope tolerances + carrier bore parallelism
         let fma, fmaSrc;
         if (sample?.fma?.[j] != null) { fma = sample.fma[j]; fmaSrc = smp.ideal ? '이론' : '시편'; }
@@ -539,7 +551,8 @@
         if (iso) {
           if (crown > 0) { B1 = .5; B2 = .5; }
           fHb5 = Math.max(...[ms.a, ms.c].map(gp => tolerances(Math.abs(gp.z), st.m, b, st.beta, 5).helixSlope));
-          fbx = Math.max(Math.abs(1.33 * B1 * fsh - B2 * fHb5), .005 * line * Kv); fma = B2 * fHb5; fmaSrc = '규격 2019';
+          // lower bound Fβx,min = max(0.005·Fm/b, 0.5·fHβ) with fHβ of the actual accuracy grade
+          fbx = Math.max(Math.abs(1.33 * B1 * fsh - B2 * fHb5), .005 * line * Kv, .5 * Math.max(tl[0].helixSlope, tl[1].helixSlope)); fma = B2 * fHb5; fmaSrc = '규격 2019';
         } else fbx = fma + 1.33 * fsh;
         const yb = op.static ? 0 : (runin(ma[0], fbx, v, true) + runin(ma[1], fbx, v, true)) / 2;
         const fby = Math.max(0, fbx - yb);
@@ -715,7 +728,7 @@
     const w2 = w1 * z1 / z2;                                         // rad/s, relative to carrier
     const rb1 = a.db / 2, rb2 = c.db / 2, g = ms.center * Math.sin(ms.aw);
     const rho1p = rb1 * Math.tan(ms.aw), rho2 = r => ms.internal ? r + g : g - r;   // ρ2 from ρ1 along the line of action
-    const tip1 = Math.sqrt((a.da / 2) ** 2 - rb1 ** 2), tip2 = Math.sqrt(Math.max(0, (c.da / 2) ** 2 - rb2 ** 2));
+    const tip1 = Math.sqrt((a.dFa / 2) ** 2 - rb1 ** 2), tip2 = Math.sqrt(Math.max(0, (c.dFa / 2) ** 2 - rb2 ** 2));
     const start = ms.internal ? tip2 - g : g - tip2;                  // ρ1 at start of active contact
     const pts = [Math.max(start, 1e-3), rho1p, tip1];
     const vt = w1 * rb1 / Math.cos(ms.aw) / 1000;                     // pitch-line speed m/s (rel. carrier)
@@ -738,13 +751,20 @@
     // (1/3 at A and E, 2/3 at B and D, 1 in single contact). Bulk temperature θM = θoil + XS·0.47·Xmp·θflm,
     // Xmp = (1 + n)/2; SB = (θS − θoil) / (θBmax − θoil); θS = 80 + (0.85 + 1.4·XW)·XLs·FZG² (XLs 0.83 mineral oil)
     const mk = so.meshK?.[j] || { Kv: 1, KHb: 1, KHa: 1 };
+    // helical load factor KBγ = 1 + 0.2·√((εγ − 2)(5 − εγ)) for 2 < εγ < 3.5 (1 below, 1.3 above)
+    const eg = ms.ea + ms.eb, KBg = eg <= 2 ? 1 : eg >= 3.5 ? 1.3 : 1 + .2 * Math.sqrt((eg - 2) * (5 - eg));
     const wBt = so.Ft * D.loads.KA * so.Kg * mk.Kv * mk.KHb * mk.KHa / b;
     const sA = Math.max(start, 1e-3), sE = tip1, ga = sE - sA, pb = Math.PI * a.mt * Math.cos(ms.at);
-    const XG = s => { if (ga <= pb) return 1; const B = ga - pb, Dp = pb; if (s < B) return 1 / 3 + s / B / 3; if (s > Dp) return 1 / 3 + (ga - s) / (ga - Dp) / 3; return 1; };
+    // load sharing XΓ: spur (1/3 → 2/3, 1 in single contact); wide helical (εβ ≥ 1) 1/εα; narrow helical blended by εβ.
+    // Buttressing near A and E: Xbut = 1 + 0.3·εβ (≤ 1.3) falling to 1 over 0.2·sin βb of the Γ coordinate
+    const XGspur = s => { if (ga <= pb) return 1; const B = ga - pb, Dp = pb; if (s < B) return 1 / 3 + s / B / 3; if (s > Dp) return 1 / 3 + (ga - s) / (ga - Dp) / 3; return 1; };
+    const ebw = Math.min(1, ms.eb), Xbut0 = 1 + .3 * ebw, gw = .2 * Math.sin(ms.bb) * rho1p;   // Γ span → path length (ρ1p·ΔΓ)
+    const XG = s => { const base = (1 - ebw) * XGspur(s) + ebw / ms.ea; if (!(gw > 0)) return base;
+      const dEnd = Math.min(s, ga - s), but = dEnd < gw ? Xbut0 - (Xbut0 - 1) * dEnd / gw : 1; return base * but; };
     let flash = 0, sumF = 0, nF = 0;
     for (let q = 0; q <= 40; q++) {
       const s = ga * q / 40, r1 = sA + s, r2 = rho2(r1); if (!(r1 > 0 && r2 > 0)) continue;
-      const v1 = w1 * r1 / 1000, v2 = w2 * r2 / 1000, w = wBt * XG(s) / Math.cos(ms.bb);
+      const v1 = w1 * r1 / 1000, v2 = w2 * r2 / 1000, w = wBt * KBg * XG(s) / Math.cos(ms.bb);
       const Rr = 1 / (1 / r1 + (ms.internal ? -1 : 1) / r2) / Math.cos(ms.bb);
       const bh = Math.sqrt(4 * w * Math.abs(Rr) / (Math.PI * Es));                 // mm
       const th = 1.11 * mu * w * Math.abs(Math.sqrt(v1) - Math.sqrt(v2)) * Math.sqrt(1000) / (BM * Math.sqrt(2 * bh));
@@ -758,7 +778,7 @@
     const SB = thetaB - T > 1e-9 ? (thetaS - T) / (thetaB - T) : Infinity;
     const outOfRange = wBt < 150;   // ISO/TS 6336-21 lower bound of the method
     const regime = lambda >= 3 ? '완전 유막' : lambda >= 1 ? '혼합 윤활' : '경계 윤활';
-    return { stage: stg.i + 1, mesh: ms.label, T, nu, eta, vt, hmin, lambda, regime, mu, muModel, flash, flashMean, thetaM, thetaB, thetaS, SB, wline, wBt, outOfRange };
+    return { stage: stg.i + 1, mesh: ms.label, T, nu, eta, vt, hmin, lambda, regime, mu, muModel, flash, flashMean, thetaM, thetaB, thetaS, SB, wline, wBt, KBg, outOfRange };
   }
   function lubrication(ctx, D) {
     const r = evaluate(ctx, { Tout: D.req.Trated, rpm: D.req.rpm, cycles: () => 1e8 });
