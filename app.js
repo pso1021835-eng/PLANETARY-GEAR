@@ -16,6 +16,8 @@ const set = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((o, 
 
 function compute() {
   ensureD();
+  // shared ring: stage-2 planet teeth, module and angles follow from stage 1 (R = S1 + 2·P1 = S2 + 2·P2) — keep the stored values in step so every view shows the auto value
+  if (D.config.sharedRing && D.config.stages > 1 && D.stages[1]) { const a = D.stages[0], b = D.stages[1]; b.p = (a.s + 2 * a.p - b.s) / 2; b.m = a.m; b.beta = a.beta; b.alpha = a.alpha; }
   if (window.PGDChecks) { PGDChecks.ensure(D); PGDChecks.applyNeedles(D); }
   try { R = E.analyze(D); } catch (e) { R = { errors: ['계산 오류: ' + e.message], warns: [] }; console.error(e); }
   if (R?.ctx && !R.errors?.length) GOOD = { R, D: JSON.parse(JSON.stringify(D)) };

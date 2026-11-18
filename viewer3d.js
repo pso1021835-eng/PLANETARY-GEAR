@@ -799,7 +799,7 @@
     if (m) {
       const i = m[2] ? +m[2] - 1 : 0, s = D.stages[i], g = R.ctx.stages[i]?.geo, lock = i === 1 && D.config.sharedRing;
       if (m[1] === 'sun') { E(`stages.${i}.s`, '잇수', s.s, { step: 1 }); E(`stages.${i}.m`, '모듈', s.m, { lock }); E(`stages.${i}.b`, '치폭', s.b); E(`stages.${i}.beta`, '비틀림각 °', s.beta, { lock }); E(`stages.${i}.xs`, '전위계수', s.xs); E(`stages.${i}.sunBore`, '보어 (0=중실)', s.sunBore, { auto: g?.rims?.[0]?.diameter }); Gm(`sun${i + 1}`, 'hubInOD', '입력측 축(허브) 외경'); Gm(`sun${i + 1}`, 'hubInL', '입력측 축(허브) 길이'); Gm(`sun${i + 1}`, 'hubOutOD', '출력측 축 외경'); Gm(`sun${i + 1}`, 'hubOutL', '출력측 축 길이'); }
-      if (m[1] === 'planet') { E(`stages.${i}.p`, '잇수', s.p, { step: 1, lock }); E(`stages.${i}.n`, '개수', s.n, { step: 1 }); E(`stages.${i}.xp`, '전위계수', s.xp); E(`stages.${i}.b`, '치폭 (썬과 공통)', s.b); E(`stages.${i}.planetBore`, '보어 (0=중실)', s.planetBore, { auto: g?.rims?.[1]?.diameter }); }
+      if (m[1] === 'planet') { E(`stages.${i}.p`, lock ? '잇수 (링 공유 → 자동 = (R − S2)/2)' : '잇수', s.p, { step: 1, lock }); E(`stages.${i}.n`, '개수', s.n, { step: 1 }); E(`stages.${i}.xp`, '전위계수', s.xp); E(`stages.${i}.b`, '치폭 (썬과 공통)', s.b); E(`stages.${i}.planetBore`, '보어 (0=중실)', s.planetBore, { auto: g?.rims?.[1]?.diameter }); }
       if (m[1] === 'ring') { E('stages.0.ringOD', '외경', D.stages[0].ringOD, { auto: g?.rims?.[2]?.diameter }); E('stages.0.xr', '전위계수', D.stages[0].xr, { lock: D.stages[0].autoRingShift, note: D.stages[0].autoRingShift ? '자동 (4단계)' : '' }); }
       const shape = R.ctx.stages[i]?.carrier;
       if (m[1] === 'pin') {
