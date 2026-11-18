@@ -1015,7 +1015,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=pr36-1');
+    if (!worker) worker = new Worker('worker.js?v=pr38-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });
@@ -1257,6 +1257,39 @@ $('#bExport').onclick = () => {
 $('#bImport').onclick = () => dlg('JSON 불러오기', '', '이 사이트에서 복사한 설계 JSON을 붙여 넣고 확인을 누르세요.', '불러오기', () => {
   try { const d = JSON.parse($('#dlgText').value); if (d.schema !== 'pgd/1') throw new Error('형식이 다릅니다'); d.config.floatingSun = false; D = fillMissing(d, E.defaultDesign()); $('#dname').value = D.name || ''; changed(); $('#dlg').close(); return null; } catch (e) { return '불러오지 못했습니다: ' + e.message; }
 });
+// 추천 제원: 외경 × 높이 · 감속비 · 모듈 · 비틀림각 · 치폭 · 링 잇수 → 1단/2단 잇수·유성 개수 조합을 허용 토크 순으로
+let REC = null;
+$('#bRecommend').onclick = () => {
+  $('#moreMenu').hidden = true;
+  const st0 = D.stages[0], last = D.stages[D.stages.length - 1];
+  let L = null; try { if (R?.ctx && !R.errors?.length) L = PGD3D.layout(R, D); } catch (e) { L = null; }
+  const v = (id, x) => { const el = $('#' + id); if (el.value === '') el.value = x; };
+  v('rOD', L ? Math.round(2 * Math.max(L.housR, L.flangeR) * 10) / 10 : 68); v('rH', L ? Math.round((L.zFlange[1] - L.zIn) * 10) / 10 : 54);
+  v('rRatio', R?.ratio ? +R.ratio.toFixed(3) : 9); v('rM', last.m); v('rBeta', last.beta); v('rB', last.b); v('rR', st0.s + 2 * st0.p);
+  $('#recDlg').showModal();
+};
+$('#recGo').onclick = async () => {
+  const num = id => +$('#' + id).value, spec = { OD: num('rOD'), H: num('rH'), ratio: num('rRatio'), m: num('rM'), beta: num('rBeta'), b: num('rB'), R: Math.round(num('rR')), tol: num('rTol') / 100 };
+  const out = $('#recOut');
+  if (![spec.OD, spec.H, spec.ratio, spec.m, spec.b, spec.R].every(x => x > 0) || !(spec.beta >= 0) || !(spec.tol > 0)) { out.innerHTML = '<p class="bad">모든 값을 양수로 넣어 주세요 (비틀림각은 0 이상).</p>'; return; }
+  const go_ = $('#recGo'); go_.disabled = true;
+  out.innerHTML = '<p class="note">계산 중…</p>';
+  try {
+    REC = await PGDRecommend.run(D, spec, E, PGD3D.layout, (i, n) => { out.innerHTML = `<p class="note">계산 중… ${i} / ${n}</p>`; });
+  } catch (e) { out.innerHTML = `<p class="bad">계산 실패: ${esc(e.message)}</p>`; go_.disabled = false; return; }
+  go_.disabled = false;
+  const ok = REC.filter(r => r.ok), bad = REC.filter(r => !r.ok);
+  const why = {}; bad.forEach(r => { const k = r.why.replace(/[\d.]+/g, '#'); (why[k] ||= { n: 0, ex: r.why }).n++; });
+  const whyHTML = bad.length ? `<p class="note">제외 ${bad.length}개: ${Object.values(why).map(w => `${esc(w.ex)}${w.n > 1 ? ` 외 ${w.n - 1}` : ''}`).join(' · ')}</p>` : '';
+  if (!REC.length) { out.innerHTML = '<p class="bad">이 링 잇수로 목표 감속비 ±허용 오차에 맞는 잇수 조합이 없습니다. 링 잇수나 허용 오차를 바꿔 보세요. (1단 감속비 = 1 + R/S, S ≥ 12)</p>'; return; }
+  if (!ok.length) { out.innerHTML = '<p class="bad">조합은 있으나 모두 외형·간섭 조건에서 제외됐습니다.</p>' + whyHTML; return; }
+  const stg = r => r.stages.map((t, i) => `${i + 1}단 S${t.s}/P${t.p}/R${spec.R} ×${t.n}`).join('<br>');
+  const caps = r => r.stageCap.map((c, i) => `${i + 1}단 <b>${fmt(c.out, 1)}</b>${r.stages.length > 1 ? ` <small class="note">(캐리어 ${fmt(c.own, 1)})</small>` : ''}`).join('<br>');
+  out.innerHTML = `<div class="scroll"><table><tr><th>순위</th><th>구성</th><th class="l">잇수 · 유성 개수</th><th>감속비 (오차)</th><th>단별 허용 토크<br><small>N·m · 출력축 환산</small></th><th>감속기 허용 토크<br><small>N·m · 출력</small></th><th class="l">지배 부위</th><th>외경 × 높이</th><th></th></tr>
+    ${ok.map((r, k) => `<tr class="${k === 0 ? 'gov' : ''}"><td>${k + 1}</td><td>${r.stages.length}단${r.stages.length > 1 ? ' (링 공유)' : ''}</td><td class="l">${stg(r)}</td><td>${fmt(r.ratio, 3)}<br><small>${r.err >= 0 ? '+' : ''}${fmt(r.err * 100, 2)} %</small></td><td>${caps(r)}</td><td><b class="${r.cap < D.req.Trated ? 'bad' : 'good'}">${fmt(r.cap, 1)}</b>${r.fails ? `<br><small class="bad">미달 ${r.fails}</small>` : ''}</td><td class="l note">${esc(r.gov)}</td><td>Ø${fmt(r.OD, 1)} × ${fmt(r.H, 1)}</td><td><button class="btn" type="button" data-rec="${REC.indexOf(r)}">적용</button></td></tr>`).join('')}</table></div>
+    <p class="note">요구 조건: 정격 ${D.req.Trated} N·m · 수명 ${D.req.lifeH} h · ${D.req.rpm} rpm · SH ${D.req.SH} · SF ${D.req.SF} · ${BASIS()}. 미달 = 판정 항목(효율·백래시·정적 등) 중 기준 미달 수.</p>${whyHTML}`;
+  out.querySelectorAll('[data-rec]').forEach(b => b.onclick = () => { const r = REC[+b.dataset.rec]; D = JSON.parse(JSON.stringify(r.D)); $('#dname').value = D.name; $('#recDlg').close(); changed(); });
+};
 function dlg(title, text, note, okLabel, onOk) {
   $('#dlgTitle').textContent = title; $('#dlgText').value = text; $('#dlgNote').textContent = note; $('#dlgOk').textContent = okLabel;
   $('#dlgOk').onclick = async e => { e.preventDefault(); const msg = await onOk(); if (msg) $('#dlgNote').textContent = msg; };

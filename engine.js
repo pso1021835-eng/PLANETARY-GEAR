@@ -617,7 +617,7 @@
     return { rows, stages: stageOut };
   }
 
-  const minSafety = (res, t) => Math.min(...res.rows.map(r => Math.min(r.SH / t.SH, r.SF / t.SF)));
+  const minSafety = (res, t, stage) => Math.min(...res.rows.filter(r => !stage || r.stage === stage).map(r => Math.min(r.SH / t.SH, r.SF / t.SF)));
   // cycles per part for constant operation of `hours` at input speed rpm
   function cyclesFor(hours) {
     return (stg, part, rel, nc) => {
@@ -627,8 +627,9 @@
     };
   }
   // output torque at which the smallest safety ratio reaches 1
-  function capacity(ctx, opBase, target) {
-    const f = T => minSafety(evaluate(ctx, { ...opBase, Tout: T }), target);
+  // output torque at which the gears reach the target safety; `stage` (1-based) limits the check to that stage's meshes
+  function capacity(ctx, opBase, target, stage) {
+    const f = T => minSafety(evaluate(ctx, { ...opBase, Tout: T }), target, stage);
     let lo = 1e-3, hi = 1e-3;
     if (!(f(lo) >= 1)) return 0;
     for (let i = 0; i < 80; i++) { hi = lo * 1.35; if (!(f(hi) >= 1)) break; lo = hi; if (hi > 1e7) return Infinity; }
