@@ -31,6 +31,17 @@
   function ringOuterRadius(g, diameter) {
     return Math.max(g.df / 2 + .5 * g.m, (diameter || g.df + 8 * g.m) / 2);
   }
+  // 선삭 질감용 원통 UV: u = 둘레 각, v = 축방향 위치(원통면) 또는 반경(끝면) [mm].
+  // 'turned' 거칠기 맵의 가로줄이 원통면에서는 원주 방향 선, 끝면에서는 동심원이 되어 모든 부품이 같은 질감을 가진다.
+  function turnedUV(geo) {
+    const TH = T(), pos = geo.attributes.position, nm = geo.attributes.normal, uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), face = nm && Math.abs(nm.getZ(i)) > .7;
+      uv[2 * i] = Math.atan2(y, x) / (2 * Math.PI) + .5; uv[2 * i + 1] = face ? Math.hypot(x, y) : z;
+    }
+    geo.setAttribute('uv', new TH.BufferAttribute(uv, 2));
+    return geo;
+  }
   // rimDia: bore for external gears (0 = solid), outside diameter for the ring
   function gearGeometry(g, at, b, betaDeg, internal, rimDia) {
     const TH = T(), pts = outline(g, at).map(([x, y]) => new TH.Vector2(x, y));
@@ -43,7 +54,7 @@
       const rh = Math.min((rimDia || 0) / 2, g.df / 2 - .3 * g.m);
       if (rh > .2) { const hole = new TH.Path(); hole.absarc(0, 0, rh, 0, Math.PI * 2, true); shape.holes.push(hole); }
     }
-    const geo = new TH.ExtrudeGeometry(shape, { depth: b, bevelEnabled: false, curveSegments: 40, steps: Math.max(2, Math.round(b)) });
+    const geo = new TH.ExtrudeGeometry(shape, { depth: b, bevelEnabled: false, curveSegments: 96, steps: Math.max(2, Math.round(b)) });
     const tb = Math.tan(betaDeg * Math.PI / 180), rp = g.d / 2, pos = geo.attributes.position;
     // ring gear: the outer diameter is a plain straight cylinder — only the teeth follow the helix
     const Rout = internal ? ringOuterRadius(g, rimDia) : Infinity;
@@ -51,12 +62,17 @@
     for (let i = 0; i < pos.count; i++) { if (onOD(i)) continue; const x = pos.getX(i), y = pos.getY(i), zz = pos.getZ(i), a = zz * tb / rp, c = Math.cos(a), s = Math.sin(a); pos.setXY(i, x * c - y * s, x * s + y * c); }
     geo.computeVertexNormals();
     if (internal) { const nm = geo.attributes.normal; for (let i = 0; i < pos.count; i++) if (onOD(i) && Math.abs(nm.getZ(i)) < .5) { const x = pos.getX(i), y = pos.getY(i), r = Math.hypot(x, y); nm.setXYZ(i, x / r, y / r, 0); } nm.needsUpdate = true; }
-    return geo;
+    else {
+      // 썬·유성 보어도 링 외경처럼 반경 방향 법선으로: 면 단위로 각져 보이지 않는 매끈한 원통
+      const rh = Math.min((rimDia || 0) / 2, g.df / 2 - .3 * g.m), nm = geo.attributes.normal;
+      if (rh > .2) { for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i), r = Math.hypot(x, y); if (r < rh + 1e-4 && Math.abs(nm.getZ(i)) < .5) nm.setXYZ(i, -x / r, -y / r, 0); } nm.needsUpdate = true; }
+    }
+    return turnedUV(geo);
   }
   // revolved solid from an (r, z) outline (closed), chamfered corners look crisp under the environment map
   function lathe(profile, seg = 96) {
     const TH = T();
-    return new TH.LatheGeometry(profile.map(([r, z]) => new TH.Vector2(r, z)), seg).rotateX(Math.PI / 2);
+    return turnedUV(new TH.LatheGeometry(profile.map(([r, z]) => new TH.Vector2(r, z)), seg).rotateX(Math.PI / 2));
   }
   // annular ring r1..r2, z0..z1 with 0.3 mm chamfers
   function ringSolid(r1, r2, z0, z1, ch = .3) {
@@ -224,7 +240,7 @@
     const geometry = new TH.BufferGeometry();
     geometry.setAttribute('position', new TH.Float32BufferAttribute(positions, 3));
     geometry.setAttribute('normal', new TH.Float32BufferAttribute(normals, 3));
-    return geometry;
+    return turnedUV(geometry);
   }
 
   // ------------------------------------------------------------------ geometry model (dimensions only)
@@ -442,7 +458,8 @@
       const grain = mk(g => { const im = g.createImageData(256, 256); for (let i = 0; i < im.data.length; i += 4) { const v = 140 + (rnd() - .5) * 90; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; } g.putImageData(im, 0, 0); }, [.08, .08]);
       return { turned, grain };
     })();
-    const FIN = { ring: 'turned', race: 'turned', shaft: 'turned', flange: 'turned', pin: 'turned', housing: 'grain', carrier: 'grain', bolt: 'grain', sun1: 'grain', planet1: 'grain', sun2: 'grain', planet2: 'grain', roller: 'turned' };
+    // 링 외경과 같은 선삭 질감으로 통일 (볼트만 입자 질감)
+    const FIN = { ring: 'turned', race: 'turned', shaft: 'turned', flange: 'turned', pin: 'turned', housing: 'turned', carrier: 'turned', bolt: 'grain', sun: 'turned', planet: 'turned', sun1: 'turned', planet1: 'turned', sun2: 'turned', planet2: 'turned', roller: 'turned' };
     const mkMat = k => {
       const m = new TH.MeshPhysicalMaterial(Object.assign({ envMapIntensity: 1.1 }, MAT[k]));
       const f = FIN[k];
@@ -494,7 +511,7 @@
       // Rounded pockets already carry their machined silhouette in the mesh.
       body.userData.smoothPocket = shape.pocketR > 0;
       car.add(body);
-      const pinMat = mkMat('pin'), pinGeo = new TH.CylinderGeometry(shape.diameter / 2, shape.diameter / 2, shape.pinLength, 72).rotateX(Math.PI / 2);
+      const pinMat = mkMat('pin'), pinGeo = turnedUV(new TH.CylinderGeometry(shape.diameter / 2, shape.diameter / 2, shape.pinLength, 72).rotateX(Math.PI / 2));
       const pins = new TH.Group(), pinZ = zb + (shape.stock[0] + shape.stock[1]) / 2;
       for (const center of shape.pins) {
         const pin = new TH.Mesh(pinGeo, pinMat);
