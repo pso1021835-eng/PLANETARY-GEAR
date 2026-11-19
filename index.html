@@ -436,6 +436,39 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 .ov-live details{margin-top:12px}
 .ov-live #viewer.full{height:clamp(360px,48vw,640px);min-height:0}
 @media(max-width:830px){.ov-workbench{grid-template-columns:minmax(0,1fr)}.ov-live #viewer.full{height:clamp(340px,72vw,540px)}}
+/* ---- 모바일 (≤ 760px): 탭 가로 스크롤, 헤더 압축, 목록은 서랍, 표·입력은 화면 폭 안에서 ---- */
+#railBtn{display:none}
+@media(max-width:760px){
+ html{-webkit-text-size-adjust:100%}
+ body{font-size:15px;line-height:1.6}
+ header{padding:8px 12px 6px;gap:6px 8px;top:0}
+ header h1{font-size:16px;flex:1 1 auto}
+ #tabs{order:5;flex:1 1 100%;width:100%;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
+ #tabs::-webkit-scrollbar{display:none}
+ #tabs button{flex:none;padding:8px 12px;font-size:14px;scroll-snap-align:start}
+ header .name{order:6;flex:1 1 100%}header .name input{width:100%;font-size:14px}
+ #vchip{flex:1 1 auto;min-width:0;font-size:13px}#vchip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .layout,body.has-rail .layout,body.mapmode .layout{grid-template-columns:minmax(0,1fr)!important}
+ body.has-rail nav.rail{display:none}
+ body.has-rail.rail-open nav.rail{display:block;position:fixed;left:0;right:0;top:0;bottom:0;z-index:60;max-height:none;overflow:auto;padding:14px 12px 80px;border:0}
+ body.has-rail #railBtn{display:inline-flex;align-items:center;gap:6px;position:fixed;left:12px;bottom:14px;z-index:61;padding:10px 14px;border-radius:999px;border:1px solid var(--line2);background:var(--raised);color:var(--ink);font-size:14px;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,.45)}
+ main{padding:14px 12px 72px!important;max-width:none}
+ main h2{font-size:22px;line-height:1.3;word-break:keep-all}
+ .card{padding:14px 12px}
+ p,li,td,th,.note{word-break:keep-all;overflow-wrap:anywhere}
+ main table,dialog table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+ main table td,main table th{white-space:nowrap}
+ .grid,.www,.irel,.rec-in{grid-template-columns:minmax(0,1fr)!important}
+ .f input:not([type=checkbox]):not([type=radio]),.f select,.f textarea{width:100%;min-width:0;font-size:16px}
+ .rec-ck input,.f input[type=checkbox]{width:auto}
+ .ov-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+ dialog{width:calc(100vw - 16px);max-width:none;padding:14px 12px;margin:8px auto}
+ dialog.rec{max-width:none}
+ .btn{min-height:36px}
+ header{position:relative}
+ .plist li{grid-template-columns:36px minmax(0,1fr) auto;grid-template-areas:"id t ok" "id s r"}.plist li>.rv{justify-self:end}
+ .pgrid{grid-template-columns:minmax(0,1fr)}.pcard,.pcx{min-width:0}
+}
 </style>
 </head>
 <body>
@@ -454,7 +487,7 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
   </div></div>
 </header>
 <div class="layout">
- <nav class="rail" id="rail" aria-label="설계 단계"></nav>
+ <nav class="rail" id="rail" aria-label="설계 단계"></nav><button type="button" id="railBtn" aria-controls="rail" aria-expanded="false">☰ 목록</button>
  <main id="main"></main>
 </div>
 <aside class="verdict" id="verdict" aria-label="판정"></aside>
@@ -492,9 +525,9 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 <script src="drawings.js?v=pr19-1"></script>
 <script src="checks.js?v=shift-gear-1"></script>
 <script src="process.js?v=pr26-1"></script>
-<script src="map.js?v=pr14-1"></script>
+<script src="map.js?v=pr41-1"></script>
 <script src="items.js?v=shift-gear-1"></script>
 <script src="groups.js?v=pr34-1"></script>
-<script defer src="app.js?v=pr40-1"></script>
+<script defer src="app.js?v=pr41-1"></script>
 </body>
 </html>

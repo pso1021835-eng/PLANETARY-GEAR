@@ -162,7 +162,9 @@
       const r = opt.restore; root.classList.add('noanim'); Object.assign(view, r.view); focus = r.focus; sel = r.sel ? byId[r.sel] : null;
       showSide(sel || cols.find(c => c.key === focus) || null); side.scrollTop = r.scroll || 0; paint(); kick(); return api;
     }
-    view.k = .25; view.x = (total.x0 + total.x1) / 2; view.y = (total.y0 + total.y1) / 2; fitAll(900);
+    view.k = .25; view.x = (total.x0 + total.x1) / 2; view.y = (total.y0 + total.y1) / 2;
+    // 좁은 화면(모바일)은 전체를 맞추면 글자가 읽히지 않으므로 첫 단계 열에 맞춘다
+    if (W() < 600 && !opt.focus && cols[0]) { const c = cols[0]; fit(c.x - 20, c.y - 30, c.x + CW + 20, c.y + HEAD + c.items.length * (CH + GY) + 20, 1.5, 900); } else fitAll(900);
     if (opt.focus) { const x = byId[opt.focus] || cols.find(c => c.key === String(opt.focus).replace('st-', '')); if (x) setTimeout(() => x.items ? selectCol(x) : selectItem(x), 750); }
     return api;
   }

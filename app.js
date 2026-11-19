@@ -499,6 +499,8 @@ function renderRail() {
   const coreOn = view === 'core' || view.startsWith('cg-');
   $('#tabs').innerHTML = tab('map', '설계 지도', view === 'map') + tab('core', '핵심 검토', coreOn) + tab('it-' + LASTITEM, '전체 항목', !!cur) + tab('studio', '부품 편집', view === 'studio') + tab('overview', '3D · 종합판정', view === 'overview') + tab('proc', '체크리스트', view === 'proc');
   $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.v));
+  // 모바일: 현재 탭이 가로 스크롤 밖에 있으면 보이게
+  const curTab = $('#tabs').querySelector('[aria-current=true]'); if (curTab && $('#tabs').scrollWidth > $('#tabs').clientWidth) curTab.scrollIntoView({ block: 'nearest', inline: 'center' });
   if (coreOn && window.PGDGroups) return renderCoreRail(c);
   const all = ord(), sts = Object.fromEntries(all.map(x => [x, rvState(x, c)])), nd = all.filter(x => sts[x] === 'done').length, ns = all.filter(x => sts[x] === 'stale').length;
   $('#rail').innerHTML = `<div class="rprog"><div><b>${nd}</b> / ${all.length} 검토${ns ? ` · <span class="bad">재검토 ${ns}</span>` : ''}</div><i style="width:${nd / all.length * 100}%"></i></div><div class="grp">설계 단계</div>` +
@@ -508,12 +510,15 @@ function renderRail() {
   $('#rail').querySelectorAll('button[data-v]').forEach(b => b.onclick = () => go(b.dataset.v));
   $('#rail').querySelector('.it.on')?.scrollIntoView({ block: 'nearest' });
 }
+// 모바일 목록 서랍 (≤ 760px에서 목록을 화면 전체로 열고 닫는다)
+function setRail(open) { document.body.classList.toggle('rail-open', !!open); const b = document.getElementById('railBtn'); if (b) { b.setAttribute('aria-expanded', open ? 'true' : 'false'); b.textContent = open ? '✕ 닫기' : '☰ 목록'; } if (open) { const c = document.querySelector('#rail [aria-current=true], #rail .on'); c?.scrollIntoView({ block: 'center' }); } }
+document.getElementById('railBtn')?.addEventListener('click', () => setRail(!document.body.classList.contains('rail-open')));
 function go(id, anchor) {
   if (VIEW_ITEM[id]) id = 'it-' + VIEW_ITEM[id];
   if (id.startsWith('st-') && anchor && IT()[anchor]) id = 'it-' + anchor;
   if (id.startsWith('it-') && !IT()[id.slice(3)]) id = 'map';
   if (id.startsWith('cg-') && !window.PGDGroups?.G[id.slice(3)]) id = 'core';
-  view = id; ANCHOR = null;
+  view = id; ANCHOR = null; setRail(false);
   try { history.replaceState(null, '', '#' + id); } catch (e) { }
   renderRail(); render(); window.scrollTo(0, 0);
 }
