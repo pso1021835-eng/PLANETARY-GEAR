@@ -42,6 +42,13 @@
     geo.setAttribute('uv', new TH.BufferAttribute(uv, 2));
     return geo;
   }
+  // 선삭 거칠기 맵 (이미지 없이 생성): 가로줄 = 가공선. 종합판정·부품 편집이 같은 맵을 쓴다
+  function turnedTexture(renderer) {
+    const TH = T(), c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let y = 0; y < 256; y++) { const v = 150 + (rnd() - .5) * 70 + 25 * Math.sin(y * .9); g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(0, y, 256, 1); }
+    const tx = new TH.CanvasTexture(c); tx.wrapS = tx.wrapT = TH.RepeatWrapping; tx.repeat.set(1, 18); tx.anisotropy = renderer.capabilities.getMaxAnisotropy?.() || 1; return tx;
+  }
   // rimDia: bore for external gears (0 = solid), outside diameter for the ring
   function gearGeometry(g, at, b, betaDeg, internal, rimDia) {
     const TH = T(), pts = outline(g, at).map(([x, y]) => new TH.Vector2(x, y));
@@ -500,7 +507,14 @@
         if (L.shared) { ringBody = ring; ringBodyPhase = rho0; }
       }
       const sun = new TH.Mesh(gearGeometry(g.parts[0], at, b, st.beta, false, x.sunBore), mkMat(i === 0 ? 'sun1' : 'sun2'));
-      sun.position.z = zb; add(sun, `sun${sid}`, root, 2, i === 0 ? dzStage * 1.9 : 0);
+      sun.position.z = zb;
+      // 부품 편집에서 정한 썬 축(허브)을 종합판정에도 같은 형상으로 (축·하우징을 따로 그리는 전체 보기에서는 입력축이 대신함)
+      if (!extras) {
+        const h = (D.geom || {})['sun' + sid] || {}, rb = Math.max(.01, (x.sunBore || 0) / 2), hub = (ro, z0, z1) => lathe([[rb, z0], [ro, z0], [ro, z1], [rb, z1], [rb, z0]]);
+        if (h.hubInOD / 2 > rb && h.hubInL > 0) sun.add(new TH.Mesh(hub(h.hubInOD / 2, -h.hubInL, 0), sun.material));
+        if (h.hubOutOD / 2 > rb && h.hubOutL > 0) sun.add(new TH.Mesh(hub(h.hubOutOD / 2, b, b + h.hubOutL), sun.material));
+      }
+      add(sun, `sun${sid}`, root, 2, i === 0 ? dzStage * 1.9 : 0);
       const pg = []; const pMat = mkMat(i === 0 ? 'planet1' : 'planet2');
       const pGeo = gearGeometry(g.parts[1], at, b, -st.beta, false, x.planetBore);
       for (let j = 0; j < st.n; j++) { const pm = new TH.Mesh(pGeo, pMat); pm.position.z = zb; add(pm, `planet${sid}`, root, 1, dzStage); pg.push(pm); }
@@ -1026,16 +1040,18 @@
     const clip = new TH.Plane(new TH.Vector3(0, -1, 0), 0);
     let section = !!opt.section;
     const mats = [];
-    const mat = (c, metal = .95, rough = .26) => { const mm = new TH.MeshStandardMaterial({ color: c, metalness: metal, roughness: rough, envMapIntensity: 1.15, side: TH.DoubleSide, clippingPlanes: section ? [clip] : [] }); mats.push(mm); return mm; };
+    // 종합판정과 같은 선삭 질감 (거칠기 맵 + 거칠기 1.35배)
+    const turned = turnedTexture(renderer);
+    const mat = (c, metal = .95, rough = .26) => { const mm = new TH.MeshStandardMaterial({ color: c, metalness: metal, roughness: Math.min(1, rough * 1.35), roughnessMap: turned, envMapIntensity: 1.15, side: TH.DoubleSide, clippingPlanes: section ? [clip] : [] }); mats.push(mm); return mm; };
     const COL = { sun: 0xc89b4a, planet: 0x4f7fc4, ring: 0xd2d4d8, carrier: 0x3a3c42, pin: 0xf2f3f5 };
     const root = new TH.Group(); scene.add(root);
-    const lathe = (ri, ro, z0, z1, c) => new TH.Mesh(new TH.LatheGeometry([new TH.Vector2(ri, z0), new TH.Vector2(ro, z0), new TH.Vector2(ro, z1), new TH.Vector2(ri, z1), new TH.Vector2(ri, z0)].map(v => new TH.Vector2(Math.max(v.x, .01), v.y)), 96).rotateX(Math.PI / 2), mat(c));
+    const lathe_ = (ri, ro, z0, z1, c) => new TH.Mesh(lathe([[ri, z0], [ro, z0], [ro, z1], [ri, z1], [ri, z0]].map(([r, z]) => [Math.max(r, .01), z])), mat(c));
     const G = D.geom || {};
     if (m[1] === 'sun') {
       root.add(new TH.Mesh(gearGeometry(g.parts[0], g.at, b, st.beta, false, x.sunBore), mat(COL.sun)));
       const h = G['sun' + (i + 1)] || {}, rb = (x.sunBore || 0) / 2;
-      if (h.hubInOD > 0 && h.hubInL > 0) root.add(lathe(rb, h.hubInOD / 2, -h.hubInL, 0, COL.sun));
-      if (h.hubOutOD > 0 && h.hubOutL > 0) root.add(lathe(rb, h.hubOutOD / 2, b, b + h.hubOutL, COL.sun));
+      if (h.hubInOD > 0 && h.hubInL > 0) root.add(lathe_(rb, h.hubInOD / 2, -h.hubInL, 0, COL.sun));
+      if (h.hubOutOD > 0 && h.hubOutL > 0) root.add(lathe_(rb, h.hubOutOD / 2, b, b + h.hubOutL, COL.sun));
     } else if (m[1] === 'planet') {
       root.add(new TH.Mesh(gearGeometry(g.parts[1], g.at, b, -st.beta, false, x.planetBore), mat(COL.planet)));
     } else if (m[1] === 'ring') {
@@ -1045,7 +1061,7 @@
       const shape = x.carrier;
       root.add(new TH.Mesh(carrierBody(shape), mat(COL.carrier, .85, .3)));
       if (opt.pins !== false) {
-        const pg = new TH.CylinderGeometry(shape.diameter / 2, shape.diameter / 2, shape.pinLength, 48).rotateX(Math.PI / 2), pm = mat(COL.pin, 1, .08);
+        const pg = turnedUV(new TH.CylinderGeometry(shape.diameter / 2, shape.diameter / 2, shape.pinLength, 48).rotateX(Math.PI / 2)), pm = mat(COL.pin, 1, .08);
         shape.pins.forEach(pp => { const q = new TH.Mesh(pg, pm); q.position.set(pp.x, pp.y, (shape.stock[0] + shape.stock[1]) / 2); root.add(q); });
       }
     }
@@ -1112,7 +1128,7 @@
     const ro = new ResizeObserver(() => { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); });
     ro.observe(host);
     return {
-      dispose() { cancelAnimationFrame(raf); ro.disconnect(); scene.traverse(o => { o.geometry?.dispose?.(); }); mats.forEach(mm => mm.dispose()); scene.environment?.dispose?.(); renderer.dispose(); renderer.domElement.remove(); ui.remove(); },
+      dispose() { cancelAnimationFrame(raf); ro.disconnect(); scene.traverse(o => { o.geometry?.dispose?.(); }); mats.forEach(mm => mm.dispose()); turned.dispose(); scene.environment?.dispose?.(); renderer.dispose(); renderer.domElement.remove(); ui.remove(); },
       getView: () => ({ az: view.az, el: view.el, dist: view.dist }), setView, setSection,
       setDims(list) { dims = list || []; drawLabels(); }, showDims(on) { showDims = !!on; }
     };
