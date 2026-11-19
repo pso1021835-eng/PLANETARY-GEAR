@@ -149,8 +149,8 @@
           if (ratio >= lo && ratio <= hi) add('one', [stage]);
         }
         if (modes.shared) {
-          stages.sort((a, b) => ratioOf(a) - ratioOf(b));
-          for (const stage of firsts) pair(stage, stages, 'shared');
+          const sorted = [...stages].sort((a, b) => ratioOf(a) - ratioOf(b));
+          for (const stage of firsts) pair(stage, sorted, 'shared');
         }
         if (modes.sep) for (const stage of stages) allStages.push(stage);
       }
@@ -277,7 +277,7 @@
       if (limit <= 0) return;
       c.b = splitB(spec, c, baseHeight(base, spec, c, E, layout, hcache));
       const t = c.stages.map((s, i) => proxy(s, c.b[i], spec.beta));
-      c.proxy = c.stages.length === 1 ? t[0] : Math.min(t[0] * ratioOf(c.stages[1]), t[1]);
+      c.proxy = c.stages.length === 1 ? t[0] : Math.min(t[0] * c.stages[1].num / c.stages[1].den, t[1]);
       const bin = bins[c.type];
       bin.push(c);
       if (bin.length >= 2 * limit) bins[c.type] = trim(bin, limit);
