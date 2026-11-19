@@ -1354,7 +1354,7 @@ $('#bExport').onclick = () => {
 $('#bImport').onclick = () => dlg('JSON 불러오기', '', '이 사이트에서 복사한 설계 JSON을 붙여 넣고 확인을 누르세요.', '불러오기', () => {
   try { const d = JSON.parse($('#dlgText').value); if (d.schema !== 'pgd/1') throw new Error('형식이 다릅니다'); d.config.floatingSun = false; D = fillMissing(d, E.defaultDesign()); $('#dname').value = D.name || ''; changed(); $('#dlg').close(); return null; } catch (e) { return '불러오지 못했습니다: ' + e.message; }
 });
-// 추천 제원 (정수 감속비): 외경 × 높이 · 감속비 · 모듈 후보 · 비틀림각 · 치폭(자동 배분) · 유성 개수 후보 → 허용 토크 순
+// 추천 제원: 외형·목표 감속비·입력축 조건 → 허용 토크 순
 let REC = null;
 $('#bRecommend').onclick = () => {
   $('#moreMenu').hidden = true;
@@ -1362,7 +1362,7 @@ $('#bRecommend').onclick = () => {
   let L = null; try { if (R?.ctx && !R.errors?.length) L = PGD3D.layout(R, D); } catch (e) { L = null; }
   const v = (id, x) => { const el = $('#' + id); if (el.value === '') el.value = x; };
   v('rOD', L ? Math.round(2 * Math.max(L.housR, L.flangeR) * 10) / 10 : 68); v('rH', L ? Math.round((L.zFlange[1] - L.zIn) * 10) / 10 : 54);
-  v('rRatio', R?.ratio ? Math.max(3, Math.round(R.ratio)) : 9); v('rMods', [...new Set(D.stages.map(s => s.m))].join(', ')); v('rBeta', last.beta);
+  v('rRatio', R?.ratio || 9); v('rMods', [...new Set(D.stages.map(s => s.m))].join(', ')); v('rBeta', last.beta);
   $('#recDlg').showModal();
 };
 const recFrac = st => { const n = st.R + st.s, d = st.s, g = (a, b) => b ? g(b, a % b) : a, k = g(n, d); return d / k === 1 ? `${n / k}` : `${n / k}/${d / k}`; };
@@ -1372,13 +1372,15 @@ $('#recGo').onclick = async () => {
   const ns = [...$('#rNs').querySelectorAll('input:checked')].map(x => +x.value);
   const modes = Object.fromEntries([...$('#rModes').querySelectorAll('input')].map(x => [x.value, x.checked]));
   const bIn = $('#rB').value.trim();
-  const spec = { OD: num('rOD'), H: num('rH'), ratio: num('rRatio'), mods, beta: num('rBeta'), b: bIn === '' ? null : +bIn, ns, modes };
-  const err = !(spec.OD > 0 && spec.H > 0) ? '외경과 높이를 넣어 주세요.' : !(Number.isInteger(spec.ratio) && spec.ratio >= 3) ? '감속비는 3 이상의 정수로 넣어 주세요.'
+  const spec = { OD: num('rOD'), H: num('rH'), ratio: num('rRatio'), ratioTolPct: num('rRatioTol'), minSunPCD: num('rSunPCD'), mods, beta: num('rBeta'), b: bIn === '' ? null : +bIn, ns, modes };
+  const err = !(spec.OD > 0 && spec.H > 0) ? '외경과 높이를 넣어 주세요.' : !(spec.ratio > 2) ? '목표 감속비는 2보다 큰 값으로 넣어 주세요.'
+    : !(spec.ratioTolPct >= 0 && spec.ratioTolPct <= 100) ? '감속비 허용 편차는 0~100%로 넣어 주세요.'
+    : !(spec.minSunPCD >= 0) ? '1단 썬 PCD는 0 이상으로 넣어 주세요.'
     : !mods.length ? '모듈 후보를 하나 이상 넣어 주세요 (예: 0.5, 0.6, 0.8).' : !(spec.beta >= 0 && spec.beta < 45) ? '비틀림각은 0 ~ 45° 사이로 넣어 주세요.'
     : bIn !== '' && !(spec.b > 0) ? '치폭은 양수로 넣거나 비워 두세요 (자동 배분).' : !ns.length ? '유성 개수를 하나 이상 고르세요.' : !Object.values(modes).some(Boolean) ? '구성을 하나 이상 고르세요.' : '';
   if (err) { out.innerHTML = `<p class="bad">${err}</p>`; return; }
   const go_ = $('#recGo'); go_.disabled = true;
-  out.innerHTML = '<p class="note">정수비 조합을 찾는 중…</p>';
+  out.innerHTML = '<p class="note">조건에 맞는 잇수 조합을 찾는 중…</p>';
   await new Promise(r => setTimeout(r, 0));
   let RS;
   try { RS = await PGDRecommend.run(D, spec, E, PGD3D.layout, (i, n) => { out.innerHTML = `<p class="note">정밀 계산 중… ${i} / ${n}</p>`; }); }
@@ -1386,15 +1388,17 @@ $('#recGo').onclick = async () => {
   go_.disabled = false; REC = RS.res;
   const ok = REC.filter(r => r.ok), bad = REC.filter(r => !r.ok), c = RS.counts;
   const why = {}; bad.forEach(r => { const k = r.why.replace(/[\d.]+/g, '#'); (why[k] ||= { n: 0, ex: r.why }).n++; });
-  const sum = `<p class="note">감속비 정확히 ${spec.ratio}인 조합 ${RS.total.toLocaleString()}개 (1단 ${c.one} · 2단 링 공유 ${c.shared} · 2단 링 분리 ${c.sep.toLocaleString()}) → 간이 강도 상위 ${RS.checked}개 정밀 계산 → 적합 ${ok.length}개.${bad.length ? ` 제외 ${bad.length}개: ${Object.values(why).map(w => `${esc(w.ex)}${w.n > 1 ? ` 외 ${w.n - 1}` : ''}`).join(' · ')}` : ''}</p>`;
-  if (!RS.total) { out.innerHTML = `<p class="bad">감속비가 정확히 ${spec.ratio}이 되는 잇수 조합이 없습니다. 모듈 후보·유성 개수·구성을 넓혀 보세요. (1단은 1 + R/S가 정수여야 해서 3–12 정도만 가능합니다.)</p>`; return; }
+  const ratioCondition = `${spec.ratio}${spec.ratioTolPct ? ` ±${spec.ratioTolPct}%` : ' 일치'}`;
+  const sunCondition = spec.minSunPCD ? ` · 1단 썬 PCD ≥ ${spec.minSunPCD} mm` : '';
+  const sum = `<p class="note">감속비 ${ratioCondition}${sunCondition} · 조합 ${RS.total.toLocaleString()}개 (1단 ${c.one} · 2단 링 공유 ${c.shared} · 2단 링 분리 ${c.sep.toLocaleString()}) → 간이 강도 상위 ${RS.checked}개 정밀 계산 → 적합 ${ok.length}개.${bad.length ? ` 제외 ${bad.length}개: ${Object.values(why).map(w => `${esc(w.ex)}${w.n > 1 ? ` 외 ${w.n - 1}` : ''}`).join(' · ')}` : ''}</p>`;
+  if (!RS.total) { out.innerHTML = `<p class="bad">감속비 ${ratioCondition}${sunCondition} 조건에 맞는 잇수 조합이 없습니다.</p>`; return; }
   if (!ok.length) { out.innerHTML = '<p class="bad">조합은 있으나 모두 외형·간섭 조건에서 제외됐습니다.</p>' + sum; return; }
   const typeName = { one: '1단', shared: '2단 링 공유', sep: '2단 링 분리' };
   const stg = r => r.stages.map((t, i) => `${r.stages.length > 1 ? `${i + 1}단 ` : ''}m${t.m} · S${t.s}/P${t.p}/R${t.R} ×${t.n} · b ${fmt(r.b[i], 1)} · i ${recFrac(t)}`).join('<br>');
   const caps = r => r.stageCap.map((cc, i) => `${r.stages.length > 1 ? `${i + 1}단 ` : ''}<b>${fmt(cc.out, 1)}</b>${r.stages.length > 1 ? ` <small class="note">(캐리어 ${fmt(cc.own, 1)})</small>` : ''}`).join('<br>');
-  out.innerHTML = `<div class="scroll"><table><tr><th>순위</th><th>구성</th><th class="l">모듈 · 잇수 · 유성 개수 · 치폭 · 단 감속비</th><th>단별 허용 토크<br><small>N·m · 출력축 환산</small></th><th>감속기 허용 토크<br><small>N·m · 출력</small></th><th class="l">지배 부위</th><th>외경 × 높이</th><th></th></tr>
-    ${ok.map((r, k) => `<tr class="${k === 0 ? 'gov' : ''}"><td>${k + 1}</td><td>${typeName[r.type]}<br><small class="note">i ${spec.ratio}</small></td><td class="l">${stg(r)}</td><td>${caps(r)}</td><td><b class="${r.cap < D.req.Trated ? 'bad' : 'good'}">${fmt(r.cap, 1)}</b>${r.fails ? `<br><small class="bad">미달 ${r.fails}</small>` : ''}</td><td class="l note">${esc(r.gov)}</td><td>Ø${fmt(r.OD, 1)} × ${fmt(r.H, 1)}</td><td><button class="btn" type="button" data-rec="${REC.indexOf(r)}">적용</button></td></tr>`).join('')}</table></div>
-    <p class="note">요구 조건: 정격 ${D.req.Trated} N·m · 수명 ${D.req.lifeH} h · ${D.req.rpm} rpm · SH ${D.req.SH} · SF ${D.req.SF} · ${BASIS()}. 미달 = 판정 항목(효율·백래시·정적 등) 중 기준 미달 수. 단 감속비는 분수로 표시합니다(전체는 정확히 ${spec.ratio}).</p>${sum}`;
+  out.innerHTML = `<div class="scroll"><table><tr><th>순위</th><th>구성</th><th>실제 감속비<br><small>목표 대비</small></th><th class="l">모듈 · 잇수 · 유성 개수 · 치폭 · 단 감속비</th><th>1단 썬 PCD<br><small>mm</small></th><th>단별 허용 토크<br><small>N·m · 출력축 환산</small></th><th>감속기 허용 토크<br><small>N·m · 출력</small></th><th class="l">지배 부위</th><th>외경 × 높이</th><th></th></tr>
+    ${ok.map((r, k) => `<tr class="${k === 0 ? 'gov' : ''}"><td>${k + 1}</td><td>${typeName[r.type]}</td><td><b>${fmt(r.ratio, 6)}</b><br><small class="note">${fmt(100 * (r.ratio - spec.ratio) / spec.ratio, 3)}%</small></td><td class="l">${stg(r)}</td><td>${fmt(r.stages[0].s * r.stages[0].m / Math.cos(spec.beta * Math.PI / 180), 3)}</td><td>${caps(r)}</td><td><b class="${r.cap < D.req.Trated ? 'bad' : 'good'}">${fmt(r.cap, 1)}</b>${r.fails ? `<br><small class="bad">미달 ${r.fails}</small>` : ''}</td><td class="l note">${esc(r.gov)}</td><td>Ø${fmt(r.OD, 1)} × ${fmt(r.H, 1)}</td><td><button class="btn" type="button" data-rec="${REC.indexOf(r)}">적용</button></td></tr>`).join('')}</table></div>
+    <p class="note">요구 조건: 정격 ${D.req.Trated} N·m · 수명 ${D.req.lifeH} h · ${D.req.rpm} rpm · SH ${D.req.SH} · SF ${D.req.SF} · ${BASIS()}. 미달 = 판정 항목(효율·백래시·정적 등) 중 기준 미달 수. 단 감속비는 분수로 표시합니다.</p>${sum}`;
   out.querySelectorAll('[data-rec]').forEach(b => b.onclick = () => { const r = REC[+b.dataset.rec]; D = JSON.parse(JSON.stringify(r.D)); $('#dname').value = D.name; $('#recDlg').close(); changed(); });
 };
 function dlg(title, text, note, okLabel, onOk) {

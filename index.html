@@ -469,14 +469,16 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
  <div class="grid rec-in">
   <label class="f">최대 외경 Ø (mm)<input type="number" id="rOD" step="any"></label>
   <label class="f">최대 높이 (mm)<input type="number" id="rH" step="any"></label>
-  <label class="f">감속비 (정수)<input type="number" id="rRatio" step="1" min="3"></label>
-  <label class="f">치직각 모듈 후보 (쉼표)<input type="text" id="rMods" placeholder="0.5, 0.6, 0.8"></label>
+  <label class="f">목표 감속비<input type="number" id="rRatio" step="any" min="2"></label>
+  <label class="f">감속비 허용 편차 (%)<input type="number" id="rRatioTol" step="any" min="0" max="100" value="0"></label>
+  <label class="f">1단 썬 최소 PCD (mm)<input type="number" id="rSunPCD" step="any" min="0" placeholder="제한 없음"></label>
+  <label class="f">치직각 모듈 후보 (쉼표)<input type="text" id="rMods" placeholder="0.4, 0.6, 0.8"></label>
   <label class="f">비틀림각 β (°)<input type="number" id="rBeta" step="any"></label>
   <label class="f">기어 치폭 b (mm)<input type="number" id="rB" step="any" placeholder="빈칸 = 단별 자동 배분"></label>
-  <div class="f">유성 개수<span class="rec-ck" id="rNs"><label><input type="checkbox" value="3" checked>3</label><label><input type="checkbox" value="4" checked>4</label><label><input type="checkbox" value="5" checked>5</label><label><input type="checkbox" value="6" checked>6</label><label><input type="checkbox" value="7">7</label><label><input type="checkbox" value="8">8</label></span></div>
+  <div class="f">유성 개수<span class="rec-ck" id="rNs"><label><input type="checkbox" value="2">2</label><label><input type="checkbox" value="3" checked>3</label><label><input type="checkbox" value="4" checked>4</label><label><input type="checkbox" value="5" checked>5</label><label><input type="checkbox" value="6" checked>6</label><label><input type="checkbox" value="7">7</label><label><input type="checkbox" value="8">8</label></span></div>
   <div class="f">구성<span class="rec-ck" id="rModes"><label><input type="checkbox" value="one" checked>1단</label><label><input type="checkbox" value="shared" checked>2단 링 공유</label><label><input type="checkbox" value="sep" checked>2단 링 분리</label></span></div>
  </div>
- <p class="note">감속비가 정확히 정수인 조합만 찾습니다. 모듈마다 외경에 들어가는 링 잇수 범위에서 썬·유성·링 잇수와 유성 개수를 1단 · 2단(링 공유) · 2단(링 분리, 단별 모듈 가능)으로 조합하고, 간이 강도로 상위 후보를 고른 뒤 현재 설계의 요구 수명·안전율·재료·윤활·판정 기준으로 정밀 계산해 감속기 허용 토크가 큰 순서로 보여 줍니다. 치폭을 비우면 높이에 맞춰 단별로 자동 배분합니다(2단은 √i₂ 비). 핀·니들·출력 베어링·캐리어·하우징 치수는 예제 설계를 외경 비로 맞춘 초안입니다.</p>
+ <p class="note">편차 0%는 목표 감속비에 일치하는 조합을 검색합니다. 치폭을 비우면 최대 높이에 맞춰 자동 배분합니다. 간이 강도 상위 후보를 정밀 계산해 허용 토크 순으로 표시합니다. 핀·베어링·캐리어·하우징 치수는 예제 설계에서 환산한 초안입니다.</p>
  <div id="recOut"></div>
  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn" value="cancel">닫기</button><button class="btn primary" id="recGo" type="button">계산</button></div>
 </form></dialog>
@@ -484,13 +486,13 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 <script src="carrier-geometry.js?v=pr28-1"></script>
 <script src="engine.js?v=pr38-1"></script>
 <script src="viewer3d.js?v=carrier-pocket-3"></script>
-<script src="recommend.js?v=pr39-1"></script>
+<script src="recommend.js?v=ratio-pcd-1"></script>
 <script src="drawings.js?v=pr19-1"></script>
 <script src="checks.js?v=pr33-1"></script>
 <script src="process.js?v=pr26-1"></script>
 <script src="map.js?v=pr14-1"></script>
 <script src="items.js?v=pr36-1"></script>
 <script src="groups.js?v=pr34-1"></script>
-<script defer src="app.js?v=overview-2"></script>
+<script defer src="app.js?v=ratio-pcd-1"></script>
 </body>
 </html>

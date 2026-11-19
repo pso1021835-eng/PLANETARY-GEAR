@@ -1,6 +1,6 @@
-// 추천 제원 생성 (정수 감속비 전용)
-// 입력: 최대 외경 × 높이, 정수 감속비, 치직각 모듈 후보, 비틀림각, 치폭(빈칸 = 단별 자동 배분), 유성 개수 후보, 구성(1단 / 2단 링 공유 / 2단 링 분리)
-// 1) 모듈마다 외경에 들어가는 링 잇수 범위를 잡고, 감속비가 정확히 정수가 되는 썬·유성·링 잇수 조합을 모두 찾는다
+// 추천 제원 생성
+// 입력: 최대 외경 × 높이, 목표 감속비와 허용 편차, 최소 1단 썬 PCD, 치직각 모듈 후보, 비틀림각, 치폭(빈칸 = 단별 자동 배분), 유성 개수 후보, 구성(1단 / 2단 링 공유 / 2단 링 분리)
+// 1) 모듈마다 외경에 들어가는 링 잇수 범위를 잡고, 감속비 조건에 맞는 썬·유성·링 잇수 조합을 모두 찾는다
 // 2) 간이 강도식(피팅·굽힘)으로 순위를 매겨 상위 후보만 남기고
 // 3) 남은 후보를 전체 설계로 만들어 외형(layout)·강도(엔진)를 계산해 감속기 허용 토크 순으로 정렬한다.
 // 기어 외 치수(핀·니들·출력 베어링·캐리어·하우징)는 예제 설계를 외경 비로 맞춘 초안이다.
@@ -49,27 +49,60 @@
   }
 
   // ---- 후보 목록
-  function candidates(spec) {
-    const iT = spec.ratio, ns = spec.ns, modes = spec.modes || { one: true, shared: true, sep: true };
-    const byMod = spec.mods.map(m => { const { Rmin, Rmax } = ringRange(spec, m), opts = [];
-      for (let R = Rmin; R <= Rmax; R++) opts.push(...stageOptions(m, R, ns, spec.beta)); return { m, opts }; });
-    const list = [];
-    for (const { opts } of byMod) {
-      if (modes.one) for (const a of opts) if (a.den === 1 && a.num === iT) list.push({ type: 'one', stages: [a] });
-      if (modes.shared) {
-        const byR = {}; for (const a of opts) (byR[a.R] ||= []).push(a);
-        for (const R in byR) for (const a of byR[R]) for (const b of byR[R]) if (a.num * b.num === iT * a.den * b.den) list.push({ type: 'shared', stages: [a, b] });
+  const ratioOf = stage => stage.num / stage.den;
+  const candidateRatio = cand => cand.stages.reduce((ratio, stage) => ratio * ratioOf(stage), 1);
+
+  function searchCandidates(spec, addCandidate) {
+    const { ratio: target, ns, beta } = spec;
+    const modes = spec.modes || { one: true, shared: true, sep: true };
+    const tolerance = target * (spec.ratioTolPct ?? 0) / 100;
+    const rounding = 16 * Number.EPSILON * target;
+    const lo = target - tolerance - rounding, hi = target + tolerance + rounding;
+    const minSun = spec.minSunPCD ?? 0, cosBeta = Math.cos(beta * RAD);
+    const canUseFirst = stage => stage.s * stage.m / cosBeta + 1e-9 >= minSun;
+    const allStages = [];
+
+    function pair(first, sorted, type) {
+      const i1 = ratioOf(first), lower = lo / i1, upper = hi / i1;
+      let left = 0, right = sorted.length;
+      while (left < right) {
+        const mid = Math.floor((left + right) / 2);
+        if (ratioOf(sorted[mid]) < lower) left = mid + 1;
+        else right = mid;
+      }
+      for (let i = left; i < sorted.length && ratioOf(sorted[i]) <= upper; i++) {
+        const second = sorted[i];
+        if (type === 'sep' && (second.m < first.m || (second.m === first.m && second.R === first.R))) continue;
+        addCandidate({ type, stages: [first, second] });
       }
     }
+
+    for (const m of spec.mods) {
+      const { Rmin, Rmax } = ringRange(spec, m);
+      for (let R = Rmin; R <= Rmax; R++) {
+        const stages = stageOptions(m, R, ns, beta);
+        const firsts = stages.filter(canUseFirst);
+        if (modes.one) for (const stage of firsts) {
+          const ratio = ratioOf(stage);
+          if (ratio >= lo && ratio <= hi) addCandidate({ type: 'one', stages: [stage] });
+        }
+        if (modes.shared) {
+          stages.sort((a, b) => ratioOf(a) - ratioOf(b));
+          for (const stage of firsts) pair(stage, stages, 'shared');
+        }
+        if (modes.sep) for (const stage of stages) allStages.push(stage);
+      }
+    }
+
     if (modes.sep) {
-      // 2단 링 분리: 1단 (m1, R1) · 2단 (m2 ≥ m1, R2). 2단 감속비를 기약분수로 색인해 1단마다 필요한 값만 찾는다
-      const idx = new Map();
-      for (const { opts } of byMod) for (const b of opts) { const k = b.num + '/' + b.den; if (!idx.has(k)) idx.set(k, []); idx.get(k).push(b); }
-      for (const { opts } of byMod) for (const a of opts) {
-        const [n2, d2] = frac(iT * a.den, a.num), hits = idx.get(n2 + '/' + d2);
-        if (hits) for (const b of hits) if (b.m >= a.m && !(b.m === a.m && b.R === a.R)) list.push({ type: 'sep', stages: [a, b] });
-      }
+      const sorted = [...allStages].sort((a, b) => ratioOf(a) - ratioOf(b));
+      for (const stage of allStages) if (canUseFirst(stage)) pair(stage, sorted, 'sep');
     }
+  }
+
+  function candidates(spec) {
+    const list = [];
+    searchCandidates(spec, cand => list.push(cand));
     return list;
   }
 
@@ -90,7 +123,7 @@
     for (const k of ['req', 'materials', 'lube', 'loads', 'design', 'reliability', 'perf', 'mc', 'anim']) if (base[k]) D[k] = clone(base[k]);
     const k = spec.OD / OD0, kz = k, ns = cand.stages.length, beta = spec.beta;   // 축방향 부품(커버·판·보스)도 외경 비로
     const tag = cand.stages.map(s => `m${s.m} ${s.s}/${s.p}/${s.R}×${s.n}`).join(' + ');
-    D.name = `추천 · i ${spec.ratio} · ${tag}`;
+    D.name = `추천 · i ${Number(candidateRatio(cand).toFixed(6))} · ${tag}`;
     D.config = { stages: ns, sharedRing: cand.type === 'shared', floatingSun: false };
     const wall = wallOf(spec.OD);
     D.housing = { ...T.housing, wall, coverT: Math.max(3, r05(T.housing.coverT * kz)), flangeT: Math.max(2, r05(T.housing.flangeT * kz)) };
@@ -149,7 +182,7 @@
       D = build(base, spec, cand, bs, E); env = envelope(D, E, layout);
       if (env.errors) break;
     }
-    const row = { cand, D, b: bs, ratio: spec.ratio, stages: cand.stages, type: cand.type, proxy: cand.proxy };
+    const row = { cand, D, b: bs, ratio: candidateRatio(cand), stages: cand.stages, type: cand.type, proxy: cand.proxy };
     if (env.errors) return { ...row, ok: false, why: env.errors[0] };
     Object.assign(row, { OD: env.OD, H: env.H });
     if (env.OD > spec.OD + 0.05) return { ...row, ok: false, why: `외경 Ø${env.OD.toFixed(1)} > Ø${spec.OD}` };
@@ -169,15 +202,23 @@
 
   // 간이 강도로 줄이기: 구성별 상위 keep개
   function shortlist(base, spec, E, layout) {
-    const all = candidates(spec), hcache = new Map(), keep = spec.keep || { one: 30, shared: 60, sep: 60 };
-    for (const c of all) {
+    const hcache = new Map(), keep = spec.keep || { one: 30, shared: 60, sep: 60 };
+    const counts = { one: 0, shared: 0, sep: 0 }, bins = { one: [], shared: [], sep: [] };
+    let total = 0;
+    const trim = (bin, max) => bin.sort((a, b) => b.proxy - a.proxy).slice(0, max);
+    searchCandidates(spec, c => {
+      total++;
+      counts[c.type]++;
+      const limit = keep[c.type] ?? 0;
+      if (limit <= 0) return;
       c.b = splitB(spec, c, baseHeight(base, spec, c, E, layout, hcache));
       const t = c.stages.map((s, i) => proxy(s, c.b[i], spec.beta));
-      c.proxy = c.stages.length === 1 ? t[0] : Math.min(t[0] * c.stages[1].num / c.stages[1].den, t[1]);
-    }
-    const pick = type => all.filter(c => c.type === type).sort((a, b) => b.proxy - a.proxy).slice(0, keep[type]);
-    const counts = { one: 0, shared: 0, sep: 0 }; for (const c of all) counts[c.type]++;
-    return { total: all.length, counts, list: [...pick('one'), ...pick('shared'), ...pick('sep')] };
+      c.proxy = c.stages.length === 1 ? t[0] : Math.min(t[0] * ratioOf(c.stages[1]), t[1]);
+      const bin = bins[c.type];
+      bin.push(c);
+      if (bin.length >= 2 * limit) bins[c.type] = trim(bin, limit);
+    });
+    return { total, counts, list: Object.keys(bins).flatMap(type => trim(bins[type], keep[type] ?? 0)) };
   }
 
   // 비동기 실행 (화면 멈춤 방지): onProgress(done, total)
