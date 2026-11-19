@@ -112,15 +112,17 @@
     for (let i = 0; i < 60; i++) { const mid = (lo + hi) / 2; if (inv(mid) < target) lo = mid; else hi = mid; }
     return (lo + hi) / 2;
   }
+  const ringTeeth = st => st.r ?? st.s + 2 * st.p;
+
   function geometry(st, opts = {}) {
-    const { s, p, m, beta, n } = st, r = s + 2 * p;
+    const { s, p, m, beta, n } = st, r = ringTeeth(st);
     const widths = [st.bSun ?? st.b, st.b, st.bRing ?? st.b];
     const x = [st.xs || 0, st.xp || 0, st.xr || 0];
     const an = (st.alpha || 20) * rad, br = Math.abs(beta) * rad;
     const at = Math.atan(Math.tan(an) / Math.cos(br)), bb = Math.asin(Math.sin(br) * Math.cos(an));
     const errors = [], warns = [], checks = [];
     const chk = (k, v, ok, note) => checks.push({ k, v, ok, note });
-    if (![s, p, n].every(v => Number.isInteger(v) && v > 0) || !pos(m) || !pos(st.b)) { errors.push('잇수·유성 개수·모듈·치폭을 확인하세요'); return { errors, warns, checks, parts: [], meshes: [] }; }
+    if (![s, p, r, n].every(v => Number.isInteger(v) && v > 0) || !pos(m) || !pos(st.b)) { errors.push('잇수·유성 개수·모듈·치폭을 확인하세요'); return { errors, warns, checks, parts: [], meshes: [] }; }
     const parts = [s, p, r].map((z, i) => {
       const g = dims(z, m, beta, i === 2), dx = 2 * m * x[i];
       const da = g.da + dx, df = g.df + dx, db = g.d * Math.cos(at);
@@ -186,22 +188,36 @@
     [sp, pr].forEach(ms => { if (!(ms.ea >= 1 && ms.ea <= 2.5)) errors.push(ms.label + ' 물림률이 계산 범위 밖입니다'); });
     return { parts, meshes, ratio, at, an, bb, br, errors, warns, checks, r };
   }
-  // ring profile shift that makes the internal working centre distance equal the external one
+  // Required ring-minus-planet shift at the external working centre distance.
+  function ringShiftOffset(st, sum) {
+    const outer = st.s + st.p, inner = ringTeeth(st) - st.p;
+    if (!(outer > 0 && inner > 0)) return NaN;
+    if (inner === outer) return sum;
+    const an = (st.alpha || 20) * rad;
+    const at = Math.atan(Math.tan(an) / Math.cos(st.beta * rad));
+    const aw = workingAngle(at, an, sum, outer);
+    const cosInternal = inner / outer * Math.cos(aw);
+    if (!(cosInternal > 0 && cosInternal <= 1)) return NaN;
+    return inner * (inv(Math.acos(cosInternal)) - inv(at)) / (2 * Math.tan(an));
+  }
+
   function matchRingShift(st) {
-    const g = { ...st, xr: 0 };
-    const target = geometry(g).meshes[0]?.center;
-    if (!fin(target)) return 0;
-    const f = xr => geometry({ ...st, xr }).meshes[1]?.center - target;
-    const f0 = f(0);
-    if (fin(f0) && Math.abs(f0) < 1e-9) return 0;
-    // bracket with finite values only (extreme shifts can make the geometry invalid)
-    let lo = -1.5, hi = 1.5;
-    for (let k = 0; k < 30 && !fin(f(lo)); k++) lo /= 1.3;
-    for (let k = 0; k < 30 && !fin(f(hi)); k++) hi /= 1.3;
-    let flo = f(lo);
-    if (!fin(flo) || !fin(f(hi)) || Math.sign(flo) === Math.sign(f(hi))) return 0;
-    for (let i = 0; i < 60; i++) { const mid = (lo + hi) / 2, fm = f(mid); if (Math.sign(fm) === Math.sign(flo)) { lo = mid; flo = fm; } else hi = mid; }
-    return (lo + hi) / 2;
+    const xp = st.xp || 0;
+    const offset = ringShiftOffset(st, (st.xs || 0) + xp);
+    return fin(offset) ? xp + offset : 0;
+  }
+
+  function sharedStage(first, second) {
+    const stage = { ...second, m: first.m, beta: first.beta, alpha: first.alpha };
+    if (first.r == null) {
+      stage.r = null;
+      stage.p = (ringTeeth(first) - stage.s) / 2;
+    } else {
+      stage.r = ringTeeth(first);
+      stage.xr = first.autoRingShift ? matchRingShift(first) : first.xr;
+      stage.autoRingShift = false;
+    }
+    return stage;
   }
 
   function rim(g, bore) {
@@ -390,8 +406,7 @@
     const errors = [], warns = [];
     const q = D.design.quality, rel = D.reliability;
     const stages = D.stages.map((st0, i) => {
-      const st = { ...st0 };
-      if (i === 1 && D.config.sharedRing) { const a = D.stages[0]; st.p = (a.s + 2 * a.p - st.s) / 2; st.m = a.m; st.beta = a.beta; st.alpha = a.alpha; }
+      const st = i === 1 && D.config.sharedRing ? sharedStage(D.stages[0], st0) : { ...st0 };
       if (D.config.stages === 1 && i === 1) return null;
       if (st.autoRingShift) st.xr = matchRingShift(st);
       const geo = geometry(st);
@@ -1207,7 +1222,7 @@
     };
   }
 
-  const api = { lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, matchRingShift, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, cyclesFor, spectrumDamage, NAMES };
+  const api = { lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, ringTeeth, ringShiftOffset, matchRingShift, sharedStage, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, cyclesFor, spectrumDamage, NAMES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PGD = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -266,9 +266,9 @@
   function planetArt(d, r, i, cx) {
     const c = r?.ctx?.stages?.[i], s = c?.st ?? d.stages[i] ?? {}, g = c?.geo;
     const n = Number.isInteger(s.n) && s.n >= 2 && s.n <= 12 ? s.n : 3;
-    const ringR = 68, zr = s.s + 2 * s.p;
+    const ringR = 68, zr = g?.r ?? s.r ?? s.s + 2 * s.p;
     const ratio = (value, fallback) => Number.isFinite(value) && value > 0 ? value : fallback;
-    const rs = ringR * ratio(s.s / zr, .5), rp = ringR * ratio(s.p / zr, .25), a = ringR * ratio((s.s + s.p) / zr, .75);
+    const rs = ringR * ratio(s.s / zr, .5), rp = ringR * ratio(s.p / zr, .25), a = ringR * ratio(2 * g?.meshes?.[0]?.center / g?.parts?.[2]?.d, ratio((s.s + s.p) / zr, .75));
     return circle(cx, 124, 78, 'ring') + circle(cx, 124, ringR, 'cut')
       + circle(cx, 124, rs, 'sun')
       + Array.from({ length: n }, (_, j) => {

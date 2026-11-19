@@ -25,7 +25,7 @@
   const mx = (c, k) => Math.max(...rows(c).map(r => r.f[k]));
   const mn = (c, k) => Math.min(...rows(c).map(r => r[k]));
   const ck = (c, id) => c.CK?.[id]?.val ?? c.it(id)?.val ?? '—';
-  const rat = s => 1 + (s.st.s + 2 * s.st.p) / s.st.s;
+  const rat = s => 1 + s.geo.r / s.st.s;
   const dsun = s => s.st.m * s.st.s / Math.cos(s.st.beta * Math.PI / 180);
   // 단별 토크 (출력 토크 T에서 거꾸로): 캐리어 i, 썬 i
   const trq = (c, T) => { const st = S(c), car = [], sun = []; let t = T; for (let i = st.length - 1; i >= 0; i--) { car[i] = t; sun[i] = t / rat(st[i]); t = sun[i]; } return { car, sun }; };
@@ -179,15 +179,16 @@
 
   // ============================================================== 3 기어 제원
   I['3-1'] = { what: '링 잇수 후보를 본다.',
-    how: 'zr = zs + 2·zp (표준 동심 조건, 전위로 미세 조정). 링 피치원 = m·zr / cosβ 가 외경 한계(1-6)를 정한다.',
+    how: '표준 잇수는 zr = zs + 2·zp로 계산한다. 링 잇수를 직접 지정한 경우 전위와 중심거리 일치를 확인한다. 링 피치원 = m·zr / cosβ 가 외경 한계(1-6)를 정한다.',
     why: '링 잇수가 감속비와 외경을 동시에 정한다.',
-    rows: [['C', '링 잇수', c => per(c, s => `R ${s.st.s + 2 * s.st.p}`), 'zr = zs + 2zp'], ['C', '링 피치원', c => per(c, s => `Ø${f(s.st.m * (s.st.s + 2 * s.st.p) / Math.cos(s.st.beta * Math.PI / 180), 2)}`), 'd = m·z / cosβ']],
+    rows: [['D', 'num', 'stages.{i}.r', '{s}단 링 잇수 (빈칸 = 자동)', { st: 1, lk: 1, step: 1 }],
+      ['C', '링 잇수', c => per(c, s => `R ${s.geo.r}`), '직접 입력 또는 zr = zs + 2zp'], ['C', '링 피치원', c => per(c, s => `Ø${f(s.geo.parts[2]?.d, 2)}`), 'd = m·z / cosβ']],
     w: ['finder'], up: ['1-6'], k: '판정 없음' };
   I['3-2'] = { what: '단별 썬·유성 잇수를 정한다.',
-    how: '목표 단 감속비에 맞는 (zs, zp) 조합을 조립 조건·인접 간섭과 함께 탐색기로 찾는다. 공유 링이면 2단 zp는 1단 링 기준 자동.',
+    how: '목표 단 감속비에 맞는 (zs, zp) 조합을 조립 조건·인접 간섭과 함께 탐색기로 찾는다. 공유 링을 자동으로 계산하면 2단 유성 잇수도 연동된다. 링 잇수를 직접 지정한 경우 단별 유성 잇수를 입력한다.',
     why: '잇수가 감속비·조립·간섭·물림률·언더컷을 모두 정한다. 3·4단계 검사가 전부 잇수에 걸려 있다.',
-    rows: [['D', 'num', 'stages.{i}.s', '{s}단 썬 잇수', { st: 1, step: 1 }], ['D', 'num', 'stages.{i}.p', '{s}단 유성 잇수 (2단·링 공유는 자동)', { st: 1, step: 1, lk: 1 }],
-      ['C', 'S / P / R', c => per(c, s => `${s.st.s}/${s.st.p}/${s.st.s + 2 * s.st.p}`), '']],
+    rows: [['D', 'num', 'stages.{i}.s', '{s}단 썬 잇수', { st: 1, step: 1 }], ['D', 'num', 'stages.{i}.p', '{s}단 유성 잇수', { st: 1, step: 1, lk: D => D.stages[0].r == null }],
+      ['C', 'S / P / R', c => per(c, s => `${s.st.s}/${s.st.p}/${s.geo.r}`), '']],
     w: ['finder', 'gear3d'], up: ['2-2', '2-9'], k: '판정은 3-3·3-4·4-x에서' };
   I['3-3'] = { what: '유성을 등간격으로 조립할 수 있는지 본다.',
     how: '(zs + zr) / n 이 정수여야 모든 유성이 같은 위상으로 썬·링에 물린다.',
@@ -221,7 +222,7 @@
     how: '외접(S–P)과 내접(P–R) 작용 중심거리가 같아야 한다. 링 전위 자동이면 일치시키도록 계산. 림 두께가 이 높이 대비 부족하면 YB > 1로 굽힘 응력이 커진다.',
     why: '전위가 언더컷·이끝 두께(4-1)·내접 간섭(4-4)·굽힘 강도(5-8)를, 보어가 림(D4)·핀(6-4)·니들(7-2)을 묶는다.',
     rows: [['D', 'num', 'stages.{i}.alpha', '{s}단 압력각 °', { st: 1, lk: 1 }], ['D', 'num', 'stages.{i}.xs', '{s}단 썬 전위', { st: 1 }], ['D', 'num', 'stages.{i}.xp', '{s}단 유성 전위', { st: 1 }],
-      ['D', 'chk', 'stages.{i}.autoRingShift', '{s}단 링 전위 자동', { st: 1 }], ['D', 'num', 'stages.{i}.xr', '{s}단 링 전위', { st: 1, if: (D, i) => !D.stages[i].autoRingShift }],
+      ['D', 'chk', 'stages.{i}.autoRingShift', '{s}단 링 전위 자동', { st: 1, lk: D => D.stages[0].r != null }], ['D', 'num', 'stages.{i}.xr', '{s}단 링 전위', { st: 1, lk: D => D.stages[0].r != null, if: (D, i) => !D.stages[i].autoRingShift }],
       ['D', 'num', 'stages.{i}.sunBore', '{s}단 썬 보어 mm (0 중실, 빈칸 자동)', { st: 1 }], ['D', 'num', 'stages.{i}.planetBore', '{s}단 유성 보어 mm (빈칸 자동)', { st: 1 }],
       ['D', 'num', 'stages.{i}.ringOD', '{s}단 링 외경 mm (빈칸 자동)', { st: 1, if: (D, i) => !(i === 1 && D.config.sharedRing) }],
       ['C', '외접·내접 중심거리 차', c => chv(c, '외접·내접 중심거리 차 (mm)', 4) + ' mm', 'a_w(S–P) − a_w(P–R)']],

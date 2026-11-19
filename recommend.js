@@ -27,18 +27,47 @@
     const d2 = R * mt, da2 = d2 - 2, ca = d2 * Math.cos(at) / da2;
     return ca < 1 && P / R - 1 + Math.tan(Math.acos(ca)) / Math.tan(at) >= -0.01;
   }
-  function stageOptions(m, R, ns, beta = 0) {
+  function stageOptions(m, R, ns, beta = 0, allowShift = false) {
     const out = [];
-    for (const n of ns) for (let S = 12; S <= R - 24; S++) {
-      if ((R - S) % 2) continue;
-      const P = (R - S) / 2;
-      if (P < 12 || (S + R) % n) continue;
-      if ((S + P) * Math.sin(Math.PI / n) <= P + 2.5) continue;
-      if (!internalOK(R, P, beta)) continue;
-      const [num, den] = frac(R + S, S);
-      out.push({ m, R, s: S, p: P, n, num, den });
+    for (const n of ns) for (let S = 12; S <= R - 24 + (allowShift ? 2 : 0); S++) {
+      if ((S + R) % n) continue;
+      const nominal = (R - S) / 2;
+      const first = Math.max(12, Math.ceil(nominal - (allowShift ? 1 : 0)));
+      const last = Math.floor(nominal + (allowShift ? 1 : 0));
+      for (let P = first; P <= last; P++) {
+        if (!allowShift && ((S + P) * Math.sin(Math.PI / n) <= P + 2.5 || !internalOK(R, P, beta))) continue;
+        const [num, den] = frac(R + S, S);
+        out.push({ m, R, s: S, p: P, n, num, den });
+      }
     }
     return out;
+  }
+
+  // Solve the individual shifts for the sampled working shift sum and
+  // ring coefficient. Shared stages must use the same physical ring.
+  const ringGrid = [0, .1, -.1, .2, -.2, .3, -.3, .4, -.4, .5, -.5];
+  const sumGrid = [0, ...Array.from({length:20}, (_, i) => [(i+1)/20, -(i+1)/20]).flat()];
+  function profileResolver(E, beta) {
+    const cache = new Map();
+    return (stage, xr) => {
+      const key = [stage.s, stage.p, stage.R, stage.n, xr].join('/');
+      if (cache.has(key)) return cache.get(key);
+      const st = { s: stage.s, p: stage.p, r: stage.R, n: stage.n, m: 1, b: 6, alpha: 20, beta };
+      let profile = null;
+      for (const sum of sumGrid) {
+        const xp = xr - E.ringShiftOffset(st, sum), xs = sum - xp;
+        if (!Number.isFinite(xp) || Math.max(Math.abs(xs), Math.abs(xp)) > .5000000001) continue;
+        const geo = E.geometry({ ...st, xs, xp, xr });
+        if (geo.errors.length || geo.parts.some(p => !(p.tipThickness >= .4))) continue;
+        if (!geo.checks.find(check => check.k === '외접 언더컷')?.ok) continue;
+        const gap = 2 * geo.meshes[0].center * Math.sin(Math.PI / st.n) - geo.parts[1].da;
+        if (!(gap >= .5)) continue;
+        profile = { xs, xp, xr };
+        break;
+      }
+      cache.set(key, profile);
+      return profile;
+    };
   }
 
   // ---- 간이 허용 토크 (그 단 캐리어 토크, N·m): 후보를 줄이는 데만 쓴다
@@ -52,15 +81,47 @@
   const ratioOf = stage => stage.num / stage.den;
   const candidateRatio = cand => cand.stages.reduce((ratio, stage) => ratio * ratioOf(stage), 1);
 
-  function searchCandidates(spec, addCandidate) {
+  function searchCandidates(spec, addCandidate, E = root.PGD) {
     const { ratio: target, ns, beta } = spec;
+    const secondCounts = spec.ns2?.length ? spec.ns2 : ns;
+    const counts = [...new Set([...ns, ...secondCounts])];
     const modes = spec.modes || { one: true, shared: true, sep: true };
     const tolerance = target * (spec.ratioTolPct ?? 0) / 100;
     const rounding = 16 * Number.EPSILON * target;
     const lo = target - tolerance - rounding, hi = target + tolerance + rounding;
     const minSun = spec.minSunPCD ?? 0, cosBeta = Math.cos(beta * RAD);
-    const canUseFirst = stage => stage.s * stage.m / cosBeta + 1e-9 >= minSun;
+    const canUseFirst = stage => ns.includes(stage.n) && stage.s * stage.m / cosBeta + 1e-9 >= minSun;
     const allStages = [];
+    const profileFor = spec.allowShift ? profileResolver(E, beta) : null;
+
+    function add(type, stages) {
+      if (!profileFor) {
+        addCandidate({ type, stages });
+        return;
+      }
+      if (type === 'shared') {
+        for (const xr of ringGrid) {
+          const first = profileFor(stages[0], xr);
+          if (!first) continue;
+          const second = profileFor(stages[1], xr);
+          if (!second) continue;
+          addCandidate({ type, stages: [{ ...stages[0], profile: first }, { ...stages[1], profile: second }] });
+          return;
+        }
+        return;
+      }
+      const resolved = [];
+      for (const stage of stages) {
+        let profile;
+        for (const xr of ringGrid) {
+          profile = profileFor(stage, xr);
+          if (profile) break;
+        }
+        if (!profile) return;
+        resolved.push({ ...stage, profile });
+      }
+      addCandidate({ type, stages: resolved });
+    }
 
     function pair(first, sorted, type) {
       const i1 = ratioOf(first), lower = lo / i1, upper = hi / i1;
@@ -72,19 +133,20 @@
       }
       for (let i = left; i < sorted.length && ratioOf(sorted[i]) <= upper; i++) {
         const second = sorted[i];
+        if (!secondCounts.includes(second.n)) continue;
         if (type === 'sep' && (second.m < first.m || (second.m === first.m && second.R === first.R))) continue;
-        addCandidate({ type, stages: [first, second] });
+        add(type, [first, second]);
       }
     }
 
     for (const m of spec.mods) {
       const { Rmin, Rmax } = ringRange(spec, m);
       for (let R = Rmin; R <= Rmax; R++) {
-        const stages = stageOptions(m, R, ns, beta);
+        const stages = stageOptions(m, R, counts, beta, spec.allowShift);
         const firsts = stages.filter(canUseFirst);
         if (modes.one) for (const stage of firsts) {
           const ratio = ratioOf(stage);
-          if (ratio >= lo && ratio <= hi) addCandidate({ type: 'one', stages: [stage] });
+          if (ratio >= lo && ratio <= hi) add('one', [stage]);
         }
         if (modes.shared) {
           stages.sort((a, b) => ratioOf(a) - ratioOf(b));
@@ -100,9 +162,9 @@
     }
   }
 
-  function candidates(spec) {
+  function candidates(spec, E) {
     const list = [];
-    searchCandidates(spec, cand => list.push(cand));
+    searchCandidates(spec, cand => list.push(cand), E);
     return list;
   }
 
@@ -121,6 +183,7 @@
     const T = E.defaultDesign(), D = clone(T);
     // 사용자의 요구·재료·윤활·하중 기준은 현재 설계에서 가져온다
     for (const k of ['req', 'materials', 'lube', 'loads', 'design', 'reliability', 'perf', 'mc', 'anim']) if (base[k]) D[k] = clone(base[k]);
+    D.req.ratio = spec.ratio;
     const k = spec.OD / OD0, kz = k, ns = cand.stages.length, beta = spec.beta;   // 축방향 부품(커버·판·보스)도 외경 비로
     const tag = cand.stages.map(s => `m${s.m} ${s.s}/${s.p}/${s.R}×${s.n}`).join(' + ');
     D.name = `추천 · i ${Number(candidateRatio(cand).toFixed(6))} · ${tag}`;
@@ -139,13 +202,14 @@
     D.stages = cand.stages.map((c, i) => {
       const out = i === ns - 1, tpl = T.stages[out ? 1 : 0], m = c.m, b = bs[i], mt = m / Math.cos(beta * RAD);
       // 유성 보어: 이뿌리원의 약 55 % (예제 비율), 니들 Dw ≈ 보어의 0.21, 핀 = 보어 − 2Dw
-      const dfP = mt * c.p - 2.5 * m, bore = Math.max(3, f05(0.55 * dfP)), nDw = Math.max(1, r05(0.21 * bore)), pin = Math.max(2, bore - 2 * nDw);
+      const dfP = mt * c.p + (2 * (c.profile?.xp || 0) - 2.5) * m, bore = Math.max(3, f05(0.55 * dfP)), nDw = Math.max(1, r05(0.21 * bore)), pin = Math.max(2, bore - 2 * nDw);
       const Z = Math.max(6, Math.floor(Math.PI * (pin + nDw) / (nDw * 1.05)));
       D.needle.push({ use: true, apply: true, Dw: nDw, Lw: null, Z, HRCpin: 60, HRCbore: 58 });
       const bscale = (Z * nDw * b) / (11 * 1.5 * tpl.b);
       const plate = Math.max(1.5, r05((out ? 2.9 : 4) * kz));
       return Object.assign(clone(tpl), {
-        s: c.s, p: c.p, n: c.n, m, beta, b, xs: 0, xp: 0, xr: 0, autoRingShift: true, sunBore: null, planetBore: bore, ringOD,
+        s: c.s, p: c.p, r: c.profile ? c.R : null, n: c.n, m, beta, b,
+        ...(c.profile || { xs: 0, xp: 0, xr: 0 }), autoRingShift: !c.profile, sunBore: null, planetBore: bore, ringOD,
         tipChamfer: [0, 0, 0],
         bearing: { name: `풀니들 Ø${nDw} × ${Z} (추정)`, C: Math.round(1600 * bscale), C0: Math.round(1500 * bscale), count: 1 },
         pin: out ? { d: pin, type: 'double', material: 'SUJ2', wall: plate, allow: 1200, holeMode: 'blind', depth: null }
@@ -217,7 +281,7 @@
       const bin = bins[c.type];
       bin.push(c);
       if (bin.length >= 2 * limit) bins[c.type] = trim(bin, limit);
-    });
+    }, E);
     return { total, counts, list: Object.keys(bins).flatMap(type => trim(bins[type], keep[type] ?? 0)) };
   }
 

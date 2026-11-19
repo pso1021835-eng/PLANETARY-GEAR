@@ -16,8 +16,11 @@ const set = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((o, 
 
 function compute() {
   ensureD();
-  // shared ring: stage-2 planet teeth, module and angles follow from stage 1 (R = S1 + 2·P1 = S2 + 2·P2) — keep the stored values in step so every view shows the auto value
-  if (D.config.sharedRing && D.config.stages > 1 && D.stages[1]) { const a = D.stages[0], b = D.stages[1]; b.p = (a.s + 2 * a.p - b.s) / 2; b.m = a.m; b.beta = a.beta; b.alpha = a.alpha; }
+  // Keep calculated fields in step with the engine for the shared-ring inputs.
+  if (D.config.sharedRing && D.config.stages > 1 && D.stages[1]) {
+    const b = D.stages[1], stage = E.sharedStage(D.stages[0], b);
+    for (const key of ['p','m','beta','alpha']) b[key] = stage[key];
+  }
   if (window.PGDChecks) { PGDChecks.ensure(D); PGDChecks.applyNeedles(D); }
   try { R = E.analyze(D); } catch (e) { R = { errors: ['계산 오류: ' + e.message], warns: [] }; console.error(e); }
   if (R?.ctx && !R.errors?.length) GOOD = { R, D: JSON.parse(JSON.stringify(D)) };
@@ -27,7 +30,7 @@ function compute() {
 // ------------------------------------------------------------------ inputs
 function num(path, label, opt = {}) {
   const v = get(path);
-  return `<label class="f">${label}<input type="number" step="${opt.step ?? 'any'}" ${opt.min != null ? `min="${opt.min}"` : ''} data-p="${path}" data-t="num" value="${v ?? ''}" ${opt.disabled ? 'disabled' : ''}></label>`;
+  return `<label class="f">${label}<input type="number" step="${opt.step ?? 'any'}" ${opt.min != null ? `min="${opt.min}"` : ''} data-p="${path}" data-t="num" value="${v ?? ''}" ${opt.placeholder != null ? `placeholder="${esc(opt.placeholder)}"` : ''} ${opt.disabled ? 'disabled' : ''}></label>`;
 }
 function sel(path, label, options, opt = {}) {
   const v = String(get(path));
@@ -112,7 +115,7 @@ function expRows(id) {
       const [g, type, path, label, o = {}] = r;
       for (const i of (o.st ? Array.from({ length: n }, (_, k) => k) : [0])) {
         if (o.if && !o.if(D, i)) continue;
-        out.push({ g, kind: 'in', type, path: path && path.replace('{i}', i), label: label.replace('{s}', i + 1), o, dis: !!(o.lk && i === 1 && D.config.sharedRing && n > 1) });
+        out.push({ g, kind: 'in', type, path: path && path.replace('{i}', i), label: label.replace('{s}', i + 1), o, dis: !!(o.lk && i === 1 && D.config.sharedRing && n > 1 && (typeof o.lk !== 'function' || o.lk(D))) });
       }
     } else if (r[0] === 'J') out.push({ g: 'D', kind: 'chk', key: r[1], label: r[2] });
     else out.push({ g: r[0] === 'P' ? 'A' : 'C', kind: r[0] === 'P' ? 'pred' : 'calc', label: r[1], fn: r[2], basis: r[3] });
@@ -591,7 +594,7 @@ function datasheetHTML() {
 }
 function swVars() {
   const L = window.PGD3D ? PGD3D.layout(R, D) : null, out = [];
-  R.ctx.stages.forEach((s, i) => { const n = i + 1, st = s.st; out.push(`"m${n}" = ${st.m}`, `"zs${n}" = ${st.s}`, `"zp${n}" = ${st.p}`, `"zr${n}" = ${st.s + 2 * st.p}`, `"b${n}" = ${st.b}`, `"beta${n}" = ${st.beta}`, `"np${n}" = ${st.n}`, `"xs${n}" = ${st.xs}`, `"xp${n}" = ${st.xp}`, `"pin_d${n}" = ${st.pin.d}`); if (L) out.push(`"orbit_r${n}" = ${fmt(L.S[i].a, 4)}`, `"sun_bore${n}" = ${fmt(L.S[i].sunBore, 3)}`, `"planet_bore${n}" = ${fmt(L.S[i].planetBore, 3)}`); });
+  R.ctx.stages.forEach((s, i) => { const n = i + 1, st = s.st; out.push(`"m${n}" = ${st.m}`, `"zs${n}" = ${st.s}`, `"zp${n}" = ${st.p}`, `"zr${n}" = ${s.geo.r}`, `"b${n}" = ${st.b}`, `"beta${n}" = ${st.beta}`, `"np${n}" = ${st.n}`, `"xs${n}" = ${st.xs}`, `"xp${n}" = ${st.xp}`, `"pin_d${n}" = ${st.pin.d}`); if (L) out.push(`"orbit_r${n}" = ${fmt(L.S[i].a, 4)}`, `"sun_bore${n}" = ${fmt(L.S[i].sunBore, 3)}`, `"planet_bore${n}" = ${fmt(L.S[i].planetBore, 3)}`); });
   if (L) out.push(`"ring_od" = ${fmt(L.ringOD, 3)}`, `"housing_od" = ${fmt(2 * L.housR, 3)}`, `"flange_od" = ${fmt(2 * L.flangeR, 3)}`, `"hollow_d" = ${fmt(2 * L.hollowR, 3)}`, `"xroller_dp" = ${D.outBearing.dp}`, `"bolt_n" = ${D.housing.boltN}`, `"bolt_m" = ${D.housing.boltD}`);
   return out.join('\n');
 }
@@ -603,7 +606,7 @@ function cqScript() {
     `# ${k}단`, `parts["S${k}"] = cq.Workplane("XY").workplane(offset=${n(x.z0)}).circle(${n(st.m * st.s / 2)}).circle(${n((x.sunBore || 0) / 2 || 0.01)}).extrude(${n(st.b)})`,
     `for j in range(${st.n}):`, `    a = j * 360 / ${st.n}`,
     `    parts[f"P${k}_{j+1}"] = (cq.Workplane("XY").workplane(offset=${n(x.z0)}).center(${n(x.a)}, 0).circle(${n(st.m * st.p / 2)}).circle(${n(x.planetBore / 2)}).extrude(${n(st.b)}).rotate((0,0,0),(0,0,1),a))`); });
-  g.push(`parts["R"] = cq.Workplane("XY").circle(${n(L.ringOD / 2)}).circle(${n(S[0].st.m * (S[0].st.s + 2 * S[0].st.p) / 2)}).extrude(${n(L.gearEnd)})`,
+  g.push(`parts["R"] = cq.Workplane("XY").circle(${n(L.ringOD / 2)}).circle(${n(S[0].geo.parts[2].d / 2)}).extrude(${n(L.gearEnd)})`,
     `parts["housing"] = cq.Workplane("XY").workplane(offset=${n(L.zIn)}).circle(${n(L.housR)}).circle(${n(L.ringOD / 2)}).extrude(${n(L.zFlange[1] - L.zIn)})`,
     'asm = cq.Assembly()', 'for k, v in parts.items(): asm.add(v, name=k)', 'asm.save("reducer.step")');
   return g.join('\n');
@@ -1015,7 +1018,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=pr38-1');
+    if (!worker) worker = new Worker('worker.js?v=shift-gear-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });
@@ -1127,7 +1130,7 @@ function buildIssues() {
 
 function overviewStagePanel() {
   const stages = nst();
-  const geometries = stages.map(st => E.geometry(st));
+  const geometries = stages.map((st,i) => R?.ctx?.stages[i]?.geo || E.geometry(st));
   const cards = stages.map((st, i) => {
     const g = geometries[i], shared = i > 0 && D.config.sharedRing;
     const path = 'stages.' + i + '.';
@@ -1136,8 +1139,9 @@ function overviewStagePanel() {
       2 * g.meshes[0].center * Math.sin(Math.PI / n) > g.parts[1].da);
     const ratio = Number.isFinite(g.ratio) ? fmt(g.ratio, 3) + ' : 1' : '—';
     return `<section class="card"><h3>${i + 1}단 기어 제원</h3><div class="ov-fields">
-      ${num(path+'s','썬 잇수',{step:1,min:1})}${num(path+'p','유성 잇수',{step:1,min:1,disabled:shared})}
-      <label class="f">링 잇수 (자동)<input readonly value="${fmt(st.s + 2 * st.p,0)}"></label>
+      ${num(path+'s','썬 잇수',{step:1,min:1})}${num(path+'p','유성 잇수',{step:1,min:1,disabled:shared && D.stages[0].r == null})}
+      ${shared ? `<label class="f">링 잇수 (공유)<input readonly value="${fmt(E.ringTeeth(D.stages[0]),0)}"></label>`
+        : num(path+'r','링 잇수 (빈칸 = 자동)',{step:1,min:1,placeholder:st.s + 2 * st.p})}
       ${num(path+'beta','비틀림각 (°)',{disabled:shared})}${num(path+'m','치직각 모듈 (mm)',{min:.01,disabled:shared})}
       ${num(path+'b','유성 치폭 (mm)',{min:.01})}${num(path+'n','유성 개수',{min:1,step:1})}</div>
       <p class="note">배치 가능 개수 (2~8개) · ${candidates.length ? candidates.map(n => `<button type="button" class="btn ${n===st.n?'on':''}" data-ov-count="${i}/${n}">${n}</button>`).join(' ') : '없음'}</p>
@@ -1161,7 +1165,7 @@ function bindOverviewSpecs(m) {
     D.config.stages = base.config.stages; D.config.sharedRing = base.config.sharedRing;
     base.stages.forEach((s,i) => {
       D.stages[i] ??= JSON.parse(JSON.stringify(s));
-      for (const key of ['s','p','m','beta','alpha','n','b','bSun','bRing','xs','xp','xr']) D.stages[i][key] = s[key];
+      for (const key of ['s','p','r','m','beta','alpha','n','b','bSun','bRing','xs','xp','xr','autoRingShift']) D.stages[i][key] = s[key];
     });
     changed();
   };
@@ -1362,7 +1366,7 @@ $('#bRecommend').onclick = () => {
   let L = null; try { if (R?.ctx && !R.errors?.length) L = PGD3D.layout(R, D); } catch (e) { L = null; }
   const v = (id, x) => { const el = $('#' + id); if (el.value === '') el.value = x; };
   v('rOD', L ? Math.round(2 * Math.max(L.housR, L.flangeR) * 10) / 10 : 68); v('rH', L ? Math.round((L.zFlange[1] - L.zIn) * 10) / 10 : 54);
-  v('rRatio', R?.ratio || 9); v('rMods', [...new Set(D.stages.map(s => s.m))].join(', ')); v('rBeta', last.beta);
+  v('rRatio', R?.ratio ? Math.max(3, Math.round(R.ratio)) : 9); v('rMods', [...new Set(D.stages.map(s => s.m))].join(', ')); v('rBeta', last.beta);
   $('#recDlg').showModal();
 };
 const recFrac = st => { const n = st.R + st.s, d = st.s, g = (a, b) => b ? g(b, a % b) : a, k = g(n, d); return d / k === 1 ? `${n / k}` : `${n / k}/${d / k}`; };
@@ -1370,9 +1374,10 @@ $('#recGo').onclick = async () => {
   const num = id => +$('#' + id).value, out = $('#recOut');
   const mods = [...new Set($('#rMods').value.split(/[\s,;/]+/).map(Number).filter(x => x > 0))].sort((a, b) => a - b);
   const ns = [...$('#rNs').querySelectorAll('input:checked')].map(x => +x.value);
+  const ns2 = [...$('#rNs2').querySelectorAll('input:checked')].map(x => +x.value);
   const modes = Object.fromEntries([...$('#rModes').querySelectorAll('input')].map(x => [x.value, x.checked]));
   const bIn = $('#rB').value.trim();
-  const spec = { OD: num('rOD'), H: num('rH'), ratio: num('rRatio'), ratioTolPct: num('rRatioTol'), minSunPCD: num('rSunPCD'), mods, beta: num('rBeta'), b: bIn === '' ? null : +bIn, ns, modes };
+  const spec = { OD: num('rOD'), H: num('rH'), ratio: num('rRatio'), ratioTolPct: num('rRatioTol'), minSunPCD: num('rSunPCD'), mods, beta: num('rBeta'), b: bIn === '' ? null : +bIn, ns, ns2, modes, allowShift: $('#rShift').checked };
   const err = !(spec.OD > 0 && spec.H > 0) ? '외경과 높이를 넣어 주세요.' : !(spec.ratio > 2) ? '목표 감속비는 2보다 큰 값으로 넣어 주세요.'
     : !(spec.ratioTolPct >= 0 && spec.ratioTolPct <= 100) ? '감속비 허용 편차는 0~100%로 넣어 주세요.'
     : !(spec.minSunPCD >= 0) ? '1단 썬 PCD는 0 이상으로 넣어 주세요.'
@@ -1394,9 +1399,10 @@ $('#recGo').onclick = async () => {
   if (!RS.total) { out.innerHTML = `<p class="bad">감속비 ${ratioCondition}${sunCondition} 조건에 맞는 잇수 조합이 없습니다.</p>`; return; }
   if (!ok.length) { out.innerHTML = '<p class="bad">조합은 있으나 모두 외형·간섭 조건에서 제외됐습니다.</p>' + sum; return; }
   const typeName = { one: '1단', shared: '2단 링 공유', sep: '2단 링 분리' };
-  const stg = r => r.stages.map((t, i) => `${r.stages.length > 1 ? `${i + 1}단 ` : ''}m${t.m} · S${t.s}/P${t.p}/R${t.R} ×${t.n} · b ${fmt(r.b[i], 1)} · i ${recFrac(t)}`).join('<br>');
+  const shiftLine = t => t.profile ? ` <small class="note">xS ${fmt(t.profile.xs, 4)} · xP ${fmt(t.profile.xp, 4)} · xR ${fmt(t.profile.xr, 4)}</small>` : '';
+  const stg = r => r.stages.map((t, i) => `${r.stages.length > 1 ? `${i + 1}단 ` : ''}m${t.m} · S${t.s}/P${t.p}/R${t.R} ×${t.n} · b ${fmt(r.b[i], 1)} · i ${recFrac(t)}${shiftLine(t)}`).join('<br>');
   const caps = r => r.stageCap.map((cc, i) => `${r.stages.length > 1 ? `${i + 1}단 ` : ''}<b>${fmt(cc.out, 1)}</b>${r.stages.length > 1 ? ` <small class="note">(캐리어 ${fmt(cc.own, 1)})</small>` : ''}`).join('<br>');
-  out.innerHTML = `<div class="scroll"><table><tr><th>순위</th><th>구성</th><th>실제 감속비<br><small>목표 대비</small></th><th class="l">모듈 · 잇수 · 유성 개수 · 치폭 · 단 감속비</th><th>1단 썬 PCD<br><small>mm</small></th><th>단별 허용 토크<br><small>N·m · 출력축 환산</small></th><th>감속기 허용 토크<br><small>N·m · 출력</small></th><th class="l">지배 부위</th><th>외경 × 높이</th><th></th></tr>
+  out.innerHTML = `<div class="scroll"><table><tr><th>순위</th><th>구성</th><th>실제 감속비<br><small>목표 대비</small></th><th class="l">모듈 · 잇수 · 유성 개수 · 치폭 · 단 감속비 · 전위</th><th>1단 썬 PCD<br><small>mm</small></th><th>단별 허용 토크<br><small>N·m · 출력축 환산</small></th><th>감속기 허용 토크<br><small>N·m · 출력</small></th><th class="l">지배 부위</th><th>외경 × 높이</th><th></th></tr>
     ${ok.map((r, k) => `<tr class="${k === 0 ? 'gov' : ''}"><td>${k + 1}</td><td>${typeName[r.type]}</td><td><b>${fmt(r.ratio, 6)}</b><br><small class="note">${fmt(100 * (r.ratio - spec.ratio) / spec.ratio, 3)}%</small></td><td class="l">${stg(r)}</td><td>${fmt(r.stages[0].s * r.stages[0].m / Math.cos(spec.beta * Math.PI / 180), 3)}</td><td>${caps(r)}</td><td><b class="${r.cap < D.req.Trated ? 'bad' : 'good'}">${fmt(r.cap, 1)}</b>${r.fails ? `<br><small class="bad">미달 ${r.fails}</small>` : ''}</td><td class="l note">${esc(r.gov)}</td><td>Ø${fmt(r.OD, 1)} × ${fmt(r.H, 1)}</td><td><button class="btn" type="button" data-rec="${REC.indexOf(r)}">적용</button></td></tr>`).join('')}</table></div>
     <p class="note">요구 조건: 정격 ${D.req.Trated} N·m · 수명 ${D.req.lifeH} h · ${D.req.rpm} rpm · SH ${D.req.SH} · SF ${D.req.SF} · ${BASIS()}. 미달 = 판정 항목(효율·백래시·정적 등) 중 기준 미달 수. 단 감속비는 분수로 표시합니다.</p>${sum}`;
   out.querySelectorAll('[data-rec]').forEach(b => b.onclick = () => { const r = REC[+b.dataset.rec]; D = JSON.parse(JSON.stringify(r.D)); $('#dname').value = D.name; $('#recDlg').close(); changed(); });

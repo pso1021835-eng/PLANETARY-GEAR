@@ -49,7 +49,7 @@
   // ---------------------------------------------------------------- helpers on R
   const stg = R => R?.ctx?.stages || [];
   const rows = R => R?.rated?.rows || [];
-  const ratioOf = s => 1 + (s.st.s + 2 * s.st.p) / s.st.s;
+  const ratioOf = s => s.geo.ratio;
   // peak torques along the train (N·m): sun i, carrier i
   function peakTorques(R, D) {
     const S = stg(R), T = D.req.Tpeak; const car = [], sun = []; let t = T;
@@ -102,7 +102,7 @@
     // 2-4 / 8-2 링–하우징 결합
     const ringType = D.struct.ringHousing, rf = D.struct.ringFit;
     if (L) {
-      const m = S[0].st.m, zr = S[0].st.s + 2 * S[0].st.p, a = (m * zr + 2.5 * m) / 2, b = L.ringOD / 2, c = L.housR;
+      const a = S[0].geo.parts[2].df / 2, b = L.ringOD / 2, c = L.housR;
       const len = L.shared ? L.gearEnd : S[0].st.b, Tring = Math.max(...PT.ring) * (L.shared ? 1 : 1);
       const need = 1.5 * (L.shared ? PT.ring.reduce((s, x) => Math.max(s, x), 0) : Tring);
       if (ringType === 'integral') put('2-4', { val: '하우징 일체 (강 하우징 · 링 가공 = 하우징 가공)', ok: true }), put('8-2', { val: '일체 — 체결 없음', ok: true });
@@ -224,12 +224,12 @@
       const th = [];
       S.forEach((s, i) => {
         const sb = L.S[i].sunBore, pb = L.S[i].planetBore, m = s.st.m, h = 2.25 * m;
-        const dfS = m * s.st.s / Math.cos(s.st.beta * PI / 180) - 2.5 * m, dfP = m * s.st.p / Math.cos(s.st.beta * PI / 180) - 2.5 * m;
+        const dfS = s.geo.parts[0].df, dfP = s.geo.parts[1].df;
         if (sb > 0) th.push([`S${i + 1} 림`, (dfS - sb) / 2, 1.2 * h]);
         if (pb > 0) th.push([`P${i + 1} 림`, (dfP - pb) / 2, 1.2 * h]);
       });
-      const m0 = S[0].st.m, zr = S[0].st.s + 2 * S[0].st.p;
-      th.push(['링 림', (L.ringOD - (m0 * zr + 2.5 * m0)) / 2, 3.5 * m0], ['하우징 벽', L.housR - L.ringOD / 2, .8]);
+      const m0 = S[0].st.m;
+      th.push(['링 림', (L.ringOD - S[0].geo.parts[2].df) / 2, 3.5 * m0], ['하우징 벽', L.housR - L.ringOD / 2, .8]);
       (R.carrierPin || []).forEach((c, i) => { if (c.geometry?.wall) th.push([`C${i + 1} 판 (자동)`, c.geometry.wall, 1]); if (c.geometry?.pocket) th.push([`C${i + 1} 포켓 폭`, c.geometry.pocket, 2]); });
       const bad = th.filter(([, v, mn]) => v < mn - 1e-3);
       put('D4', { kind: 'calc', val: bad.length ? '부족: ' + bad.map(([n, v, mn]) => `${n} ${f(v, 2)} < ${f(mn, 2)} mm`).join(' · ') : `최소 두께 통과 (${th.length}곳)`, ok: !bad.length, th });
@@ -298,8 +298,8 @@
     const dm = D.dfm, rate = dm.rate / 60, items = [];   // 원/분
     // [가공 분, 셋업 분, 열처리 여부, 소재] per part kind (가정)
     const T = id => {
-      const st = R.ctx.stages[Number(id.replace(/\D/g, '') || 1) - 1]?.st;
-      const tooth = st ? (id.startsWith('sun') ? st.s : id.startsWith('planet') ? st.p : st.s + 2 * st.p) * st.b : 0;
+      const stage = R.ctx.stages[Number(id.replace(/\D/g, '') || 1) - 1];
+      const tooth = stage ? (id.startsWith('sun') ? stage.st.s : id.startsWith('planet') ? stage.st.p : stage.geo.r) * stage.st.b : 0;
       if (/^sun/.test(id)) return [6 + .02 * tooth * (dm.proc.sun === 'hob' ? 1 : 1.5), 45, 1, 'steel'];
       if (/^planet/.test(id)) return [(4 + .02 * tooth) * (dm.proc.planet === 'hob' ? .5 : 1), 45, 1, 'steel'];   // 스택 호빙
       if (/^ring/.test(id)) return [10 + tooth * ({ shape: .06, skive: .02, broach: .005, wire: .15 }[dm.proc.ring] || .06), 90, 1, 'steel'];

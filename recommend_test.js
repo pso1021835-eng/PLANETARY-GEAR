@@ -12,3 +12,18 @@ const types = new Set(ok.map(r => r.type));
 console.log(`recommend: 정수비 조합 ${out.total} (${JSON.stringify(out.counts)}), 정밀 ${out.checked}, 적합 ${ok.length}, 1위 ${ok[0]?.type} ${ok[0]?.stages.map(s => `m${s.m} ${s.s}/${s.p}/${s.R}×${s.n}`).join(' + ')} ${ok[0]?.cap.toFixed(1)} N·m`);
 if (!ok.length || !exact || !sorted || !fit || !types.has('shared') || !types.has('sep')) { console.log('FAIL', { exact, sorted, fit, types: [...types] }); process.exit(1); }
 console.log('recommend test passed');
+
+const shifted = Rc.runSync(E.defaultDesign(), {
+  OD: 80, H: 72, ratio: 22, mods: [0.4, 0.6, 0.8], beta: 12, ns: [3], ns2: [5],
+  modes: { shared: true }, allowShift: true, keep: { shared: 6 }
+}, E, globalThis.PGD3D.layout).res;
+const shiftedRow = shifted.find(row => row.ok && row.stages.some(s => s.R !== s.s + 2 * s.p));
+if (!shiftedRow) throw new Error('Expected a feasible nonstandard tooth-count candidate');
+const restored = E.prepare(JSON.parse(JSON.stringify(shiftedRow.D)));
+const [first, second] = restored.stages;
+if (restored.errors.length || Math.abs(restored.ratio - 22) > 1e-12 ||
+    first.st.n !== 3 || second.st.n !== 5 || first.geo.r !== second.geo.r || first.st.xr !== second.st.xr ||
+    restored.stages.some(({st, geo}) => (st.s + geo.r) % st.n !== 0 || Math.abs(geo.meshes[0].center - geo.meshes[1].center) > 1e-8)) {
+  throw new Error('Applying the recommendation must retain tooth counts, assembly phase and shared-ring geometry');
+}
+console.log('profile shift recommendation test passed');
