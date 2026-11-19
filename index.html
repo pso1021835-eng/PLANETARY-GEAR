@@ -408,6 +408,19 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 .st-panel .flash{outline:2px solid var(--acc);outline-offset:1px;transition:outline-color .8s}
 @media (max-width:1100px){.studio{grid-template-columns:1fr}.st-list,.st-panel{position:static;max-height:none}.st-list{display:flex;flex-wrap:wrap;gap:4px}.st-it{width:auto}.st-g,.st-list .note,.st-h{display:none}}
 </style>
+<style>
+.ov-workbench{display:grid;grid-template-columns:minmax(318px,2fr) minmax(0,3fr);gap:16px;align-items:start}
+.ov-workbench .card{min-width:0;margin:0 0 12px}
+.ov-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.ov-fields input{width:100%;min-width:0}
+.ov-scroll{overflow:auto}
+.ov-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
+.ov-controls .rng{display:inline-flex;align-items:center;gap:6px}
+.ov-controls .rng input{max-width:74px}
+.ov-live details{margin-top:12px}
+.ov-live #viewer.full{height:clamp(360px,48vw,640px);min-height:0}
+@media(max-width:830px){.ov-workbench{grid-template-columns:minmax(0,1fr)}.ov-live #viewer.full{height:clamp(340px,72vw,540px)}}
+</style>
 </head>
 <body>
 <header>
@@ -454,7 +467,7 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="carrier-geometry.js?v=pr28-1"></script>
 <script src="engine.js?v=pr38-1"></script>
-<script src="viewer3d.js?v=pr37-1"></script>
+<script src="viewer3d.js?v=overview-1"></script>
 <script src="recommend.js?v=pr39-1"></script>
 <script src="drawings.js?v=pr19-1"></script>
 <script src="checks.js?v=pr33-1"></script>
@@ -462,6 +475,6 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 <script src="map.js?v=pr14-1"></script>
 <script src="items.js?v=pr36-1"></script>
 <script src="groups.js?v=pr34-1"></script>
-<script defer src="app.js?v=pr39-1"></script>
+<script defer src="app.js?v=overview-1"></script>
 </body>
 </html>

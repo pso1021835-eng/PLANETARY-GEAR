@@ -255,7 +255,7 @@
     // Stack each stage from its assembled gear, carrier, pin and boss extents.
     let z = 0; const zStart = [];
     S.forEach((x, i) => {
-      x.z0 = i ? z + .6 - x.carrier.axial[0] : 0;
+      x.z0 = i ? z + Math.max(0, D.geom?.stageGap ?? .6) - x.carrier.axial[0] : 0;
       zStart.push(x.z0);
       z = x.z0 + x.carrier.axial[1];
     });
@@ -605,7 +605,7 @@
     blob.rotation.x = -Math.PI / 2; blob.position.y = ground.position.y + .05; blob.scale.set(maxR * 7, len * 2.4 + maxR * 4, 1); blob.renderOrder = -1; scene.add(blob);
     // floor grid: fine amber lines fading with distance, a lit patch under the model
     const gridSize = Math.ceil(maxR * 14 / 10) * 10, grid = new TH.GridHelper(gridSize, gridSize / 5, 0xd6a05a, 0xd6a05a);
-    grid.material.transparent = true; grid.material.opacity = .13; grid.material.depthWrite = false; grid.material.toneMapped = false; grid.position.y = ground.position.y + .02; grid.renderOrder = -2; grid.raycast = () => { }; scene.add(grid);
+    grid.material.transparent = true; grid.material.opacity = .13; grid.material.depthWrite = false; grid.material.toneMapped = false; grid.position.y = ground.position.y + .02; grid.renderOrder = -2; grid.raycast = () => { }; scene.add(grid); grid.visible = prefs.grid !== false;
     scene.fog = new TH.Fog(new TH.Color(prefs.bg).multiplyScalar(.7).getHex(), Math.max(maxR * 2, len) * 5, Math.max(maxR * 2, len) * 14);
     // construction axis: thin dash-dot centre line through the whole assembly (stretches with the explode)
     const axisMat = new TH.LineDashedMaterial({ color: 0xd6a05a, dashSize: 3, gapSize: 1.6, transparent: true, opacity: .5, toneMapped: false });
@@ -660,16 +660,28 @@
         const c = new TH.Mesh(ms.geometry, cm); c.raycast = () => { }; c.renderOrder = 1; ms.add(c); caps.push(c);
       });
     }
-    function setOpacity(id, v) {
+    function setOpacity(id, v, persist = true) {
       const list = id ? meshesOf(id) : meshes;
       list.forEach(ms => { const m = ms.material; m.opacity = v; m.transparent = v < .999; m.depthWrite = v >= .95; m.needsUpdate = true;
         ms.children.forEach(c => { if (c.userData.edge) c.material.opacity = c.material.userData.op * v; }); });
+      if (persist && full) {
+        prefs.opacity ??= {};
+        for (const key of id ? [id] : parts.keys()) prefs.opacity[key] = v;
+        savePrefs();
+        opt.onOpacity?.();
+      }
     }
     function meshesOf(id) { return meshes.filter(m => m.userData.partId === id); }
     function setVisible(id, v) { meshesOf(id).forEach(m => m.visible = v); }
     function isolate(id) { meshes.forEach(m => m.visible = m.userData.partId === id); }
     function showAll() { meshes.forEach(m => m.visible = true); }
     applyShade();
+    if (full) {
+      for (const key of parts.keys()) {
+        const opacity = prefs.opacity?.[key] ?? (/^(ring|carrier)/.test(key) ? .28 : 1);
+        setOpacity(key, opacity, false);
+      }
+    }
     if (opt.initialView?.section) setSection(true);
 
     // ---- highlight
@@ -815,9 +827,22 @@
     const nLayers = 5, stagger = .12;
     let onScreen = true, slowFrames = 0, shadowTick = 0, curDPR = DPR, wasActive = true;
     const io = new IntersectionObserver(es => { onScreen = es[0].isIntersecting; }, { threshold: 0 }); io.observe(host);
+    let frameDue = 0, sampleStart = performance.now(), sampleCount = 0;
     function frame(now) {
       raf = requestAnimationFrame(frame);
-      if (!onScreen || document.hidden) { last = now; return; }
+      if (!onScreen || document.hidden) { last = sampleStart = now; sampleCount = 0; frameDue = 0; return; }
+      const limit = prefs.frameCap;
+      if (limit > 0) {
+        if (now + .5 < frameDue) return;
+        frameDue = Math.max(frameDue + 1000 / limit, now + 500 / limit);
+      }
+      if (opt.onFrameRate) {
+        sampleCount++;
+        if (now - sampleStart >= 1000) {
+          opt.onFrameRate(Math.round(1000 * sampleCount / (now - sampleStart)));
+          sampleStart = now; sampleCount = 0;
+        }
+      }
       const rawDt = (now - last) / 1000, dt = Math.min(.05, rawDt); last = now;
       // adaptive resolution: drop pixel ratio when frames stay slow, restore when fast again
       if (rawDt > .034) slowFrames++; else if (rawDt < .02) slowFrames = Math.max(0, slowFrames - 1);
@@ -867,6 +892,10 @@
       scene.environment?.dispose?.(); renderer.dispose(); renderer.domElement.remove(); ui.remove();
     }
     return {
+      axialView(side) { resetView(); vel.az = vel.el = 0; goal.el = 0; goal.az = side > 0 ? 0 : Math.PI; },
+      setFrameCap(limit) { prefs.frameCap = limit; frameDue = 0; savePrefs(); },
+      setBackground(color) { prefs.bg = color; paintBg(); savePrefs(); },
+      setGrid(on) { grid.visible = prefs.grid = on; savePrefs(); },
       dispose, select, focus, resetView, setExplode, setSection, setIssues, setOpacity, showAll, setVisible, isolate,
       get state() { return st; }, getView: () => ({ az: goal.az, el: goal.el, dist: goal.dist, target: goal.target.toArray(), explode: st.explodeTarget, theta: st.theta, playing: st.playing, section: st.section, secAngle: st.secAngle, selected: st.selected }), setSectionAngle: a => { st.secAngle = a; }, togglePlay: () => (st.playing = !st.playing),
       partIds: () => [...parts.keys()]

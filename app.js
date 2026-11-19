@@ -1124,31 +1124,90 @@ function buildIssues() {
   return list;
 }
 
+
+function overviewStagePanel() {
+  const stages = nst();
+  const geometries = stages.map(st => E.geometry(st));
+  const cards = stages.map((st, i) => {
+    const g = geometries[i], shared = i > 0 && D.config.sharedRing;
+    const path = 'stages.' + i + '.';
+    const candidates = Array.from({length: 7}, (_, j) => j + 2).filter(n =>
+      g.parts.length && (st.s + g.r) % n === 0 &&
+      2 * g.meshes[0].center * Math.sin(Math.PI / n) > g.parts[1].da);
+    const ratio = Number.isFinite(g.ratio) ? fmt(g.ratio, 3) + ' : 1' : '—';
+    return `<section class="card"><h3>${i + 1}단 기어 제원</h3><div class="ov-fields">
+      ${num(path+'s','썬 잇수',{step:1,min:1})}${num(path+'p','유성 잇수',{step:1,min:1,disabled:shared})}
+      <label class="f">링 잇수 (자동)<input readonly value="${fmt(st.s + 2 * st.p,0)}"></label>
+      ${num(path+'beta','비틀림각 (°)',{disabled:shared})}${num(path+'m','치직각 모듈 (mm)',{min:.01,disabled:shared})}
+      ${num(path+'b','유성 치폭 (mm)',{min:.01})}${num(path+'n','유성 개수',{min:1,step:1})}</div>
+      <p class="note">배치 가능 개수 (2~8개) · ${candidates.length ? candidates.map(n => `<button type="button" class="btn ${n===st.n?'on':''}" data-ov-count="${i}/${n}">${n}</button>`).join(' ') : '없음'}</p>
+      <h4>단 감속비 ${ratio}</h4>
+      ${g.parts.length ? `<div class="ov-scroll"><table><thead><tr><th>기어</th><th>잇수</th><th>PCD</th><th>이끝원경</th><th>이뿌리원경</th><th>리드</th></tr></thead>
+      <tbody>${g.parts.map(p => `<tr><td>${esc(p.name)}</td><td>${p.z}</td><td>${fmt(p.d,3)}</td><td>${fmt(p.da,3)}</td><td>${fmt(p.df,3)}</td><td>${g.br ? fmt(Math.PI*p.d/Math.tan(g.br),3) : '∞'}</td></tr>`).join('')}</tbody></table></div>
+      <p class="note">직경 mm · 리드 mm/rev · 유성핀 배치 PCD Ø${fmt(2*g.meshes[0].center,3)} mm</p>` : ''}
+      ${g.errors.map(e => `<p class="bad">${esc(e)}</p>`).join('')}</section>`;
+  }).join('');
+  return `<div class="ov-spec"><div class="card"><h3>단별 기어 제원</h3>
+    ${stages.length > 1 ? chk('config.sharedRing','1·2단 링기어 공유') : ''}
+    <p>총 감속비 <b>${fmt(geometries.reduce((r,g)=>r*g.ratio,1),3)} : 1</b></p>
+    <button class="btn" type="button" id="ovDrawing">도면 기어제원 불러오기</button></div>${cards}</div>`;
+}
+function bindOverviewSpecs(m) {
+  m.querySelectorAll('[data-ov-count]').forEach(b => b.onclick = () => {
+    const [i,n] = b.dataset.ovCount.split('/').map(Number); D.stages[i].n = n; changed();
+  });
+  m.querySelector('#ovDrawing').onclick = () => {
+    const base = E.defaultDesign();
+    D.config.stages = base.config.stages; D.config.sharedRing = base.config.sharedRing;
+    base.stages.forEach((s,i) => {
+      D.stages[i] ??= JSON.parse(JSON.stringify(s));
+      for (const key of ['s','p','m','beta','alpha','n','b','bSun','bRing','xs','xp','xr']) D.stages[i][key] = s[key];
+    });
+    changed();
+  };
+}
+function overviewSpeedRows() {
+  let input = +D.anim.rpm || 0;
+  const signed = v => (v > 0 ? '+' : '') + fmt(v,1);
+  return R.ctx.stages.map(({st,geo},i) => {
+    const carrier = input/geo.ratio, planet = carrier - (input-carrier)*st.s/st.p;
+    const row = `<tr><td>${i+1}단</td><td>${signed(input)}</td><td>${signed(planet)}</td><td>0</td><td>${signed(carrier)}</td></tr>`;
+    input = carrier; return row;
+  }).join('');
+}
+
 function overviewView() {
-  if (!R || R.errors?.length) return head('3D · 종합판정', '입력에 오류가 있어 계산하지 못했습니다.') + errBox();
+  if (!R || R.errors?.length) return head('3D · 종합판정', '기어 제원을 수정하면 3D 모델과 판정을 다시 계산합니다.') + '<div class="ov-workbench">' + overviewStagePanel() + '<div>' + errBox() + '</div></div>';
   const issues = buildIssues();
   return `<div class="ov-head"><h2>1. 종합판정</h2><p class="lead">실측값 없이 규격식·물리 모델·명시된 가정으로 계산한 감속기입니다. 붉은 번호는 기준 미달 부위, 노란 번호는 주의 부위입니다. 부품을 누르면 상세가, 번호를 누르면 원인과 대책이 열립니다. 드래그 회전 · Shift+드래그 이동 · 휠 확대 · 더블클릭 기본 시점 · 우클릭 메뉴(배경: 보기 설정 / 부품: 투명·분해·단면·숨기기).</p></div>
-    <div id="viewer" class="full">
-      <div class="v3-bar" role="toolbar" aria-label="3D 보기">
+    <div class="ov-workbench">${overviewStagePanel()}<section class="card ov-live"><h3>단별 유성 배치 3D</h3><div id="viewer" class="full">
+      <div class="v3-bom closed" id="bom"></div>
+      <div class="v3-card" id="pcard" hidden></div>
+      <div class="v3-pop" id="ipop" hidden></div>
+    </div>
+      <div class="ov-controls" role="toolbar" aria-label="3D 보기">
         <button class="btn" id="tExp">분해</button>
         <label class="rng">분해 정도<input type="range" id="tExpR" min="0" max="100" value="0"></label>
         <span class="sep"></span>
         <button class="btn" id="tSec">단면</button>
         <label class="rng">단면 각도<input type="range" id="tSecA" min="0" max="180" value="0"></label>
         <span class="sep"></span>
-        <button class="btn" id="tHome">기본 시점</button>
+        <button class="btn" id="ovCarrier">캐리어·핀 숨기기</button><button class="btn" data-axial="1">상면</button><button class="btn" data-axial="-1">하면</button><button class="btn" id="tHome">기본 시점</button>
         <button class="btn" id="tPlay">회전 정지</button>
         <span class="sep"></span>
         <label class="rng spd">입력 rpm<input type="number" id="tRpm" min="0" step="any" value="${D.anim.rpm}"></label>
         <label class="rng spd">배속<select id="tSlow">${[[1, '1× 실속도'], [.2, '0.2×'], [.05, '0.05×'], [.02, '0.02×'], [.005, '0.005×']].map(([v, l]) => `<option value="${v}" ${+D.anim.slow === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <span class="note spdOut" id="tSpd"></span>
         <span class="sep"></span>
-        <button class="btn" id="tBom" aria-expanded="true">BOM</button>
+        <button class="btn" id="tBom" aria-expanded="false">BOM</button>
       </div>
-      <div class="v3-bom" id="bom"></div>
-      <div class="v3-card" id="pcard" hidden></div>
-      <div class="v3-pop" id="ipop" hidden></div>
-    </div>
+<div class="ov-controls"><label class="f">입력 속도 (rpm)<input id="ovSpeed" type="range" min="0" max="${Math.max(6000,D.anim.rpm)}" value="${D.anim.rpm}"></label>
+<button class="btn" data-bg="#1a130e">다크 배경</button><button class="btn" data-bg="#eeeae4">라이트 배경</button>
+<label class="f">프레임<select id="ovFrame">${[[0,"최대"],[60,"60 FPS"],[30,"30 FPS"]].map(([v,t])=>`<option value="${v}" ${v===(D.view.frameCap||0)?"selected":""}>${t}</option>`).join("")}</select></label><span class="note" id="ovFps"></span><button class="btn" id="ovGrid">격자 ${D.view.grid === false ? 'OFF' : 'ON'}</button>
+${nst().length>1 ? `<label class="f">1단 ↔ 2단 캐리어 간격 (mm)<input type="number" step="0.1" min="0" data-p="geom.stageGap" data-t="num" value="${D.geom?.stageGap ?? .6}"></label>` : ''}</div>
+<details open><summary>부품별 투명도</summary><div class="ov-controls" id="ovParts"></div></details>
+<details open><summary>기어·캐리어 절대 회전수 (rpm)</summary><table><thead><tr><th>단</th><th>썬</th><th>유성 자전</th><th>링</th><th>캐리어</th></tr></thead><tbody id="ovSpeedRows">${overviewSpeedRows()}</tbody></table></details>
+</section></div>
     ${drawingHTML(OVSTATE.sel)}
     <div class="ov-sum">${issues.length ? `<div class="card"><h3>기준 미달·주의 ${issues.length}곳</h3><ol class="iss">${issues.map((g, k) => `<li class="${g.sev}"><button data-iss="${k}">${esc(g.title)}</button></li>`).join('')}</ol></div>` : '<div class="card"><h3 class="good">모든 항목이 기준을 만족합니다</h3></div>'}
     ${VIEWS.overviewOld().replace(/^<h2>.*?<\/h2><p class="lead">.*?<\/p>/s, '')}${componentsHTML()}</div>`;
@@ -1200,6 +1259,7 @@ function issueHTML(g) {
     ${cause}<h4>바로 해볼 대책</h4>${sens}`;
 }
 function mountOverview(m) {
+  bindOverviewSpecs(m);
   const host = m.querySelector('#viewer'); if (!host) return;
   const issues = buildIssues();
   const card = m.querySelector('#pcard'), pop = m.querySelector('#ipop'), bom = m.querySelector('#bom');
@@ -1222,7 +1282,8 @@ function mountOverview(m) {
   bindDrawing(m, onDwSel);
   const bindBom = () => bom.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { VIEW3D?.select(tr.dataset.id, true); showCard(tr.dataset.id); });
   bom.innerHTML = bomHTML(null, true); bindBom();
-  mountViewer(host, 'full', { only: 'sprc', onPick: id => showCard(id), onIssue: g => showIssue(g) });
+  const refreshOpacity = [];
+  mountViewer(host, 'full', { only: 'sprc', onOpacity: () => refreshOpacity.forEach(fn => fn()), onFrameRate: fps => { m.querySelector("#ovFps").textContent = fps + " FPS"; }, onPick: id => showCard(id), onIssue: g => showIssue(g) });
   VIEW3D?.setIssues(issues);
   if (OVSTATE.sel && bomList().some(p => p.id === OVSTATE.sel)) { VIEW3D?.select(OVSTATE.sel, false); showCard(OVSTATE.sel); }
   const iv = OVSTATE.view;
@@ -1240,6 +1301,36 @@ function mountOverview(m) {
   const tr = m.querySelector('#tRpm'), ts = m.querySelector('#tSlow');
   if (tr) tr.onchange = e => { e.stopPropagation(); D.anim.rpm = Math.max(0, +tr.value || 0); tr.value = D.anim.rpm; save(); spdTxt(); };
   if (ts) ts.onchange = e => { e.stopPropagation(); D.anim.slow = +ts.value; save(); spdTxt(); };
+  const speedSlider = m.querySelector('#ovSpeed');
+  const updateSpeeds = () => {
+    speedSlider.max = Math.max(6000,D.anim.rpm); speedSlider.value = D.anim.rpm;
+    m.querySelector('#ovSpeedRows').innerHTML = overviewSpeedRows();
+  };
+  tr.addEventListener('change', updateSpeeds);
+  speedSlider.oninput = () => { tr.value = speedSlider.value; tr.dispatchEvent(new Event('change')); };
+  m.querySelectorAll('[data-axial]').forEach(b => b.onclick = () => VIEW3D?.axialView(+b.dataset.axial));
+  m.querySelectorAll('[data-bg]').forEach(b => b.onclick = () => VIEW3D?.setBackground(b.dataset.bg));
+  const carrierButton = m.querySelector('#ovCarrier');
+  let carriersVisible = true;
+  carrierButton.onclick = () => {
+    carriersVisible = !carriersVisible;
+    VIEW3D?.partIds().filter(id => /^(carrier|pin)/.test(id)).forEach(id => VIEW3D.setVisible(id,carriersVisible));
+    carrierButton.textContent = carriersVisible ? '캐리어·핀 숨기기' : '캐리어·핀 표시';
+  };
+  m.querySelector('#ovFrame').onchange = e => VIEW3D?.setFrameCap(+e.target.value);
+  const grid = m.querySelector('#ovGrid');
+  grid.onclick = () => { const on = D.view.grid === false; VIEW3D?.setGrid(on); grid.textContent = '격자 ' + (on?'ON':'OFF'); };
+  const partBox = m.querySelector('#ovParts');
+  for (const part of bomList().filter(p => IN3D(p.id))) {
+    const b = document.createElement('button'); b.className = 'btn';
+    const transparent = () => (D.view.opacity?.[part.id] ?? (/^(ring|carrier)/.test(part.id) ? .28 : 1)) < 1;
+    const refresh = () => {
+      const on = transparent();
+      b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on)); b.textContent = part.name + (on?' · 투명':' · 불투명');
+    };
+    b.onclick = () => { VIEW3D?.setOpacity(part.id,transparent() ? 1 : .28); refresh(); };
+    refreshOpacity.push(refresh); refresh(); partBox.appendChild(b);
+  }
   spdTxt();
   const pb = m.querySelector('#tPlay'); pb.onclick = () => { const on = VIEW3D?.togglePlay(); pb.textContent = on ? '회전 정지' : '회전 재생'; };
   const tb = m.querySelector('#tBom'); tb.onclick = () => { const hid = bom.classList.toggle('closed'); tb.setAttribute('aria-expanded', String(!hid)); };
