@@ -1167,13 +1167,25 @@ function bindOverviewSpecs(m) {
   };
 }
 function overviewSpeedRows() {
-  let input = +D.anim.rpm || 0;
-  const signed = v => (v > 0 ? '+' : '') + fmt(v,1);
-  return R.ctx.stages.map(({st,geo},i) => {
-    const carrier = input/geo.ratio, planet = carrier - (input-carrier)*st.s/st.p;
-    const row = `<tr><td>${i+1}단</td><td>${signed(input)}</td><td>${signed(planet)}</td><td>0</td><td>${signed(carrier)}</td></tr>`;
-    input = carrier; return row;
-  }).join('');
+  const stages = R.ctx.stages;
+  const shared = stages.length > 1 && D.config.sharedRing;
+  let sun = Number(D.anim.rpm) || 0;
+  const rows = [];
+  function add(part, motion, rpm, fixed = false) {
+    const direction = fixed ? '고정' : rpm === 0 ? '정지' : rpm > 0 ? '정방향' : '역방향';
+    const value = (rpm > 0 ? '+' : '') + fmt(rpm, 1);
+    rows.push(`<tr><th scope="row">${part}</th><td>${motion}</td><td>${value}</td><td>${direction}</td></tr>`);
+  }
+  stages.forEach(({ st, geo }, i) => {
+    const n = i + 1, carrier = sun / geo.ratio;
+    const planet = carrier - (sun - carrier) * st.s / st.p;
+    add(`S${n} 썬기어`, i ? '단간 입력' : '입력', sun);
+    add(`P${n} 유성기어 ×${st.n}`, '자전', planet);
+    if (!shared || !i) add(shared ? 'R1·2 공유 링기어' : `R${n} 링기어`, '고정 링', 0, true);
+    add(`C${n} 캐리어`, n === stages.length ? '최종 출력' : '단간 출력', carrier);
+    sun = carrier;
+  });
+  return rows.join('');
 }
 
 function overviewView() {
@@ -1185,28 +1197,23 @@ function overviewView() {
       <div class="v3-card" id="pcard" hidden></div>
       <div class="v3-pop" id="ipop" hidden></div>
     </div>
-      <div class="ov-controls" role="toolbar" aria-label="3D 보기">
-        <button class="btn" id="tExp">분해</button>
-        <label class="rng">분해 정도<input type="range" id="tExpR" min="0" max="100" value="0"></label>
-        <span class="sep"></span>
-        <button class="btn" id="tSec">단면</button>
-        <label class="rng">단면 각도<input type="range" id="tSecA" min="0" max="180" value="0"></label>
-        <span class="sep"></span>
-        <button class="btn" id="ovCarrier">캐리어·핀 숨기기</button><button class="btn" data-axial="1">상면</button><button class="btn" data-axial="-1">하면</button><button class="btn" id="tHome">기본 시점</button>
-        <button class="btn" id="tPlay">회전 정지</button>
-        <span class="sep"></span>
-        <label class="rng spd">입력 rpm<input type="number" id="tRpm" min="0" step="any" value="${D.anim.rpm}"></label>
-        <label class="rng spd">배속<select id="tSlow">${[[1, '1× 실속도'], [.2, '0.2×'], [.05, '0.05×'], [.02, '0.02×'], [.005, '0.005×']].map(([v, l]) => `<option value="${v}" ${+D.anim.slow === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-        <span class="note spdOut" id="tSpd"></span>
-        <span class="sep"></span>
-        <button class="btn" id="tBom" aria-expanded="false">BOM</button>
+      <div class="ov-console">
+        <div class="ov-line" role="group" aria-label="모델 보기"><b>모델 보기</b><div class="ov-actions">
+          <button class="btn" data-axial="1">상면</button><button class="btn" data-axial="-1">하면</button><button class="btn" id="tHome">기본 시점</button>
+          <button class="btn" id="ovCarrier">캐리어·핀 숨기기</button><button class="btn" id="ovGrid">격자 ${D.view.grid === false ? 'OFF' : 'ON'}</button>
+          <button class="btn" id="tBom" aria-expanded="false">BOM</button></div></div>
+        <div class="ov-line" role="group" aria-label="조립 보기"><b>조립 보기</b><div class="ov-tools">
+          <div class="ov-range"><button class="btn" id="tExp">분해</button><input aria-label="분해 정도" title="분해 정도" type="range" id="tExpR" min="0" max="100" value="0"></div>
+          <div class="ov-range"><button class="btn" id="tSec">단면</button><input aria-label="단면 각도" title="단면 각도" type="range" id="tSecA" min="0" max="180" value="0"></div>
+          ${nst().length>1 ? `<label class="f">단간 캐리어 간격 (mm)<input type="number" step="0.1" min="0" data-p="geom.stageGap" data-t="num" value="${D.geom?.stageGap ?? .6}"></label>` : ''}</div></div>
+        <div class="ov-line" role="group" aria-label="구동 설정"><b>구동 설정</b><div>
+          <div class="ov-tools"><label class="f">입력 속도 (rpm)<input type="number" id="tRpm" min="0" step="any" value="${D.anim.rpm}"></label>
+          <label class="f">재생 배속<select id="tSlow">${[[1, '1× 실속도'], [.2, '0.2×'], [.05, '0.05×'], [.02, '0.02×'], [.005, '0.005×']].map(([v, l]) => `<option value="${v}" ${+D.anim.slow === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label><label class="f">프레임 제한<select id="ovFrame">${[[0,"최대"],[60,"60 FPS"],[30,"30 FPS"]].map(([v,t])=>`<option value="${v}" ${v===(D.view.frameCap||0)?"selected":""}>${t}</option>`).join("")}</select></label></div>
+          <div class="ov-transport"><input aria-label="입력 속도 조절" type="range" id="ovSpeed" min="0" max="${Math.max(6000,D.anim.rpm)}" value="${D.anim.rpm}"><button class="btn" id="tPlay">회전 정지</button></div>
+          <div class="ov-status note"><span id="tSpd"></span><span id="ovFps"></span></div></div></div>
       </div>
-<div class="ov-controls"><label class="f">입력 속도 (rpm)<input id="ovSpeed" type="range" min="0" max="${Math.max(6000,D.anim.rpm)}" value="${D.anim.rpm}"></label>
-<button class="btn" data-bg="#1a130e">다크 배경</button><button class="btn" data-bg="#eeeae4">라이트 배경</button>
-<label class="f">프레임<select id="ovFrame">${[[0,"최대"],[60,"60 FPS"],[30,"30 FPS"]].map(([v,t])=>`<option value="${v}" ${v===(D.view.frameCap||0)?"selected":""}>${t}</option>`).join("")}</select></label><span class="note" id="ovFps"></span><button class="btn" id="ovGrid">격자 ${D.view.grid === false ? 'OFF' : 'ON'}</button>
-${nst().length>1 ? `<label class="f">1단 ↔ 2단 캐리어 간격 (mm)<input type="number" step="0.1" min="0" data-p="geom.stageGap" data-t="num" value="${D.geom?.stageGap ?? .6}"></label>` : ''}</div>
 <details open><summary>부품별 투명도</summary><div class="ov-controls" id="ovParts"></div></details>
-<details open><summary>기어·캐리어 절대 회전수 (rpm)</summary><table><thead><tr><th>단</th><th>썬</th><th>유성 자전</th><th>링</th><th>캐리어</th></tr></thead><tbody id="ovSpeedRows">${overviewSpeedRows()}</tbody></table></details>
+<details open><summary>기어·캐리어 절대 회전수</summary><p class="note">하우징 기준 · 입력 방향이 (+) · 유성기어의 공전 속도는 같은 단 캐리어와 같습니다.</p><table class="ov-rpm"><thead><tr><th>부품</th><th>운동·역할</th><th>절대 회전수 (rpm)</th><th>방향</th></tr></thead><tbody id="ovSpeedRows">${overviewSpeedRows()}</tbody></table></details>
 </section></div>
     ${drawingHTML(OVSTATE.sel)}
     <div class="ov-sum">${issues.length ? `<div class="card"><h3>기준 미달·주의 ${issues.length}곳</h3><ol class="iss">${issues.map((g, k) => `<li class="${g.sev}"><button data-iss="${k}">${esc(g.title)}</button></li>`).join('')}</ol></div>` : '<div class="card"><h3 class="good">모든 항목이 기준을 만족합니다</h3></div>'}
@@ -1309,7 +1316,6 @@ function mountOverview(m) {
   tr.addEventListener('change', updateSpeeds);
   speedSlider.oninput = () => { tr.value = speedSlider.value; tr.dispatchEvent(new Event('change')); };
   m.querySelectorAll('[data-axial]').forEach(b => b.onclick = () => VIEW3D?.axialView(+b.dataset.axial));
-  m.querySelectorAll('[data-bg]').forEach(b => b.onclick = () => VIEW3D?.setBackground(b.dataset.bg));
   const carrierButton = m.querySelector('#ovCarrier');
   let carriersVisible = true;
   carrierButton.onclick = () => {

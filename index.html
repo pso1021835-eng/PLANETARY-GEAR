@@ -414,9 +414,25 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 .ov-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .ov-fields input{width:100%;min-width:0}
 .ov-scroll{overflow:auto}
-.ov-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
-.ov-controls .rng{display:inline-flex;align-items:center;gap:6px}
-.ov-controls .rng input{max-width:74px}
+.ov-live{container-type:inline-size}
+.ov-console{margin:12px 0 18px}
+.ov-line{display:grid;grid-template-columns:5em minmax(0,1fr);gap:12px;align-items:start;padding:12px 0;border-bottom:1px solid var(--rule)}
+.ov-line>b{padding-top:7px;font-size:13px;color:var(--ink)}
+.ov-actions,.ov-tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:end}
+.ov-actions .btn{height:100%;white-space:normal}
+.ov-tools input,.ov-tools select{min-width:0;width:100%}
+.ov-range,.ov-transport{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px}
+.ov-transport{grid-template-columns:minmax(0,1fr) auto;margin-top:10px}
+.ov-range input,.ov-transport input{width:100%;margin:0;accent-color:var(--accent2)}
+.ov-status{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:8px;font-variant-numeric:tabular-nums}
+#ovParts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
+#ovParts .btn{white-space:normal;line-height:1.4}
+.ov-rpm{width:100%;font-variant-numeric:tabular-nums}
+.ov-rpm tr>:first-child,.ov-rpm tr>:nth-child(2){text-align:left}
+.ov-rpm tr>:nth-child(3){text-align:right}
+.ov-rpm tr>:last-child{text-align:center}
+@container(max-width:620px){.ov-line{grid-template-columns:minmax(0,1fr);gap:6px}.ov-line>b{padding:0}}
+@container(max-width:420px){.ov-actions,#ovParts,.ov-tools{grid-template-columns:repeat(2,minmax(0,1fr))}.ov-rpm th,.ov-rpm td{padding:5px 3px}}
 .ov-live details{margin-top:12px}
 .ov-live #viewer.full{height:clamp(360px,48vw,640px);min-height:0}
 @media(max-width:830px){.ov-workbench{grid-template-columns:minmax(0,1fr)}.ov-live #viewer.full{height:clamp(340px,72vw,540px)}}
@@ -475,6 +491,6 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 <script src="map.js?v=pr14-1"></script>
 <script src="items.js?v=pr36-1"></script>
 <script src="groups.js?v=pr34-1"></script>
-<script defer src="app.js?v=overview-1"></script>
+<script defer src="app.js?v=overview-2"></script>
 </body>
 </html>
