@@ -1326,12 +1326,22 @@ function mountOverview(m) {
   const grid = m.querySelector('#ovGrid');
   grid.onclick = () => { const on = D.view.grid === false; VIEW3D?.setGrid(on); grid.textContent = '격자 ' + (on?'ON':'OFF'); };
   const partBox = m.querySelector('#ovParts');
-  for (const part of bomList().filter(p => IN3D(p.id))) {
+  // 부품 종류(행) × 단(열) 격자: 왼쪽 열 1단, 오른쪽 열 2단. 공유 링은 두 열에 걸친 버튼 하나(1·2단이 함께 투명)
+  const TYPES = [['sun', '썬기어'], ['planet', '유성기어'], ['pin', '유성핀'], ['carrier', '캐리어'], ['ring', '링기어']];
+  const parts3d = bomList().filter(p => IN3D(p.id)), nSt = Math.max(1, ...parts3d.map(p => +(p.id.match(/\d$/)?.[0] || 1)));
+  partBox.style.setProperty('--ov-cols', nSt);
+  partBox.innerHTML = `<span class="ovp-corner"></span>${Array.from({ length: nSt }, (_, i) => `<span class="ovp-stage st${i + 1}" style="grid-column:${i + 2}">${i + 1}단</span>`).join('')}`
+    + TYPES.map(([, t], r) => `<span class="ovp-head" style="grid-row:${r + 2}">${t}</span>`).join('');
+  for (const part of parts3d) {
     const b = document.createElement('button'); b.className = 'btn';
+    const type = TYPES.findIndex(([k]) => part.id.startsWith(k)), stg = +(part.id.match(/\d$/)?.[0] || 0);
+    b.style.gridRow = String(type + 2);
+    b.style.gridColumn = stg ? String(stg + 1) : `2 / span ${nSt}`;
+    if (stg) b.classList.add('st' + stg);
     const transparent = () => (D.view.opacity?.[part.id] ?? (/^(ring|carrier)/.test(part.id) ? .28 : 1)) < 1;
     const refresh = () => {
       const on = transparent();
-      b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on)); b.textContent = part.name + (on?' · 투명':' · 불투명');
+      b.classList.toggle('on',on); b.setAttribute('aria-pressed',String(on)); b.innerHTML = `<span>${esc(part.name)}</span><small>${on ? '투명' : '불투명'}</small>`;
     };
     b.onclick = () => { VIEW3D?.setOpacity(part.id,transparent() ? 1 : .28); refresh(); };
     refreshOpacity.push(refresh); refresh(); partBox.appendChild(b);
