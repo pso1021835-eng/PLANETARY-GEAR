@@ -82,7 +82,7 @@
     }
     return g;
   }
-  function carrierBody(shape, opts = {}) {
+  function carrierBody(shape) {
     const TH = T(), positions = [], normals = [];
     const add = (source, reversed = false) => {
       const geometry = reversed ? reverseFaces(source) : (source.index ? source.toNonIndexed() : source);
@@ -95,125 +95,131 @@
       new TH.CylinderGeometry(r1, r0, z1 - z0, segments, 1, true)
         .rotateX(Math.PI / 2).translate(x, y, (z0 + z1) / 2), reversed
     );
-    // Ø outer and Ø inner are each built as ONE turned surface over plates + web on a shared angular grid, so plate and web
-    // meet without T-junction cracks or seam lines. Between the plates only the web spans (outside the pockets) are filled.
-    const RO = shape.outerD / 2, RI = shape.innerD / 2, EPSR = 1e-6, web = shape.web, np = shape.pins.length, pitch = 2 * Math.PI / np;
-    const half = web ? shape.pocket / 2 : 0;
-    const spansFor = R => { if (!web || !web.sections.length || half >= R) return []; const a = Math.asin(half / R); return a < pitch / 2 ? Array.from({ length: np }, (_, i) => [a + i * pitch, pitch - a + i * pitch]) : []; };
-    const inSpan = (t, spans) => spans.some(([a, b]) => { const u = ((t - a) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI); return u <= b - a; });
-    // one angular grid for every face on Ø outer / Ø inner (turned surfaces and plate faces), so their edges coincide exactly
-    const ang = new Set(Array.from({ length: 240 }, (_, k) => k * Math.PI / 120));
-    [...spansFor(RO), ...spansFor(RI)].forEach(([a, b]) => { for (const v of [a, b]) ang.add(((v % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)); });
-    const A = [...ang].sort((x, y) => x - y);
-    const cyl = (R, sg, bands) => {
-      if (!bands.length) return;
-      for (const bd of bands) for (let k = 0; k < A.length; k++) {
-        const t0 = A[k], t1 = k + 1 < A.length ? A[k + 1] : A[0] + 2 * Math.PI;
-        if (t1 - t0 < 1e-9 || (bd.spans && !inSpan((t0 + t1) / 2, bd.spans))) continue;
-        const P = (t, z) => [R * Math.cos(t), R * Math.sin(t), z], N = t => [sg * Math.cos(t), sg * Math.sin(t), 0];
-        const a = P(t0, bd.z[0]), b = P(t1, bd.z[0]), c = P(t1, bd.z[1]), d = P(t0, bd.z[1]);
-        const quad = sg > 0 ? [[a, t0], [b, t1], [c, t1], [a, t0], [c, t1], [d, t0]] : [[a, t0], [c, t1], [b, t1], [a, t0], [d, t0], [c, t1]];
-        for (const [p, t] of quad) { positions.push(...p); normals.push(...N(t)); }
-      }
-    };
-    const roBands = shape.slabs.filter(sl => Math.abs(sl.outer - RO) < EPSR).map(sl => ({ z: sl.z })), riBands = shape.slabs.filter(sl => Math.abs(sl.inner - RI) < EPSR).map(sl => ({ z: sl.z }));
-    if (web && web.sections.length) { roBands.push({ z: web.z, spans: spansFor(RO) }); const si = spansFor(RI); if (si.length) riBands.push({ z: web.z, spans: si }); }
-    cyl(RO, 1, roBands); cyl(RI, -1, riBands);
-    if (opts.spans) Object.assign(opts.spans, { RO, RI, z: web?.z, ro: spansFor(RO), ri: spansFor(RI), inSpan });
-    for (const slab of shape.slabs) {
-      if (Math.abs(slab.outer - RO) >= EPSR) wall(slab.outer, slab.outer, slab.z, 0, 0, false);
-      if (Math.abs(slab.inner - RI) >= EPSR) wall(slab.inner, slab.inner, slab.z, 0, 0, true);
-      for (const high of [false, true]) {
-        const z = slab.z[+high];
-        // a plate face that touches the web is inside the solid where the web is: pull its rim in by 0.2 mm there, so it can
-        // never tie in depth with the turned surface (that tie showed as a dotted seam line)
-        const inner = web && web.sections.length && web.z.some(wz => Math.abs(wz - z) < 1e-9), so = inner ? spansFor(RO) : [], si = inner ? spansFor(RI) : [];
-        const ring = (R, rev, spans, d) => { const pts = A.map(t => { const r = spans.length && inSpan(t, spans) ? R + d : R; return new TH.Vector2(r * Math.cos(t), r * Math.sin(t)); }); return rev ? pts.reverse() : pts; };
-        const section = Math.abs(slab.outer - RO) < EPSR ? new TH.Shape(ring(RO, false, so, -.2)) : (() => { const sh = new TH.Shape(); sh.absarc(0, 0, slab.outer, 0, Math.PI * 2, false); return sh; })();
-        const bore = Math.abs(slab.inner - RI) < EPSR ? new TH.Path(ring(RI, true, si, .2)) : (() => { const pa = new TH.Path(); pa.absarc(0, 0, slab.inner, 0, Math.PI * 2, true); return pa; })();
-        section.holes.push(bore);
-        const band = slab.drilling.find(h => Math.abs(h.z[+high] - z) < 1e-8);
-        const radius = band ? (high ? band.r1 : band.r0) : 0;
-        if (radius > 1e-8) for (const pin of shape.pins) {
-          const hole = new TH.Path(); hole.absarc(pin.x, pin.y, radius, 0, Math.PI * 2, true); section.holes.push(hole);
-        }
-        add(new TH.ShapeGeometry(section, 48).translate(0, 0, z), !high);
-      }
-      for (const band of slab.drilling) for (const pin of shape.pins) wall(band.r0, band.r1, band.z, pin.x, pin.y, true, 72);
-    }
-    if (shape.web) for (const section of shape.web.sections) {
-      const profile = new TH.Shape(section.map(p => new TH.Vector2(p.x, p.y)));
-      const [z0, z1] = shape.web.z;
-      // side walls only: the web's end caps lie on the plate faces (inside the solid) and would z-fight / draw seams
-      const eg = new TH.ExtrudeGeometry(profile, { depth: z1 - z0, bevelEnabled: false }).translate(0, 0, z0), sg = eg.groups.find(g => g.materialIndex === 1);
-      if (sg) {
-        // keep the pocket walls; faces on Ø outer / Ø inner come from the shared turned surfaces above
-        const P = eg.attributes.position.array, Nn = eg.attributes.normal.array, kp = [], kn = [];
-        const onR = (i, R) => Math.abs(Math.hypot(P[i], P[i + 1]) - R) < 1e-4;
-        for (let i = sg.start * 3; i < (sg.start + sg.count) * 3; i += 9) {
-          if ([0, 3, 6].every(o => onR(i + o, RO)) || [0, 3, 6].every(o => onR(i + o, RI))) continue;
-          for (let o = 0; o < 9; o++) { kp.push(P[i + o]); kn.push(Nn[i + o]); }
-        }
-        const sub = new TH.BufferGeometry(); sub.setAttribute('position', new TH.Float32BufferAttribute(kp, 3)); sub.setAttribute('normal', new TH.Float32BufferAttribute(kn, 3)); add(sub); eg.dispose();
-      }
-      else add(eg);
-    }
-    // end-mill corner radius: material left where a pocket wall meets a plate face, swept along the wall
-    const r = shape.pocketR;
-    if (r > 1e-6 && shape.fillets?.length && opts.fillets !== false) {
-      // profile in (s = into the pocket from the wall, h = away from the plate face): corner minus the tool circle
-      const prof = [[0, 0], [r, 0]];
-      for (let k = 1; k < 12; k++) { const a = -Math.PI / 2 - k * Math.PI / 24; prof.push([r + r * Math.cos(a), r + r * Math.sin(a)]); }
-      prof.push([0, r]);
-      const tris = TH.ShapeUtils.triangulateShape(prof.map(([x, y]) => new TH.Vector2(x, y)), []);
-      const ro = shape.outerD / 2, ri = shape.innerD / 2, orient = Math.sign(prof.reduce((a, p, i) => { const q = prof[(i + 1) % prof.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0));
-      // along the wall direction u from P0: the tool is plunged radially from the max OD, so every profile line runs out to
-      // the outer cylinder (no step at the opening) and starts at the bore or the wall start, whichever is further out
-      const hit = (P, u, R, far) => { const bq = P[0] * u[0] + P[1] * u[1], c = P[0] * P[0] + P[1] * P[1] - R * R, d = bq * bq - c; return d < 0 ? null : far ? -bq + Math.sqrt(d) : -bq - Math.sqrt(d); };
-      for (const f of shape.fillets) {
-        const L = Math.hypot(f.B[0] - f.A[0], f.B[1] - f.A[1]), u = [(f.B[0] - f.A[0]) / L, (f.B[1] - f.A[1]) / L];
-        // neighbouring pocket whose wall meets this one at A (web tip between two pockets): the two R strips run on past A and
-        // meet in a mitre, where a point stays only while it is also inside the neighbour's R (s₂ ≤ r − √(r² − (r − h)²))
-        const g = shape.fillets.find(o => o !== f && o.z === f.z && Math.hypot(o.A[0] - f.A[0], o.A[1] - f.A[1]) < 1e-6);
-        const gu = g ? g.n[0] * u[0] + g.n[1] * u[1] : 0, mitre = g && gu < -1e-9;
-        const ends = prof.map(([sv, h]) => {
-          const P = [f.A[0] + f.n[0] * sv, f.A[1] + f.n[1] * sv], z = f.z + f.dir * h;
-          const sMax = r - Math.sqrt(Math.max(0, r * r - (r - h) ** 2)), c2 = mitre ? g.n[0] * (P[0] - g.A[0]) + g.n[1] * (P[1] - g.A[1]) : 0;
-          const l1 = hit(P, u, ro, true) ?? L, l0 = mitre ? Math.max(hit(P, u, ri, true) ?? -Infinity, (sMax - c2) / gu) : Math.max(0, hit(P, u, ri, true) ?? 0);
-          return [[P[0] + u[0] * l0, P[1] + u[1] * l0, z], [P[0] + u[0] * l1, P[1] + u[1] * l1, z]];
-        });
-        // orient each triangle by its intended outward normal (side: profile edge normal, caps: ∓u)
-        const tri = (a, b, c, want, vn) => {
-          const ab = [0, 1, 2].map(k => b[k] - a[k]), ac = [0, 1, 2].map(k => c[k] - a[k]);
-          let n = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
-          const len = Math.hypot(...n); if (len < 1e-12) return; n = n.map(v => v / len);
-          let V = vn || [n, n, n];
-          if (n[0] * want[0] + n[1] * want[1] + n[2] * want[2] < 0) { [b, c] = [c, b]; V = [V[0], V[2], V[1]]; if (!vn) V = V.map(() => n.map(v => -v)); }
-          [a, b, c].forEach((p, i) => { positions.push(...p); normals.push(...V[i]); });
-        };
-        // smooth R: the normal at each profile point points at the tool centre (r, r), so the round shades as one surface and
-        // meets the plate face and the pocket wall tangentially (no faceted bands)
-        const vnorm = j => { const [sv, h] = prof[j], a = r - sv, b = r - h, L = Math.hypot(a, b) || 1; return [f.n[0] * a / L, f.n[1] * a / L, f.dir * b / L]; };
-        for (let j = 0; j < ends.length; j++) {
-          const k = (j + 1) % ends.length, ds = prof[k][0] - prof[j][0], dh = prof[k][1] - prof[j][1];
-          // the flat faces of the corner (on the plate face h = 0 and on the pocket wall s = 0) are inside the solid: skip them so the R blends into plate and wall
-          if ((Math.abs(prof[j][1]) < 1e-9 && Math.abs(prof[k][1]) < 1e-9) || (Math.abs(prof[j][0]) < 1e-9 && Math.abs(prof[k][0]) < 1e-9)) continue;
-          const ns = orient * dh, nh = -orient * ds, want = [f.n[0] * ns, f.n[1] * ns, f.dir * nh];
-          const nj = vnorm(j), nk = vnorm(k);
-          tri(ends[j][0], ends[k][0], ends[k][1], want, [nj, nk, nk]); tri(ends[j][0], ends[k][1], ends[j][1], want, [nj, nk, nj]);
-        }
-        // the mitre cap is shared with the neighbour's strip (inside the solid): only open ends get a cap
-        for (const [x, y, z] of tris) { if (!mitre) tri(ends[x][0], ends[y][0], ends[z][0], [-u[0], -u[1], 0]); tri(ends[x][1], ends[y][1], ends[z][1], [u[0], u[1], 0]); }
-      }
-    }
-    // one continuous outer / inner diameter: every face lying on Ø outer or Ø inner (plates, web, end of the pocket R) gets the
-    // cylinder's radial normal, so the web between the plates shades like the same turned surface instead of flat facets
     const ro = shape.outerD / 2, ri = shape.innerD / 2;
-    for (let i = 0; i < positions.length; i += 3) {
-      const x = positions[i], y = positions[i + 1], r = Math.hypot(x, y);
-      if (Math.abs(normals[i + 2]) > .5 || r < 1e-6) continue;
-      const sg = Math.abs(r - ro) < 2e-3 ? 1 : Math.abs(r - ri) < 2e-3 ? -1 : 0;
-      if (sg) { normals[i] = sg * x / r; normals[i + 1] = sg * y / r; normals[i + 2] = 0; }
+    const pitch = 2 * Math.PI / shape.pins.length;
+    const web = shape.web?.sections.length ? shape.web : null;
+    const fillet = web && shape.fillets.length ? shape.pocketR : 0;
+    const half = (shape.pocket || 0) / 2;
+    // Opening angle at a cylinder of radius radius. Offset follows the
+    // quarter-circle tool profile from the straight wall onto the plate.
+    function opening(radius, offset) {
+      const angle = Math.asin(clamp((half - offset) / radius, -1, 1));
+      return clamp(angle, 0, pitch / 2);
+    }
+    const samples = Math.ceil(240 / shape.pins.length);
+    const angles = Array.from({ length: samples + 1 }, (_, i) => i * pitch / samples);
+    if (web) for (const r of [ri, ro]) {
+      const a = opening(r, fillet);
+      angles.push(a, pitch - a);
+    }
+    const knots = Array.from(new Set(angles)).sort((a,b) => a-b);
+    const circle = shape.pins.flatMap(pin => knots.slice(0,-1).map(a => pin.angle + a));
+    const polar = (r,t,z) => [r*Math.cos(t), r*Math.sin(t), z];
+    const outline = r => circle.map(t => new TH.Vector2(r*Math.cos(t),r*Math.sin(t)));
+    function triangle(a,b,c,na,nb,nc) {
+      const ab = new TH.Vector3().subVectors(b,a), ac = new TH.Vector3().subVectors(c,a);
+      const cross = ab.cross(ac);
+      if (cross.lengthSq() < 1e-20) return;
+      if (cross.dot(na.clone().add(nb).add(nc)) < 0) { [b,c] = [c,b]; [nb,nc] = [nc,nb]; }
+      positions.push(a.x,a.y,a.z,b.x,b.y,b.z,c.x,c.y,c.z);
+      normals.push(na.x,na.y,na.z,nb.x,nb.y,nb.z,nc.x,nc.y,nc.z);
+    }
+    const point = (r,t,z) => new TH.Vector3(...polar(r,t,z));
+    const radial = (t,sg) => new TH.Vector3(sg*Math.cos(t),sg*Math.sin(t),0);
+    function cylinderStrip(radius, sign, angle, lo, hi, cut) {
+      const a = cut ? opening(radius,lo.offset) : 0, b = cut ? opening(radius,hi.offset) : 0;
+      let prev;
+      for (const knot of knots) {
+        const u = angle + clamp(knot,a,pitch-a), v = angle + clamp(knot,b,pitch-b);
+        const next = [point(radius,u,lo.z), point(radius,v,hi.z), radial(u,sign), radial(v,sign)];
+        if (prev) {
+          triangle(prev[0],next[0],next[1],prev[2],next[2],next[3]);
+          triangle(prev[0],next[1],prev[1],prev[2],next[3],prev[3]);
+        }
+        prev = next;
+      }
+    }
+    const rootRadius = offset => clamp((half-offset)/Math.sin(pitch/2), ri, ro);
+    function pocketFloor(angle) {
+      const outer = opening(ro,fillet), inner = opening(ri,fillet);
+      const arc = (r,lim) => {
+        const points = [0,...knots.filter(t=>t>0 && t<lim),lim].filter((t,k,arr)=>!k || t-arr[k-1]>1e-9);
+        return [...points.slice(1).reverse().map(t=>-t),...points].map(t=>point(r,angle+t,0));
+      };
+      const corner = rootRadius(fillet), far = opening(corner,fillet);
+      const edges = arc(ro,outer);
+      if (corner>ri+1e-8) edges.push(point(corner,angle+far,0));
+      edges.push(...arc(ri,inner).reverse());
+      if (corner>ri+1e-8 && far>1e-8) edges.push(point(corner,angle-far,0));
+      return new TH.Shape(edges.map(p=>new TH.Vector2(p.x,p.y)));
+    }
+    function face(profile, pins, radius, z, high) {
+      if (radius > 1e-8) for (const pin of pins) {
+        const hole = new TH.Path(); hole.absarc(pin.x,pin.y,radius,0,2*Math.PI,true); profile.holes.push(hole);
+      }
+      add(new TH.ShapeGeometry(profile,48).translate(0,0,z), !high);
+    }
+    for (const slab of shape.slabs) {
+      const [z0,z1] = slab.z;
+      for (const pin of shape.pins) {
+        cylinderStrip(slab.outer,1,pin.angle,{z:z0},{z:z1},false);
+        cylinderStrip(slab.inner,-1,pin.angle,{z:z0},{z:z1},false);
+      }
+      for (const high of [false,true]) {
+        const z = slab.z[+high], band = slab.drilling.find(h=>Math.abs(h.z[+high]-z)<1e-8);
+        const radius = band ? (high ? band.r1 : band.r0) : 0;
+        if (web && Math.abs(z-web.z[high ? 0 : 1]) < 1e-8) {
+          // Only exposed pocket floors are faces. The plate/web interface is solid.
+          for (const pin of shape.pins) face(pocketFloor(pin.angle),[pin],radius,z,high);
+        } else {
+          const profile = new TH.Shape(outline(slab.outer));
+          profile.holes.push(new TH.Path(outline(slab.inner).reverse()));
+          face(profile,shape.pins,radius,z,high);
+        }
+      }
+      for (const band of slab.drilling) for (const pin of shape.pins)
+        wall(band.r0,band.r1,band.z,pin.x,pin.y,true,96);
+    }
+    if (web) {
+      const [z0,z1] = web.z;
+      const levels = [];
+      // Use tangent normals on the round and exactly radial normals on the
+      // turned OD/ID. Both faces terminate on the same boundary vertices.
+      const curve = fillet ? Array.from({length:25}, (_,k) => k*Math.PI/48) : [Math.PI/2];
+      // Split at the exact contact with the bore, where the two sides of a web
+      // stop meeting each other and start terminating on the inner cylinder.
+      const boreOffset = half - ri*Math.sin(pitch/2);
+      if (boreOffset > 0 && boreOffset < fillet) {
+        curve.push(Math.asin(1 - boreOffset/fillet));
+        curve.sort((a,b) => a-b);
+      }
+      for (const top of [false,true]) {
+        for (const t of top ? [...curve].reverse() : curve) {
+          const height = fillet*(1-Math.cos(t));
+          levels.push({z:top ? z1-height : z0+height, offset:fillet*(1-Math.sin(t)),
+            wallNormal:Math.sin(t), faceNormal:(top ? -1 : 1)*Math.cos(t)});
+        }
+      }
+      for (const pin of shape.pins) {
+        for (let i=1;i<levels.length;i++) {
+          const lo=levels[i-1], hi=levels[i];
+          if (hi.z-lo.z<1e-10) continue;
+          cylinderStrip(ro,1,pin.angle,lo,hi,true);
+          cylinderStrip(ri,-1,pin.angle,lo,hi,true);
+          for (const side of [-1,1]) {
+            const normalAngle = pin.angle - side*Math.PI/2;
+            const sample = level => {
+              const r0=rootRadius(level.offset);
+              const pos=r=>point(r,pin.angle+side*opening(r,level.offset),level.z);
+              const n=radial(normalAngle,level.wallNormal); n.z=level.faceNormal;
+              return [pos(r0),pos(ro),n];
+            };
+            const a=sample(lo), b=sample(hi);
+            triangle(a[0],a[1],b[1],a[2],a[2],b[2]);
+            triangle(a[0],b[1],b[0],a[2],b[2],b[2]);
+          }
+        }
+      }
     }
     const geometry = new TH.BufferGeometry();
     geometry.setAttribute('position', new TH.Float32BufferAttribute(positions, 3));
@@ -485,19 +491,8 @@
       const car = new TH.Group(); car.userData.stage = i;
       const shape = x.carrier;
       const body = new TH.Mesh(carrierBody(shape).translate(0, 0, zb), mkMat('carrier'));
-      // feature lines from the shape without the pocket R, minus the circles where plate face meets the web on Ø outer / Ø inner (no real edge there)
-      body.userData.edgeLines = () => {
-        const sp = {}, g = carrierBody(shape, { fillets: false, spans: sp }), eg = new TH.EdgesGeometry(g, 28); g.dispose();
-        if (!sp.z) { eg.translate(0, 0, zb); return eg; }
-        const a = eg.attributes.position.array, out = [];
-        for (let i = 0; i < a.length; i += 6) {
-          const r0 = Math.hypot(a[i], a[i + 1]), r1 = Math.hypot(a[i + 3], a[i + 4]), z0 = a[i + 2], z1 = a[i + 5], t = Math.atan2(a[i + 1] + a[i + 4], a[i] + a[i + 3]);
-          const atZ = Math.abs(z0 - z1) < 1e-4 && sp.z.some(z => Math.abs(z - z0) < 1e-4);
-          const seam = atZ && ((Math.abs(r0 - sp.RO) < 2e-3 && Math.abs(r1 - sp.RO) < 2e-3 && sp.inSpan(t, sp.ro)) || (Math.abs(r0 - sp.RI) < 2e-3 && Math.abs(r1 - sp.RI) < 2e-3 && sp.inSpan(t, sp.ri)));
-          if (!seam) for (let o = 0; o < 6; o++) out.push(a[i + o]);
-        }
-        eg.dispose(); const lg = new TH.BufferGeometry(); lg.setAttribute('position', new TH.Float32BufferAttribute(out, 3)); lg.translate(0, 0, zb); return lg;
-      };
+      // Rounded pockets already carry their machined silhouette in the mesh.
+      body.userData.smoothPocket = shape.pocketR > 0;
       car.add(body);
       const pinMat = mkMat('pin'), pinGeo = new TH.CylinderGeometry(shape.diameter / 2, shape.diameter / 2, shape.pinLength, 72).rotateX(Math.PI / 2);
       const pins = new TH.Group(), pinZ = zb + (shape.stock[0] + shape.stock[1]) / 2;
@@ -602,12 +597,12 @@
     const edgeMats = [];
     const EDGE = /^(housing|cover|ocover|oflange|carrier\d|xroller|inshaft|oshaft|pin\d|brgS\d|seal)$/;
     meshes.slice().forEach(ms => {
-      if (ms.isInstancedMesh || !EDGE.test(ms.userData.partId || '')) return;
+      if (ms.isInstancedMesh || ms.userData.smoothPocket || !EDGE.test(ms.userData.partId || '')) return;
       const n = ms.geometry.attributes.position?.count || 0; if (!n || n > 120000) return;
       const dark = /^(carrier|bolt)/.test(ms.userData.partId);
       const lm = new TH.LineBasicMaterial({ color: dark ? 0x6b6f76 : 0x2a2724, transparent: true, opacity: dark ? .5 : .42, toneMapped: false });
       lm.userData.op = lm.opacity; edgeMats.push(lm);
-      const ln = new TH.LineSegments(ms.userData.edgeLines ? ms.userData.edgeLines() : new TH.EdgesGeometry(ms.geometry, 28), lm); ln.raycast = () => { }; ln.userData.edge = true; ms.add(ln);
+      const ln = new TH.LineSegments(new TH.EdgesGeometry(ms.geometry, 28), lm); ln.raycast = () => { }; ln.userData.edge = true; ms.add(ln);
     });
     // ---- centre, ground, camera
     const box = new TH.Box3().setFromObject(root), ctr = box.getCenter(new TH.Vector3()), size = box.getSize(new TH.Vector3());
