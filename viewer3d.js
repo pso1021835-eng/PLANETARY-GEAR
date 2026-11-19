@@ -28,12 +28,15 @@
     }
     return pts.map(([r, a]) => [r * Math.cos(a), r * Math.sin(a)]);
   }
+  function ringOuterRadius(g, diameter) {
+    return Math.max(g.df / 2 + .5 * g.m, (diameter || g.df + 8 * g.m) / 2);
+  }
   // rimDia: bore for external gears (0 = solid), outside diameter for the ring
   function gearGeometry(g, at, b, betaDeg, internal, rimDia) {
     const TH = T(), pts = outline(g, at).map(([x, y]) => new TH.Vector2(x, y));
     let shape;
     if (internal) {
-      shape = new TH.Shape(); const R0 = Math.max(g.df / 2 + .5 * g.m, (rimDia || g.df + 8 * g.m) / 2);
+      shape = new TH.Shape(); const R0 = ringOuterRadius(g, rimDia);
       shape.absarc(0, 0, R0, 0, Math.PI * 2, false); shape.holes.push(new TH.Path(pts.slice().reverse()));
     } else {
       shape = new TH.Shape(pts);
@@ -43,7 +46,7 @@
     const geo = new TH.ExtrudeGeometry(shape, { depth: b, bevelEnabled: false, curveSegments: 40, steps: Math.max(2, Math.round(b)) });
     const tb = Math.tan(betaDeg * Math.PI / 180), rp = g.d / 2, pos = geo.attributes.position;
     // ring gear: the outer diameter is a plain straight cylinder — only the teeth follow the helix
-    const Rout = internal ? Math.max(g.df / 2 + .5 * g.m, (rimDia || g.df + 8 * g.m) / 2) : Infinity;
+    const Rout = internal ? ringOuterRadius(g, rimDia) : Infinity;
     const onOD = i => Math.hypot(pos.getX(i), pos.getY(i)) > Rout - 1e-4;
     for (let i = 0; i < pos.count; i++) { if (onOD(i)) continue; const x = pos.getX(i), y = pos.getY(i), zz = pos.getZ(i), a = zz * tb / rp, c = Math.cos(a), s = Math.sin(a); pos.setXY(i, x * c - y * s, x * s + y * c); }
     geo.computeVertexNormals();
@@ -452,6 +455,9 @@
 
     // ---- gears + carriers per stage
     const kin = [];
+    const separatePlanets = full && opt.only === 'sprc';
+    const rings = L.shared ? L.S.slice(0, 1) : L.S;
+    const ringRadius = Math.max(...rings.map(x => ringOuterRadius(x.g.parts[2], x.ringOD)));
     let ringBody = null, ringBodyPhase = 0;
     L.S.forEach((x, i) => {
       const g = x.g, st = x.st, b = st.b, at = g.at, zb = x.z0;
@@ -521,7 +527,18 @@
         const phi = 2 * Math.PI * j / st.n, pitchS = 2 * Math.PI / zs, delta = ((phi % pitchS) + pitchS) % pitchS;
         return Math.PI - Math.PI / zp + delta * zs / zp;
       });
-      kin.push({ sun, planets: pg, car, a, zs, zp, ratio: g.ratio, n: st.n, phase, psi, dzStage, ownRing: !(L.shared && i > 0), ring });
+      // Travel is measured from the assembled orbit. Clear the pin end and
+      // the ring end face before moving the planet across either cylinder.
+      const direction = Math.sign(dzStage);
+      const clearance = Math.max(2, ringRadius * .09);
+      const ringEnd = L.shared ? L.gearEnd : zb + b;
+      const pull = direction < 0
+        ? Math.max(b - shape.axial[0], b + zb - (L.shared ? 0 : zb))
+        : Math.max(shape.axial[1], ringEnd - zb);
+      const axialTravel = direction * (pull + clearance);
+      const planetRadius = g.parts[1].da / 2;
+      const radialTravel = Math.max(ringRadius - a, shape.diameter / 2) + planetRadius + clearance;
+      kin.push({ axialTravel, radialTravel, planetRadius, zb, b, sun, planets: pg, car, a, zs, zp, ratio: g.ratio, n: st.n, phase, psi, dzStage, ownRing: !(L.shared && i > 0), ring });
     });
 
     // ---- housing, cover, input shaft, output bearing, flange, seals, bolts (full mode)
@@ -615,6 +632,12 @@
     root.updateMatrixWorld(true);
     parts.forEach((p, id) => { const bb = new TH.Box3(); p.objs.forEach(o => bb.expandByObject(o)); p.center = bb.getCenter(new TH.Vector3()); p.radius = bb.getSize(new TH.Vector3()).length() / 2; });
     const S0 = Math.max(maxR * 2, len);
+    const expandedRadius = Math.max(maxR, ...kin.map(p => p.a + p.radialTravel + p.planetRadius));
+    const expandedExtent = Math.max(...kin.map(p => {
+      const z = p.zb + p.dzStage + p.axialTravel - ctr.z;
+      return Math.hypot(p.a + p.radialTravel + p.planetRadius, Math.max(Math.abs(z), Math.abs(z + p.b)));
+    }));
+    const explodeZoom = separatePlanets ? Math.max(.75, expandedExtent * 2 / S0 - 1) : .75;
     const fitDist = () => S0 * 2.7 / Math.min(1, (host.clientWidth / Math.max(1, host.clientHeight)) / 1.25);
     const view = { target: new TH.Vector3(), az: Math.PI / 4, el: Math.atan(1 / Math.SQRT2), dist: fitDist() };
     const home = { az: view.az, el: view.el, dist: view.dist, target: new TH.Vector3() };
@@ -699,7 +722,7 @@
       const wc = p.center.clone().applyMatrix4(root.matrixWorld);
       goal.target.copy(wc); goal.dist = Math.max(S0 * 1.1, p.radius * 4.2); goal.az = view.az; goal.el = view.el;
     }
-    function resetView() { st.zoomed = false; goal.target.copy(home.target); goal.az = home.az; goal.el = home.el; goal.dist = home.dist = fitDist() * (1 + .75 * st.explodeTarget); }
+    function resetView() { st.zoomed = false; goal.target.copy(home.target); goal.az = home.az; goal.el = home.el; goal.dist = home.dist = fitDist() * (1 + explodeZoom * st.explodeTarget); }
 
     // ---- pointer: orbit with inertia, pan (shift / middle), wheel zoom, pick, context menus
     const cv = renderer.domElement, ray = new TH.Raycaster(), ndc = new TH.Vector2();
@@ -819,7 +842,7 @@
 
     function select(id, doFocus) { st.selected = id; paint(); if (id && doFocus) focus(id); }
     // keep the exploded assembly in frame unless the user has zoomed by hand
-    function setExplode(v) { st.explodeTarget = clamp(v, 0, 1); if (!st.zoomed) goal.dist = fitDist() * (1 + .75 * st.explodeTarget); }
+    function setExplode(v) { st.explodeTarget = clamp(v, 0, 1); if (!st.zoomed) goal.dist = fitDist() * (1 + explodeZoom * st.explodeTarget); }
 
     // ---- animation loop
     const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -860,14 +883,22 @@
       view.az += (goal.az - view.az) * k; view.el += (goal.el - view.el) * k; view.dist += (goal.dist - view.dist) * k; view.target.lerp(goal.target, k);
       place();
       // kinematics: sun → carrier, ring fixed (verified phasing)
+      const pullOut = separatePlanets ? ease(clamp(st.explode / .48, 0, 1)) : 0;
+      const spread = separatePlanets ? ease(clamp((st.explode - .48) / .52, 0, 1)) : 0;
+      if (separatePlanets) {
+        ground.position.y = -maxR * 1.35 - 2 - spread * (expandedRadius - maxR);
+        grid.position.y = ground.position.y + .02;
+        blob.position.y = ground.position.y + .05;
+      }
       let sunAng = st.theta;
       kin.forEach((p, i) => {
         const carA = sunAng / p.ratio;
         p.sun.rotation.z = sunAng + p.psi;
         p.car.rotation.z = carA + p.psi;
-        const er = eLayer(1) * (full ? p.a * .35 : 0);
+        const er = separatePlanets ? p.radialTravel * spread : eLayer(1) * (full ? p.a * .35 : 0);
         p.planets.forEach((pm, j) => {
           const phi = 2 * Math.PI * j / p.n + carA + p.psi;
+          if (separatePlanets) pm.position.z = p.zb + p.car.position.z + p.axialTravel * pullOut;
           pm.position.x = (p.a + er) * Math.cos(phi); pm.position.y = (p.a + er) * Math.sin(phi);
           pm.rotation.z = p.phase[j] + phi - (sunAng - carA) * p.zs / p.zp;
         });
