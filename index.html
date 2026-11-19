@@ -425,14 +425,20 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 .ov-transport{grid-template-columns:minmax(0,1fr) auto;margin-top:10px}
 .ov-range input,.ov-transport input{width:100%;margin:0;accent-color:var(--accent2)}
 .ov-status{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:8px;font-variant-numeric:tabular-nums}
-#ovParts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
+#ovParts{display:grid;grid-template-columns:4.6em repeat(var(--ov-cols,2),minmax(0,1fr));gap:6px 8px;margin:10px 0;align-items:stretch}
+.ovp-head{grid-column:1;align-self:center;font-size:12.5px;color:var(--mute)}
+.ovp-stage{grid-row:1;text-align:center;font-weight:700;font-size:13px;padding-bottom:4px;border-bottom:3px solid var(--line2)}
+.ovp-stage.st1{border-color:#6fa8dc}.ovp-stage.st2{border-color:#e0a050}
+#ovParts .btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:6px 4px}
+#ovParts .btn small{font-size:11px;opacity:.75}
+#ovParts .btn.st1{box-shadow:inset 3px 0 0 #6fa8dc}#ovParts .btn.st2{box-shadow:inset 3px 0 0 #e0a050}
 #ovParts .btn{white-space:normal;line-height:1.4}
 .ov-rpm{width:100%;font-variant-numeric:tabular-nums}
 .ov-rpm tr>:first-child,.ov-rpm tr>:nth-child(2){text-align:left}
 .ov-rpm tr>:nth-child(3){text-align:right}
 .ov-rpm tr>:last-child{text-align:center}
 @container(max-width:620px){.ov-line{grid-template-columns:minmax(0,1fr);gap:6px}.ov-line>b{padding:0}}
-@container(max-width:420px){.ov-actions,#ovParts,.ov-tools{grid-template-columns:repeat(2,minmax(0,1fr))}.ov-rpm th,.ov-rpm td{padding:5px 3px}}
+@container(max-width:420px){.ov-actions,.ov-tools{grid-template-columns:repeat(2,minmax(0,1fr))}#ovParts{grid-template-columns:4em repeat(var(--ov-cols,2),minmax(0,1fr));gap:4px 6px}.ov-rpm th,.ov-rpm td{padding:5px 3px}}
 .ov-live details{margin-top:12px}
 .ov-live #viewer.full{height:clamp(360px,48vw,640px);min-height:0}
 @media(max-width:830px){.ov-workbench{grid-template-columns:minmax(0,1fr)}.ov-live #viewer.full{height:clamp(340px,72vw,540px)}}
@@ -528,6 +534,6 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 <script src="map.js?v=pr41-1"></script>
 <script src="items.js?v=shift-gear-1"></script>
 <script src="groups.js?v=pr34-1"></script>
-<script defer src="app.js?v=pr41-1"></script>
+<script defer src="app.js?v=pr42-1"></script>
 </body>
 </html>
