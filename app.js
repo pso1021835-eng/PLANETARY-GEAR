@@ -1153,22 +1153,12 @@ function overviewStagePanel() {
   }).join('');
   return `<div class="ov-spec"><div class="card"><h3>단별 기어 제원</h3>
     ${stages.length > 1 ? chk('config.sharedRing','1·2단 링기어 공유') : ''}
-    <p>총 감속비 <b>${fmt(geometries.reduce((r,g)=>r*g.ratio,1),3)} : 1</b></p>
-    <button class="btn" type="button" id="ovDrawing">도면 기어제원 불러오기</button></div>${cards}</div>`;
+    <p>총 감속비 <b>${fmt(geometries.reduce((r,g)=>r*g.ratio,1),3)} : 1</b></p></div>${cards}</div>`;
 }
 function bindOverviewSpecs(m) {
   m.querySelectorAll('[data-ov-count]').forEach(b => b.onclick = () => {
     const [i,n] = b.dataset.ovCount.split('/').map(Number); D.stages[i].n = n; changed();
   });
-  m.querySelector('#ovDrawing').onclick = () => {
-    const base = E.defaultDesign();
-    D.config.stages = base.config.stages; D.config.sharedRing = base.config.sharedRing;
-    base.stages.forEach((s,i) => {
-      D.stages[i] ??= JSON.parse(JSON.stringify(s));
-      for (const key of ['s','p','r','m','beta','alpha','n','b','bSun','bRing','xs','xp','xr','autoRingShift']) D.stages[i][key] = s[key];
-    });
-    changed();
-  };
 }
 function overviewSpeedRows() {
   const stages = R.ctx.stages;
