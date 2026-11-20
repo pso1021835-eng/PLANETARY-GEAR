@@ -49,6 +49,19 @@
     for (let y = 0; y < 256; y++) { const v = 150 + (rnd() - .5) * 70 + 25 * Math.sin(y * .9); g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(0, y, 256, 1); }
     const tx = new TH.CanvasTexture(c); tx.wrapS = tx.wrapT = TH.RepeatWrapping; tx.repeat.set(1, 18); tx.anisotropy = renderer.capabilities.getMaxAnisotropy?.() || 1; return tx;
   }
+  // 이 측면(인볼류트·필렛) 매끈하게: 같은 위치의 정점끼리, 면 법선이 35° 이내인 것만 평균 (이끝·이뿌리 모서리는 살린다)
+  function smoothSides(geo) {
+    const pos = geo.attributes.position, nm = geo.attributes.normal, n = pos.count, key = i => `${Math.round(pos.getX(i) * 1e4)},${Math.round(pos.getY(i) * 1e4)},${Math.round(pos.getZ(i) * 1e4)}`;
+    const groups = new Map(), fn = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { fn[3 * i] = nm.getX(i); fn[3 * i + 1] = nm.getY(i); fn[3 * i + 2] = nm.getZ(i); if (Math.abs(fn[3 * i + 2]) > .5) continue; const k = key(i); (groups.get(k) || groups.set(k, []).get(k)).push(i); }
+    const c35 = Math.cos(35 * Math.PI / 180);
+    for (const ids of groups.values()) for (const i of ids) {
+      let x = 0, y = 0, z = 0;
+      for (const j of ids) { const d = fn[3 * i] * fn[3 * j] + fn[3 * i + 1] * fn[3 * j + 1] + fn[3 * i + 2] * fn[3 * j + 2]; if (d >= c35) { x += fn[3 * j]; y += fn[3 * j + 1]; z += fn[3 * j + 2]; } }
+      const L = Math.hypot(x, y, z) || 1; nm.setXYZ(i, x / L, y / L, z / L);
+    }
+    nm.needsUpdate = true;
+  }
   // rimDia: bore for external gears (0 = solid), outside diameter for the ring
   function gearGeometry(g, at, b, betaDeg, internal, rimDia) {
     const TH = T(), pts = outline(g, at).map(([x, y]) => new TH.Vector2(x, y));
@@ -68,6 +81,7 @@
     const onOD = i => Math.hypot(pos.getX(i), pos.getY(i)) > Rout - 1e-4;
     for (let i = 0; i < pos.count; i++) { if (onOD(i)) continue; const x = pos.getX(i), y = pos.getY(i), zz = pos.getZ(i), a = zz * tb / rp, c = Math.cos(a), s = Math.sin(a); pos.setXY(i, x * c - y * s, x * s + y * c); }
     geo.computeVertexNormals();
+    smoothSides(geo);
     if (internal) { const nm = geo.attributes.normal; for (let i = 0; i < pos.count; i++) if (onOD(i) && Math.abs(nm.getZ(i)) < .5) { const x = pos.getX(i), y = pos.getY(i), r = Math.hypot(x, y); nm.setXYZ(i, x / r, y / r, 0); } nm.needsUpdate = true; }
     else {
       // 썬·유성 보어도 링 외경처럼 반경 방향 법선으로: 면 단위로 각져 보이지 않는 매끈한 원통
@@ -760,9 +774,16 @@
       return hit ? hit.object.userData.partId : null;
     };
     cv.addEventListener('contextmenu', e => e.preventDefault());
+    // 두 손가락: 벌리고 오므리면 확대·축소 (모바일)
+    const touches = new Map(); let pinch0 = 0, pinchD = 0;
+    const pinchDist = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+    cv.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') { touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (touches.size === 2) { pinch0 = pinchDist(); pinchD = goal.dist; drag = null; } } }, true);
+    cv.addEventListener('pointermove', e => { if (!touches.has(e.pointerId)) return; touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (touches.size === 2 && pinch0 > 0) { goal.dist = clamp(pinchD * pinch0 / pinchDist(), S0 * .5, S0 * 12); st.zoomed = true; e.stopImmediatePropagation(); } }, true);
+    const untouch = e => { touches.delete(e.pointerId); if (touches.size < 2) pinch0 = 0; };
+    cv.addEventListener('pointerup', untouch, true); cv.addEventListener('pointercancel', untouch, true);
     cv.addEventListener('pointerdown', e => {
       closeMenu();
-      if (e.button === 2) return;
+      if (e.button === 2 || touches.size > 1) return;
       drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, pan: e.shiftKey || e.button === 1, t: performance.now() };
       cv.setPointerCapture(e.pointerId); vel.az = vel.el = 0;
     });
@@ -1112,9 +1133,14 @@
     }
     // ---- pointer orbit
     const cv = renderer.domElement; let drag = null;
-    cv.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, az: view.az, el: view.el }; cv.setPointerCapture(e.pointerId); });
-    cv.addEventListener('pointermove', e => { if (!drag) return; view.az = drag.az - (e.clientX - drag.x) * .008; view.el = Math.max(-1.45, Math.min(1.45, drag.el + (e.clientY - drag.y) * .008)); });
-    cv.addEventListener('pointerup', () => { drag = null; });
+    cv.style.touchAction = 'none';
+    const touches = new Map(); let pinch0 = 0, pinchD = 0;
+    const pinchDist = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+    cv.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') { touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (touches.size === 2) { pinch0 = pinchDist(); pinchD = view.dist; drag = null; return; } } drag = { x: e.clientX, y: e.clientY, az: view.az, el: view.el }; cv.setPointerCapture(e.pointerId); });
+    const untouch = e => { touches.delete(e.pointerId); if (touches.size < 2) pinch0 = 0; };
+    cv.addEventListener('pointercancel', untouch);
+    cv.addEventListener('pointermove', e => { if (touches.has(e.pointerId)) { touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (touches.size === 2 && pinch0 > 0) { view.dist = Math.max(size * .6, Math.min(size * 8, pinchD * pinch0 / pinchDist())); return; } } if (!drag) return; view.az = drag.az - (e.clientX - drag.x) * .008; view.el = Math.max(-1.45, Math.min(1.45, drag.el + (e.clientY - drag.y) * .008)); });
+    cv.addEventListener('pointerup', e => { untouch(e); drag = null; });
     cv.addEventListener('wheel', e => { e.preventDefault(); view.dist = Math.max(size * .6, Math.min(size * 8, view.dist * (1 + Math.sign(e.deltaY) * .1))); }, { passive: false });
     cv.addEventListener('dblclick', () => setView('iso'));
     function setView(name) {
