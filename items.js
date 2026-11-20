@@ -20,7 +20,7 @@
   const per = (c, fn) => S(c).map((s, i) => `${i + 1}단 ${fn(s, i)}`).join(' · ') || '—';
   const chk = (c, name) => S(c).map(s => s.geo.checks.find(x => x.k === name)).filter(Boolean);
   const chv = (c, name, d = 3) => chk(c, name).map((x, i) => `${i + 1}단 ${typeof x.v === 'number' ? f(x.v, d) : x.v}`).join(' · ') || '—';
-  const vd = (c, k) => { const x = c.R?.verdict?.find(v => v.k === k); return x ? (x.unit === 'h' ? fh(x.value) + ' h' : f(x.value, x.unit === '%' ? 1 : 2) + (x.unit ? ' ' + x.unit : '')) : '—'; };
+  const vd = (c, k) => { const x = c.R?.verdict?.find(v => (v.id || v.k) === k); return x ? (x.unit === 'h' ? fh(x.value) + ' h' : f(x.value, x.unit === '%' ? 1 : 2) + (x.unit ? ' ' + x.unit : '')) : '—'; };
   const rows = c => c.R?.rated?.rows || [];
   const mx = (c, k) => Math.max(...rows(c).map(r => r.f[k]));
   const mn = (c, k) => Math.min(...rows(c).map(r => r[k]));
@@ -65,7 +65,7 @@
     why: '정격 토크 일정 운전보다 실제 관절은 저부하 시간이 길다. 스펙트럼이 실제보다 가혹하면 과설계, 가벼우면 조기 파손이다.',
     rows: [['D', 'num', 'req.lifeH', '목표 수명 h'],
       ['A', 'duty', null, '부하 스펙트럼 (아래 표, 케이스 대표값 — 실제 운전 로그로 교체 권장)'],
-      ['C', '등가 토크 (3승 평균)', c => { const d = c.D.req.duty || [], tt = d.reduce((s, l) => s + (l.time || 0), 0) || 1; return `${f(c.D.req.Trated * Math.cbrt(d.reduce((s, l) => s + (l.time || 0) * Math.pow(l.torque / 100, 3), 0) / tt), 2)} N·m`; }, 'Teq = Trated·(Σ tᵢ·(Tᵢ/Trated)³ / Σ tᵢ)^(1/3)'],
+      ['C', '등가 토크 (3승 평균)', c => { const d = c.D.req.duty || [], tt = d.reduce((s, l) => s + (l.time || 0), 0) || 1; return `${f(c.D.req.Trated * Math.cbrt(d.reduce((s, l) => s + (l.time || 0) * Math.pow(Math.abs(l.torque) / 100, 3), 0) / tt), 2)} N·m`; }, 'Teq = Trated·(Σ tᵢ·(Tᵢ/Trated)³ / Σ tᵢ)^(1/3)'],
       ['C', '스펙트럼 수명 (기어 최소)', c => vd(c, '부하 스펙트럼 수명 (기어)'), 'Miner 합, ISO 6336 S-N 기울기'],
       ['M', 'str', 'req.dutySrc', '실측 운전 로그 출처 (파일명·측정일)'],
       ['J', 'log', '모터 전류 로그 또는 동작 시뮬레이션으로 스펙트럼을 확인했다']],
@@ -346,7 +346,7 @@
     how: '정적 허용응력(수명계수 정적값)과 피크·비상 토크 응력을 비교한다.',
     why: '피로가 아니라 한 번에 부러지거나 소성 변형하는지를 본다. 비상 토크(1-2)가 지배하는 경우가 많다.',
     rows: [['D', 'num', 'req.SHstat', '정적 접촉 SH 목표'], ['D', 'num', 'req.SFstat', '정적 굽힘 SF 목표'],
-      ['C', '피크 · 비상 최소 안전율', c => c.R ? `${f(c.R.peakS, 3)} · ${f(c.R.emergS, 3)}` : '—', '정적 허용 / 응력 (목표로 나눈 비)'], ['C', '정적 한계 토크', c => c.R ? `${f(c.R.staticCap, 2)} N·m` : '—', '']],
+      ['C', '피크 · 비상 최소 안전율', c => c.R ? `${f(c.R.peakS, 3)} · ${f(c.R.emergS, 3)}` : '—', 'min(SH/SH목표, SF/SF목표) · 1 이상 합격'], ['C', '정적 한계 토크', c => c.R ? `${f(c.R.staticCap, 2)} N·m` : '—', '']],
     w: ['limits'], up: ['1-2'], k: '피크·비상 안전율 ≥ 1', ok: c => c.R?.verdict ? ['피크 토크 정적 안전율', '비상 토크 정적 안전율'].every(k => c.R.verdict.find(v => v.k === k)?.ok !== false) : null };
 
   // ============================================================== 6 캐리어·핀

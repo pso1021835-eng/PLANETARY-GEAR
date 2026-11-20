@@ -9,7 +9,7 @@ const KEY = 'pgd-design-v1';
 let D = load(), R = null, MC = null, SENS = null, view = 'map', worker = null, jobId = 0, GOOD = null;
 
 function fillMissing(dst, src) { for (const k in src) { if (dst[k] === undefined || dst[k] === null && src[k] !== null && typeof src[k] === 'object') dst[k] = JSON.parse(JSON.stringify(src[k])); else if (Array.isArray(src[k]) && Array.isArray(dst[k])) { dst[k].forEach((v, i) => { if (v && typeof v === 'object' && src[k][i] && typeof src[k][i] === 'object' && !Array.isArray(v)) fillMissing(v, src[k][i]); }); } else if (src[k] && typeof src[k] === 'object' && dst[k] && typeof dst[k] === 'object') fillMissing(dst[k], src[k]); } return dst; }
-function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.schema === 'pgd/1') { s.config.floatingSun = false; return fillMissing(s, E.defaultDesign()); } } catch (e) { } return E.defaultDesign(); }
+function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.schema === 'pgd/1') { s.config.floatingSun = false; return fillMissing(E.migrateDuty(s), E.defaultDesign()); } } catch (e) { } return E.defaultDesign(); }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(D)); } catch (e) { } }
 const get = p => p.split('.').reduce((o, k) => o?.[k], D);
 const set = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((o, k) => (o[k] ??= {}), D)[last] = v; };
@@ -61,7 +61,7 @@ const STEPS = [
 ];
 function status(id) {
   if (!R || R.errors?.length) return ['s3', 's4', 'overview'].includes(id) ? 'bad' : '';
-  const v = Object.fromEntries(R.verdict.map(x => [x.k, x.ok]));
+  const v = Object.fromEntries(R.verdict.map(x => [x.id || x.k, x.ok]));
   const geoWarn = R.ctx.stages.some(s => s.geo.warns.length || s.geo.checks.some(c => !c.ok));
   switch (id) {
     case 'overview': return R.verdict.every(x => x.ok) ? 'ok' : 'bad';
@@ -376,7 +376,7 @@ function studioVerdict(id) {
       chip('피팅 SH', fmt(sh, 2), sh >= D.req.SH); chip('굽힘 SF', fmt(sf, 2), sf >= D.req.SF);
       const kh = Math.max(...rows.map(r => r.f.KHb)); chip('KHβ', fmt(kh, 2), kh <= 2);
       const pk = R.peak?.rows?.filter(r => r.part === part && (st == null || r.stage === st)) || [];
-      if (pk.length) { const s = Math.min(...pk.map(r => Math.min(r.SH, r.SF))); chip('피크 정적', fmt(s, 2), s >= 1); }
+      if (pk.length) { const s = Math.min(...pk.map(r => Math.min(r.SH / D.req.SHstat, r.SF / D.req.SFstat))); chip('피크 정적 (S/목표)', fmt(s, 2), s >= 1); }
     }
     if (part === 1 && R.bearings?.[st - 1]) { const bb = R.bearings[st - 1]; chip('니들 L10', fmtH(bb.L10h) + ' h', bb.L10h >= D.req.lifeH); }
     if (part === 0 && R.rated.stages?.[st - 1]) chip('Kγ', fmt(R.rated.stages[st - 1].Kg, 2), R.rated.stages[st - 1].Kg <= 1.3);
@@ -591,7 +591,7 @@ function extraHTML(id, ck) {
   return '';
 }
 function datasheetHTML() {
-  const X = procExtra(), ck = X.CK || {}, v = k => R.verdict.find(x => x.k === k);
+  const X = procExtra(), ck = X.CK || {}, v = k => R.verdict.find(x => (x.id || x.k) === k);
   const rows = [['감속비', `${fmt(R.ratio, 3)} : 1`], [`정격 토크 (${BASIS()})`, `${fmt(R.reducerCap, 2)} N·m`], ['시편 예측 P50', MC ? `${fmt(MC.capacity.p50, 1)} N·m` : '가상 검증 실행 후'], ['피크 정적 안전율', fmtV(v('피크 토크 정적 안전율'))],
     ['효율 (정격)', fmtV(v('효율 (정격, 추정)'))], ['백래시', fmtV(v('출력 백래시 (추정)'))], ['비틀림 강성', `${fmt(R.stiffness?.NmPerArcmin, 1)} N·m/arcmin`], ['출력 베어링 L10', fmtV(v('출력 베어링 L10'))],
     ['외경 × 길이', ck['1-6'] ? `Ø${fmt(ck['1-6'].Dout, 1)} × ${fmt(ck['1-6'].Lt, 1)} mm` : '—'], ['중량', X.mass ? `${fmt(X.mass, 0)} g` : '—'], ['정격 운전 온도', ck['10-6'] ? `${fmt(ck['10-6'].T, 1)} °C` : '—'], ['추정 원가', ck.D5?.cost ? `${Math.round(ck.D5.cost.total).toLocaleString('ko-KR')} 원/대` : '—']];
@@ -674,8 +674,8 @@ const VIEWS = {
 
 function clampPct(x) { return Math.max(0, Math.min(100, x)); }
 function dutyChart() {
-  const d = D.req.duty, tot = d.reduce((s, l) => s + (l.time || 0), 0) || 1, maxT = Math.max(...d.map(l => l.torque), 100);
-  return `<div style="display:flex;align-items:flex-end;height:110px;gap:2px;border-bottom:1px solid var(--rule);margin-top:10px">${d.map(l => `<div title="${l.torque}% × ${l.time}%" style="flex:${Math.max(l.time, .5) / tot};height:${l.torque / maxT * 100}%;background:var(--accent2);opacity:.6"></div>`).join('')}</div><p class="note">가로 = 시간 비율, 세로 = 토크</p>`;
+  const d = D.req.duty, tot = d.reduce((s, l) => s + (l.time || 0), 0) || 1, maxT = Math.max(...d.map(l => Math.abs(l.torque)), 100);
+  return `<div style="display:flex;align-items:flex-end;height:110px;gap:2px;border-bottom:1px solid var(--rule);margin-top:10px">${d.map(l => { const m = E.dutyMode(l); return `<div title="${l.torque}% × ${l.time}% · ${m === 'stop' ? '정지' : m === 'set' ? l.rpm + ' rpm' : '정격 rpm'}" style="flex:${Math.max(l.time, .5) / tot};height:${Math.max(Math.abs(l.torque) / maxT * 100, 1.5)}%;background:${m === 'stop' ? 'var(--muted, #999)' : l.torque < 0 ? 'var(--bad, #c55)' : 'var(--accent2)'};opacity:.6"></div>`; }).join('')}</div><p class="note">가로 = 시간 비율, 세로 = |토크| · 회색 = 정지, 붉은색 = 역방향 토크</p>`;
 }
 function advice() {
   const out = [];
@@ -734,9 +734,12 @@ const W = {
   duty() {
     const d = D.req.duty;
     return `<div class="card"><h3>부하 스펙트럼 (정격 대비 %, 시간 비율 %)</h3>
-      <div class="scroll"><table><tr><th>구간</th><th>토크 %</th><th>토크 N·m</th><th>시간 %</th><th>입력 rpm (0=정격)</th><th></th></tr>
-      ${d.map((l, i) => `<tr><td>${i + 1}</td><td><input type="number" data-p="req.duty.${i}.torque" data-t="num" value="${l.torque}" style="width:80px"></td><td>${fmt(D.req.Trated * l.torque / 100, 1)}</td><td><input type="number" data-p="req.duty.${i}.time" data-t="num" value="${l.time}" style="width:80px"></td><td><input type="number" data-p="req.duty.${i}.rpm" data-t="num" value="${l.rpm || 0}" style="width:90px"></td><td><button class="btn" data-del="${i}">삭제</button></td></tr>`).join('')}
-      </table></div><p><button class="btn" id="addDuty">구간 추가</button> <span class="note">시간 합 ${fmt(d.reduce((s, l) => s + (l.time || 0), 0), 1)} % (합이 100이 아니어도 비율로 계산)</span></p>${dutyChart()}</div>`;
+      <div class="scroll"><table><tr><th>구간</th><th>토크 % (음수 = 역방향)</th><th>토크 N·m</th><th>시간 %</th><th>회전</th><th>입력 rpm</th><th>외부 하중 % (빈칸 = |토크 %|)</th><th></th></tr>
+      ${d.map((l, i) => { const m = E.dutyMode(l); return `<tr><td>${i + 1}</td><td><input type="number" data-p="req.duty.${i}.torque" data-t="num" value="${l.torque}" style="width:80px"></td><td>${fmt(D.req.Trated * l.torque / 100, 1)}</td><td><input type="number" data-p="req.duty.${i}.time" data-t="num" value="${l.time}" style="width:80px"></td>
+        <td><select data-p="req.duty.${i}.mode" data-t="str">${[['rated', '정격 rpm 사용'], ['set', '지정 rpm으로 회전'], ['stop', '0 rpm 정지 (유지 토크)']].map(([k, t]) => `<option value="${k}" ${k === m ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+        <td>${m === 'set' ? `<input type="number" data-p="req.duty.${i}.rpm" data-t="num" value="${l.rpm ?? ''}" style="width:90px">` : `<span class="note">${m === 'stop' ? '0' : `${D.req.rpm} (정격)`}</span>`}</td>
+        <td><input type="number" data-p="req.duty.${i}.ext" data-t="num" value="${l.ext ?? ''}" placeholder="${Math.abs(l.torque)}" style="width:80px"></td><td><button class="btn" data-del="${i}">삭제</button></td></tr>`; }).join('')}
+      </table></div><p><button class="btn" id="addDuty">구간 추가</button> <span class="note">시간 합 ${fmt(d.reduce((s, l) => s + (l.time || 0), 0), 1)} % — 정지·무부하 구간을 포함한 전체 경과 시간으로 정규화 (합이 100이 아니어도 비율로 계산) · 정지 구간은 회전수 0(피로 손상 없음), 유지 토크는 정적 판정 · 음수 rpm = 역회전</span></p>${dutyChart()}</div>`;
   },
   finder() {
     const st = R?.ctx?.stages || [];
@@ -827,8 +830,8 @@ const W = {
       <tr><td>무한 수명 (10¹⁰회)</td><td>${fmt(R.capacityInf)} N·m</td></tr>
       <tr><td>정적 (피크 기준 SH ${D.req.SHstat} · SF ${D.req.SFstat})</td><td>${fmt(R.staticCap)} N·m</td></tr>
       <tr><td>유성 베어링 한계 (목표 수명)</td><td>${R.bearingCap.map(v => fmt(v, 1)).join(' / ')} N·m</td></tr>
-      <tr><td>피크 ${D.req.Tpeak} N·m 최소 안전율</td><td class="${R.peakS < 1 ? 'bad' : ''}">${fmt(R.peakS, 3)}</td></tr>
-      <tr><td>비상 ${D.req.Temerg} N·m 최소 안전율</td><td class="${R.emergS < 1 ? 'bad' : ''}">${fmt(R.emergS, 3)}</td></tr>
+      <tr><td>피크 ${D.req.Tpeak} N·m 지배 안전율</td><td class="${R.peakCheck.ok ? '' : 'bad'}">${fmt(R.peakCheck.S, 3)} / ${R.peakCheck.target} · ${R.peakCheck.label}</td></tr>
+      <tr><td>비상 ${D.req.Temerg} N·m 지배 안전율</td><td class="${R.emergCheck.ok ? '' : 'bad'}">${fmt(R.emergCheck.S, 3)} / ${R.emergCheck.target} · ${R.emergCheck.label}</td></tr>
       <tr><td><b>감속기 한계</b></td><td><b>${fmt(R.reducerCap, 2)} N·m</b> · ${esc(R.reducerGov)}</td></tr></table></div>`;
   },
   lube() {
@@ -994,7 +997,7 @@ const WB = {
   },
   case(m) { const b = m.querySelector('#cApply'); if (b) b.onclick = () => { E.applyCase(D, m.querySelector('#cPos').value + '-' + m.querySelector('#cAxis').value, R?.ratio); D.anim.rpm = D.req.rpm; changed(); }; },
   duty(m) {
-    const a = m.querySelector('#addDuty'); if (a) a.onclick = () => { D.req.duty.push({ torque: 50, time: 10, rpm: 0 }); changed(); };
+    const a = m.querySelector('#addDuty'); if (a) a.onclick = () => { D.req.duty.push({ torque: 50, time: 10, rpm: 0, mode: 'rated' }); changed(); };
     m.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { D.req.duty.splice(+b.dataset.del, 1); changed(); });
   },
   finder(m) {
@@ -1066,7 +1069,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=pr49-1');
+    if (!worker) worker = new Worker('worker.js?v=engfix-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });
@@ -1404,7 +1407,7 @@ $('#bExport').onclick = () => {
   dlg('설계 JSON', txt, '아래 내용을 복사해 보관하세요. "복사"를 누르면 클립보드에 넣습니다.', '복사', async () => { try { await navigator.clipboard.writeText(txt); return '복사했습니다.'; } catch (e) { $('#dlgText').select(); return '자동 복사가 막혀 있어 내용을 선택해 두었습니다. Ctrl+C로 복사하세요.'; } });
 };
 $('#bImport').onclick = () => dlg('JSON 불러오기', '', '이 사이트에서 복사한 설계 JSON을 붙여 넣고 확인을 누르세요.', '불러오기', () => {
-  try { const d = JSON.parse($('#dlgText').value); if (d.schema !== 'pgd/1') throw new Error('형식이 다릅니다'); d.config.floatingSun = false; D = fillMissing(d, E.defaultDesign()); $('#dname').value = D.name || ''; changed(); $('#dlg').close(); return null; } catch (e) { return '불러오지 못했습니다: ' + e.message; }
+  try { const d = JSON.parse($('#dlgText').value); if (d.schema !== 'pgd/1') throw new Error('형식이 다릅니다'); d.config.floatingSun = false; D = fillMissing(E.migrateDuty(d), E.defaultDesign()); $('#dname').value = D.name || ''; changed(); $('#dlg').close(); return null; } catch (e) { return '불러오지 못했습니다: ' + e.message; }
 });
 // 추천 제원: 외형·목표 감속비·입력축 조건 → 허용 토크 순
 let REC = null;
