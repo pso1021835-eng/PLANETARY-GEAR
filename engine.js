@@ -220,6 +220,63 @@
     return stage;
   }
 
+  // ------------------------------------------------------------ profile-shift map (단별 썬·유성 전위 평면)
+  // Each point: coaxial ring shift solved (or the shared ring's shift kept → 1-D curve), geometry checks
+  // (center distance, undercut, tip thickness, interference, tip/root clearance, planet gap, εα ≥ 1.2) and the
+  // specific sliding at the start/end of contact. Uses the standard basic rack of the engine (no tool data).
+  function slidingOf(ms) {
+    const a = ms.a, c = ms.c, T = ms.center * Math.sin(ms.aw), sgn = ms.internal ? -1 : 1, u = c.z / a.z;
+    const ra1 = a.dFa / 2, rb1 = a.db / 2, ra2 = c.dFa / 2, rb2 = c.db / 2;
+    const r1E = Math.sqrt(Math.max(0, ra1 * ra1 - rb1 * rb1)), r2E = sgn > 0 ? T - r1E : r1E + T;
+    const r2A = Math.sqrt(Math.max(0, ra2 * ra2 - rb2 * rb2)), r1A = sgn > 0 ? T - r2A : r2A - T;
+    const z1A = 1 - r2A / (r1A * u), z2E = 1 - r1E * u / r2E;   // pinion root (A) · wheel root (E)
+    return { z1A, z2E, bal: Math.abs(z1A - z2E), max: Math.max(Math.abs(z1A), Math.abs(z2E)) };
+  }
+  function shiftPoint(st, xs, xp, xr) {
+    const s2 = { ...st, xs, xp, xr, autoRingShift: false }, g = geometry(s2);
+    const bad = g.checks.filter(c => !c.ok && !/축방향 물림률/.test(c.k));
+    const ok = !g.errors.length && !bad.length && g.parts.every(p => p.tipThickness >= .4 * p.m);
+    const why = g.errors[0] || bad[0]?.k || (ok ? '' : '이끝 두께 < 0.4m');
+    const sl = g.meshes.map(slidingOf);
+    return { xs, xp, xr, ok, why, ea: g.meshes.map(ms => ms.ea), san: Math.min(...g.parts.map(p => p.tipThickness / p.m)), sl, bal: sl[0].bal + .5 * sl[1].bal };   // 외접 균형 우선, 내접은 절반 가중
+  }
+  function shiftMap(D, i, opt = {}) {
+    const step = opt.step || .05, lo = opt.lo ?? -.5, hi = opt.hi ?? 1;
+    const shared = i === 1 && D.config.sharedRing, st = shared ? sharedStage(D.stages[0], D.stages[1]) : { ...D.stages[i] };
+    const fixedRing = shared && D.stages[0].r != null, pts = [], vals = [];
+    for (let v = lo; v <= hi + 1e-9; v += step) vals.push(+v.toFixed(4));
+    if (fixedRing) {
+      // the physical ring (teeth and shift) is set by stage 1: for each planet shift solve the sun shift that keeps both centres equal
+      const xr = st.xr;
+      for (const xp of vals) {
+        let a = -2, b = 3, fa = xp + ringShiftOffset(st, a) - xr;
+        for (let k = 0; k < 60; k++) { const m = (a + b) / 2, fm = xp + ringShiftOffset(st, m) - xr; if (!Number.isFinite(fm)) { b = m; continue; } if (Math.sign(fm) === Math.sign(fa)) { a = m; fa = fm; } else b = m; }
+        const xs = +((a + b) / 2 - xp).toFixed(4);
+        if (xs >= lo - 1e-9 && xs <= hi + 1e-9) pts.push(shiftPoint(st, xs, xp, xr));
+      }
+    } else for (const xs of vals) for (const xp of vals) { const xr = matchRingShift({ ...st, xs, xp }); pts.push(shiftPoint(st, xs, xp, xr)); }
+    const cur = { xs: st.xs || 0, xp: st.xp || 0, xr: st.autoRingShift ? matchRingShift(st) : st.xr };
+    return { stage: i + 1, mode: fixedRing ? 'curve' : 'plane', lo, hi, step, vals, pts, cur };
+  }
+  // Recommend shifts on the map. objective: 'slide' (balanced specific sliding, geometry only),
+  // 'cap' (largest allowable output torque of this stage) or 'bend' (equal root safety sun / planet), both by the full engine.
+  function shiftCandidates(D, i, objective, opt = {}) {
+    const map = shiftMap(D, i, { step: opt.step || (objective === 'slide' ? .05 : .1) });
+    let ok = map.pts.filter(p => p.ok);
+    if (objective === 'slide') return { map, list: ok.sort((a, b) => a.bal - b.bal || b.san - a.san).slice(0, opt.top || 5).map(p => ({ ...p, score: p.bal })) };
+    return { map, list: ok };
+  }
+  function shiftScore(D, i, p) {
+    const T = JSON.parse(JSON.stringify(D)), st = T.stages[i];
+    Object.assign(st, { xs: p.xs, xp: p.xp, xr: p.xr, autoRingShift: false });
+    const ctx = prepare(T); if (ctx.errors.length) return { ...p, ok: false, why: ctx.errors[0] };
+    const op = { rpm: T.req.rpm, cycles: cyclesFor(T.req.lifeH) }, cap = capacity(ctx, op, T.req, i + 1);
+    const rows = evaluate(ctx, { ...op, Tout: T.req.Trated }).rows.filter(r => r.stage === i + 1);
+    const SF = part => Math.min(...rows.filter(r => r.part === part).map(r => r.SF));
+    const sfS = SF(0), sfP = SF(1);
+    return { ...p, cap, sfS, sfP, bendBal: Math.abs(sfS - sfP) / Math.min(sfS, sfP) };
+  }
+
   function rim(g, bore) {
     // empty (null) = automatic rim; 0 on an external gear = solid body (no bore)
     if (!g.internal && bore === 0) return { YB: 1, diameter: 0, sR: g.df / 2, ratio: Infinity, assumed: false, solid: true };
@@ -1268,7 +1325,7 @@
     };
   }
 
-  const api = { lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, ringTeeth, ringShiftOffset, matchRingShift, sharedStage, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, cyclesFor, spectrumDamage, NAMES };
+  const api = { shiftMap, shiftCandidates, shiftScore, lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, ringTeeth, ringShiftOffset, matchRingShift, sharedStage, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, cyclesFor, spectrumDamage, NAMES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PGD = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

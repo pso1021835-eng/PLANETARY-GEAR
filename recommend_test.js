@@ -27,3 +27,11 @@ if (restored.errors.length || Math.abs(restored.ratio - 22) > 1e-12 ||
   throw new Error('Applying the recommendation must retain tooth counts, assembly phase and shared-ring geometry');
 }
 console.log('profile shift recommendation test passed');
+// 전위 지도: 예제 설계의 현재 점(0, 0)이 가능 영역이고, 미끄럼률 균형 추천이 현재보다 균형이 좋으며, 가능 영역 점은 모두 형상 판정 통과
+{
+  const E2 = require('./engine.js'), D2 = E2.defaultDesign(), map = E2.shiftMap(D2, 0);
+  const cur = map.pts.find(p => Math.abs(p.xs) < 1e-9 && Math.abs(p.xp) < 1e-9), best = E2.shiftCandidates(D2, 0, 'slide').list[0];
+  const okAll = map.pts.filter(p => p.ok).every(p => p.ea[0] >= 1.2 && p.ea[1] >= 1.2 && p.san >= .4);
+  if (!cur?.ok || !(best.bal < cur.bal) || !okAll) { console.log('FAIL shift map', { cur: cur?.ok, best: best?.bal, curBal: cur?.bal, okAll }); process.exit(1); }
+  console.log(`shift map: 가능 ${map.pts.filter(p => p.ok).length}/${map.pts.length}, 미끄럼 균형 추천 xs ${best.xs} xp ${best.xp} (균형 ${best.bal.toFixed(3)} < 현재 ${cur.bal.toFixed(3)})`);
+}
