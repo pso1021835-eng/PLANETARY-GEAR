@@ -1,0 +1,27 @@
+# 계산 회귀 테스트: main에 올라오는 모든 커밋과 PR에서 실행
+# - compat: 기준 설계의 단별 응력·안전율·허용 토크가 compat_baseline.txt와 같은지 (의도한 변경이면 기준 파일도 함께 갱신)
+# - kiss: KISSsoft 보고서 2건(스퍼·헬리컬) 대조
+# - carrier / recommend: 캐리어 형상, 추천 제원
+name: tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: compat (기준값 비교)
+        run: node compat_test.js > /tmp/compat.txt && diff -u compat_baseline.txt /tmp/compat.txt
+      - name: KISSsoft 대조
+        run: node kiss_test.js
+      - name: 캐리어 형상
+        run: node carrier_geometry_test.js
+      - name: 추천 제원
+        run: node recommend_test.js
+      - name: 문법 검사
+        run: for f in *.js; do node --check "$f" || exit 1; done
