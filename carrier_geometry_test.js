@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const E = require('./engine.js');
 require('./viewer3d.js');
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-8, `${a} ≠ ${b}`);
-const test = E.defaultDesign();
+const test = E.templateDesign();
 // geometry fixture (independent of the example design)
 test.struct = undefined; test.geom = {}; test.needle = undefined;
 test.stages.forEach((s, i) => Object.assign(s, { b: 5 + i, sunBore: null, planetBore: null, ringOD: null,
@@ -82,7 +82,7 @@ close(bom.find(p => p.id === 'pin1').mass, Math.PI * 2 ** 2 * single.pinLength *
 close(bom.find(p => p.id === 'carrier1').mass, single.materialVolume * 7.85e-6);
 assert.ok(PGD3D.partSchema(rating, test, 'pin1').some(row => row.readonly && Number(row.value) > 5));
 
-const legacy = E.defaultDesign();
+const legacy = E.templateDesign();
 legacy.stages[0].carrier.outerD = null;
 legacy.geom = { carrier1: { plateD: 52 } };
 assert.equal(E.prepare(legacy).stages[0].carrier.outerD, 52);

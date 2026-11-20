@@ -1,5 +1,5 @@
 const P=require('./engine.js');
-const D=P.defaultDesign();
+const D=P.templateDesign();   // 기준 설계 = RDP-RH065 템플릿 (기본 예제가 바뀌어도 기준값 유지)
 // legacy fixture geometry (baseline values predate the drawing-based example)
 D.stages.forEach(s=>{Object.assign(s,{sunBore:null,planetBore:null,ringOD:null,carrier:{webW:4,webH:3,material:'S45C',outerD:null,innerD:null,groove:null,pocket:null,axialClearance:0,bossD:null,bossT:4}});});
 Object.assign(D.req,{rpm:3000,SH:1,SF:1.25});

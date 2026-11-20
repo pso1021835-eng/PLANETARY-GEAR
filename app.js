@@ -1066,7 +1066,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=pr47-1');
+    if (!worker) worker = new Worker('worker.js?v=pr49-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });
