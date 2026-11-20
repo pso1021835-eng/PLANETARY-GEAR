@@ -13,7 +13,7 @@
   const chk = (R, name) => st(R).map(s => s.geo.checks.find(c => c.k === name)).filter(Boolean);
   const chkVal = (R, name, d = 2) => chk(R, name).map((c, i) => `${i + 1}단 ${typeof c.v === 'number' ? f(c.v, d) : c.v}`).join(' · ');
   const chkOk = (R, ...names) => { const cs = names.flatMap(n => chk(R, n)); return cs.length ? cs.every(c => c.ok) : null; };
-  const vd = (R, k) => R?.verdict?.find(x => x.k === k);
+  const vd = (R, k) => R?.verdict?.find(x => (x.id || x.k) === k);
   const vdOk = (R, ...ks) => { const xs = ks.map(k => vd(R, k)).filter(Boolean); return xs.length ? xs.every(x => x.ok) : null; };
   const vdVal = (R, k) => { const x = vd(R, k); return x ? (x.unit === 'h' ? f(x.value, 0) + ' h' : f(x.value, x.unit === '%' ? 1 : 2) + (x.unit ? ' ' + x.unit : '')) : null; };
   const rows = R => R?.rated?.rows || [];

@@ -23,5 +23,9 @@ jobs:
         run: node carrier_geometry_test.js
       - name: 추천 제원
         run: node recommend_test.js
+      - name: 계산 수정 회귀 (피크·정역·정지 시간·구 JSON)
+        run: node engine_fix_test.js
+      - name: 정격토크 기준별 분해 (RH065 9:1)
+        run: node rating_basis_test.js
       - name: 문법 검사
         run: for f in *.js; do node --check "$f" || exit 1; done
