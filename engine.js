@@ -1279,8 +1279,39 @@
       duty: c.duty.map(([tq, tm]) => ({ torque: tq, time: tm, rpm: 0 })), ext: { Fr: +(c.ext[0] * T).toFixed(1), Fa: +(c.ext[1] * T).toFixed(1), M: +(c.ext[2] * T).toFixed(2) } });
     return D;
   }
-  // Example = RDP-RH065(9N) as drawn (EasternGear 300001–300009, 2026-06). Values not on the drawings are marked 가정 in the register.
+  // Basic example = KISSsoft report "HDS_82pi_1stage_common_R2 · Planetary gear set (spur)", ISO 6336:2019.
+  // Gear data, load, life, lubricant and materials as in the report; parts the report does not cover (pins, needles,
+  // carrier, housing, output bearing) are assumed and scaled from the RDP-RH065 template (가정).
   function defaultDesign() {
+    const D = templateDesign();
+    const st = Object.assign(JSON.parse(JSON.stringify(D.stages[1])), {
+      s: 28, p: 35, n: 3, m: 0.4, beta: 0, alpha: 20, b: 5, xs: 0.1828, xp: 0.0745, xr: 0.3318, autoRingShift: false, grade: 6,
+      mod: { crown: 0, tip: 2, verified: 'none' }, sunBore: 0, planetBore: 10, ringOD: 48, tipChamfer: [0, 0, 0],
+      asn: [[0, 0], [-0.054, -0.084], [-0.054, -0.084]], cutter: { z0: 32, x0: 0 },        // DIN 3967 cd25 (planet, ring), ring by pinion cutter z0 32
+      bearing: { name: '풀니들 Ø1.5 × 16 (가정)', C: 1900, C0: 1800, count: 1 }, jt: [20, 25],
+      pin: { d: 7, type: 'double', material: 'SUJ2', wall: 1.5, allow: 1200, holeMode: 'through', depth: null },
+      carrier: { width: 8.5, groove: 5.5, pocket: null, pocketShape: 'slot', outerD: null, innerD: null, bossD: null, bossT: 4, material: 'S45C' } });
+    Object.assign(D, {
+      name: 'HDS 82pi · 1단 유성 (KISSsoft 보고서 R2 기준)',
+      config: { stages: 1, sharedRing: false, floatingSun: false },
+      stages: [st, JSON.parse(JSON.stringify(st))],
+      materials: Array.from({ length: 6 }, () => ({ family: 'Eh', surfaceHRC: 61, coreHRC: 28, depth: 0.3 })),
+      lube: { type: 'oil', base: 'mineral', nu40: 220, nu100: 17.5, temp: 70, rho: .895, alphaP: 2.0, starvation: 1, XL: 1, XW: 1, fzg: 12, rzFlank: 4.8, rzRoot: 20 },
+      outBearing: { name: '크로스 롤러 Dw 2 (가정 · 카탈로그 확인)', rows: 2, type: 'roller', C: 2340, C0: 3220, dp: 40.6, Km: 30, Z: 0, Dw: 2, Lw: 2, preload: 0 },
+      housing: { wall: 2, coverT: 6, flangeT: 3, boltN: 6, boltD: 3 },
+      geom: {},
+      needle: [{ use: true, apply: true, Dw: 1.5, Lw: null, Z: 16, HRCpin: 60, HRCbore: 58 }, { use: true, apply: true, Dw: 1.5, Lw: null, Z: 16, HRCpin: 60, HRCbore: 58 }],
+      verify: { feaKcar: [null, null], feaSigmaF: null, testT: null, testNote: '' },
+      anim: { rpm: 3010, slow: 0.02 }
+    });
+    // report: carrier torque 16.2 N·m, sun 3010 rpm, 100 h, required SH 1.0 / SF 1.4, KA 1.25, Kγ 1.00
+    Object.assign(D.req, { Trated: 16.2, Tpeak: 16.2, Temerg: 16.2, rpm: 3010, lifeH: 100, SH: 1.0, SF: 1.4, ext: { Fr: 0, Fa: 0, M: 0 }, duty: [{ torque: 100, time: 100, rpm: 0 }] });
+    Object.assign(D.loads, { KA: 1.25, kgMode: 'fixed', kgFixed: 1.0, sunSupport: [{ ...D.loads.sunSupport[1], od: 11, id: 0 }] });
+    return D;
+  }
+  // Template = RDP-RH065(9N) as drawn (EasternGear 300001–300009, 2026-06). Values not on the drawings are marked 가정 in the register.
+  // Kept as the scaling base of the recommender (추천 제원) and for the 2-stage hollow layout.
+  function templateDesign() {
     // SCM440 ion-nitrided: surface HRC 58–62, core HRC 25–28, effective case 0.1 mm (gears 3, 5, 7, 8 and housing ring 2)
     const mat = () => ({ family: 'NV', surfaceHRC: 60, coreHRC: 26.5, depth: 0.10 });
     const stage = (b, extra) => Object.assign({ s: 46, p: 23, n: 3, m: 0.6, beta: 12, alpha: 20, b, xs: 0, xp: 0, xr: 0, autoRingShift: true,
@@ -1325,7 +1356,7 @@
     };
   }
 
-  const api = { shiftMap, shiftCandidates, shiftScore, lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, ringTeeth, ringShiftOffset, matchRingShift, sharedStage, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, cyclesFor, spectrumDamage, NAMES };
+  const api = { shiftMap, shiftCandidates, shiftScore, lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, ringTeeth, ringShiftOffset, matchRingShift, sharedStage, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, templateDesign, cyclesFor, spectrumDamage, NAMES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PGD = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -180,7 +180,7 @@
 
   // ---- 후보 → 전체 설계
   function build(base, spec, cand, bs, E) {
-    const T = E.defaultDesign(), D = clone(T);
+    const T = (E.templateDesign || E.defaultDesign)(), D = clone(T);   // 비례 기준: RDP-RH065 템플릿
     // 사용자의 요구·재료·윤활·하중 기준은 현재 설계에서 가져온다
     for (const k of ['req', 'materials', 'lube', 'loads', 'design', 'reliability', 'perf', 'mc', 'anim']) if (base[k]) D[k] = clone(base[k]);
     D.req.ratio = spec.ratio;
