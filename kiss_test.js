@@ -71,6 +71,18 @@ add('efficiency', o.eff.total * 100, 97.457, .005);
   a2('SF sun', S.SF, 1.10, .02); a2('SF planet S', PS.SF, 0.79, .015); a2('SF planet R', PR.SF, 0.72, .015); a2('SF ring', RG.SF, 1.16, .015);
   a2('life planet root h', h.spectrum.list.find(p => p.id === '0-1-1').lifeH, 20012, .05);
   a2('scuffing SB S–P', sc[0].SB, 5.067, .1);
+  { const M = JSON.parse(JSON.stringify(H)); M.stages[0].ballD = [1.1, 1.1, 1.0]; const t = E.analyze(M).tooth[0].parts;
+    a2('Wk sun (k 5)', t[0].k === 5 ? t[0].Wk[0] : NaN, 8.347, .002); a2('MdK sun (Ø1.1)', t[0].Md[0], 27.445, .002); a2('MdK ring (Ø1.0)', t[2].Md[0], 75.949, .002); }
+}
+// ---- 측정 치수·백래시 (KISSsoft 11.2–11.5): 스퍼 보고서, 볼 지름은 보고서의 실효값
+{
+  const M = JSON.parse(JSON.stringify(D)); Object.assign(M.stages[0], { ballD: [0.725, 0.725, 0.725], blMode: 'asn', aTol: [0, 0] });
+  const m = E.analyze(M), t = m.tooth[0].parts, b = m.backlash, j = b.stages[0].jtRange;
+  const a3 = (k, v, ref, tol = .002) => add('[측정] ' + k, v, ref, tol);
+  a3('Wk sun (k 4)', t[0].Wk[0], 4.340); a3('Wk planet e (k 5)', t[1].Wk[0], 5.480); a3('Wk planet i', t[1].Wk[1], 5.451);
+  a3('MdK sun', t[0].Md[0], 12.398); a3('MdK planet e', t[1].Md[0], 14.995); a3('MdK planet i', t[1].Md[1], 14.922); a3('MdK ring e', t[2].Md[0], 38.495); a3('MdK ring i', t[2].Md[1], 38.577);
+  a3('jtw S–P min µm', j[0][0], 54, .02); a3('jtw S–P max µm', j[0][1], 85, .02); a3('jtw P–R min µm', j[1][0], 109, .02); a3('jtw P–R max µm', j[1][1], 169, .02);
+  a3('carrier play min arcmin', b.range[0], 0.3683 * 60, .005); a3('carrier play max arcmin', b.range[1], 0.5730 * 60, .005);
 }
 let bad = 0;
 for (const [k, v, ref, tol] of cases) { const d = v / ref - 1, ok = Math.abs(d) <= tol; if (!ok) bad++; console.log(`${ok ? 'ok ' : 'BAD'} ${k.padEnd(24)} site ${v.toFixed(4).padStart(10)}  KISS ${String(ref).padStart(8)}  ${(d * 100).toFixed(2)} %`); }
