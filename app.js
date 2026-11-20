@@ -1417,6 +1417,12 @@ $('#bRecommend').onclick = () => {
   v('rRatio', R?.ratio ? Math.max(3, Math.round(R.ratio)) : 9); v('rMods', [...new Set(D.stages.map(s => s.m))].join(', ')); v('rBeta', last.beta);
   $('#recDlg').showModal();
 };
+// 감속비 표시: 정확한 정수면 정수만, 아니면 기약분수와 오차 (소수 나열 없이)
+const recRatioHTML = (r, spec) => {
+  const g = (a, b) => b ? g(b, a % b) : a; let n = 1, d = 1;
+  for (const t of r.stages) { n *= (t.R ?? t.r ?? (t.s + 2 * t.p)) + t.s; d *= t.s; const k = g(n, d); n /= k; d /= k; }
+  return d === 1 ? `<b>${n}</b>` : `<b>${n}/${d}</b><br><small class="note">≈ ${fmt(n / d, 3)} (${n / d >= spec.ratio ? '+' : ''}${fmt(100 * (n / d - spec.ratio) / spec.ratio, 2)} %)</small>`;
+};
 const recFrac = st => { const n = st.R + st.s, d = st.s, g = (a, b) => b ? g(b, a % b) : a, k = g(n, d); return d / k === 1 ? `${n / k}` : `${n / k}/${d / k}`; };
 $('#recGo').onclick = async () => {
   const num = id => +$('#' + id).value, out = $('#recOut');
@@ -1451,7 +1457,7 @@ $('#recGo').onclick = async () => {
   const stg = r => r.stages.map((t, i) => `${r.stages.length > 1 ? `${i + 1}단 ` : ''}m${t.m} · S${t.s}/P${t.p}/R${t.R} ×${t.n} · b ${fmt(r.b[i], 1)} · i ${recFrac(t)}${shiftLine(t)}`).join('<br>');
   const caps = r => r.stageCap.map((cc, i) => `${r.stages.length > 1 ? `${i + 1}단 ` : ''}<b>${fmt(cc.out, 1)}</b>${r.stages.length > 1 ? ` <small class="note">(캐리어 ${fmt(cc.own, 1)})</small>` : ''}`).join('<br>');
   out.innerHTML = `<div class="scroll"><table><tr><th>순위</th><th>구성</th><th>실제 감속비<br><small>목표 대비</small></th><th class="l">모듈 · 잇수 · 유성 개수 · 치폭 · 단 감속비 · 전위</th><th>1단 썬 PCD<br><small>mm</small></th><th>단별 허용 토크<br><small>N·m · 출력축 환산</small></th><th>감속기 허용 토크<br><small>N·m · 출력</small></th><th class="l">지배 부위</th><th>외경 × 높이</th><th></th></tr>
-    ${ok.map((r, k) => `<tr class="${k === 0 ? 'gov' : ''}"><td>${k + 1}</td><td>${typeName[r.type]}</td><td><b>${fmt(r.ratio, 6)}</b><br><small class="note">${fmt(100 * (r.ratio - spec.ratio) / spec.ratio, 3)}%</small></td><td class="l">${stg(r)}</td><td>${fmt(r.stages[0].s * r.stages[0].m / Math.cos(spec.beta * Math.PI / 180), 3)}</td><td>${caps(r)}</td><td><b class="${r.cap < D.req.Trated ? 'bad' : 'good'}">${fmt(r.cap, 1)}</b>${r.fails ? `<br><small class="bad">미달 ${r.fails}</small>` : ''}</td><td class="l note">${esc(r.gov)}</td><td>Ø${fmt(r.OD, 1)} × ${fmt(r.H, 1)}</td><td><button class="btn" type="button" data-rec="${REC.indexOf(r)}">적용</button></td></tr>`).join('')}</table></div>
+    ${ok.map((r, k) => `<tr class="${k === 0 ? 'gov' : ''}"><td>${k + 1}</td><td>${typeName[r.type]}</td><td>${recRatioHTML(r, spec)}</td><td class="l">${stg(r)}</td><td>${fmt(r.stages[0].s * r.stages[0].m / Math.cos(spec.beta * Math.PI / 180), 3)}</td><td>${caps(r)}</td><td><b class="${r.cap < D.req.Trated ? 'bad' : 'good'}">${fmt(r.cap, 1)}</b>${r.fails ? `<br><small class="bad">미달 ${r.fails}</small>` : ''}</td><td class="l note">${esc(r.gov)}</td><td>Ø${fmt(r.OD, 1)} × ${fmt(r.H, 1)}</td><td><button class="btn" type="button" data-rec="${REC.indexOf(r)}">적용</button></td></tr>`).join('')}</table></div>
     <p class="note">요구 조건: 정격 ${D.req.Trated} N·m · 수명 ${D.req.lifeH} h · ${D.req.rpm} rpm · SH ${D.req.SH} · SF ${D.req.SF} · ${BASIS()}. 미달 = 판정 항목(효율·백래시·정적 등) 중 기준 미달 수. 단 감속비는 분수로 표시합니다.</p>${sum}`;
   out.querySelectorAll('[data-rec]').forEach(b => b.onclick = () => { const r = REC[+b.dataset.rec]; D = JSON.parse(JSON.stringify(r.D)); $('#dname').value = D.name; $('#recDlg').close(); changed(); });
 };
