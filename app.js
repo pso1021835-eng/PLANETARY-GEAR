@@ -947,8 +947,51 @@ const W = {
   },
   part(pid) { const p = bomList().find(x => x.id === pid); const h = dimsHTML(pid); return h ? `<div class="card"><h3>${esc(p?.name || pid)} 형상 치수</h3>${h}</div>` : ''; },
   bom() { return `<div class="card">${bomHTML()}</div>`; },
+  // 전위 지도: 단별 썬(가로)·유성(세로) 전위 평면. 색 = 미끄럼률 균형(초록 좋음), 회색 = 불가(이유는 마우스), ● 현재
+  shiftmap() {
+    const ns = D.config.stages, maps = [];
+    for (let i = 0; i < ns; i++) maps.push(E.shiftMap(D, i));
+    const card = (m, i) => {
+      const N = m.vals.length, cs = 9, pad = 30, W_ = pad + N * cs + 6, idx = v => Math.round((v - m.lo) / m.step);
+      const okb = m.pts.filter(p => p.ok).map(p => p.bal), bmin = Math.min(...okb), bmax = Math.max(...okb);
+      const col = p => { if (!p.ok) return '#2b2a2f'; const t = okb.length > 1 ? (p.bal - bmin) / (bmax - bmin || 1) : 0; return `hsl(${Math.round(130 - 95 * Math.sqrt(t))},55%,${Math.round(44 - 8 * t)}%)`; };
+      const cells = m.pts.map(p => `<rect x="${pad + idx(p.xs) * cs}" y="${6 + (N - 1 - idx(p.xp)) * cs}" width="${cs - 1}" height="${cs - 1}" fill="${col(p)}" data-sx="${p.xs}" data-sp="${p.xp}" data-st="${i}" class="smc"><title>xs ${p.xs} · xp ${p.xp} · xr ${fmt(p.xr, 3)}
+${p.ok ? `εα ${fmt(p.ea[0], 2)} / ${fmt(p.ea[1], 2)} · 미끄럼률 S–P ${fmt(p.sl[0].z1A, 2)} / ${fmt(p.sl[0].z2E, 2)} · P–R ${fmt(p.sl[1].z1A, 2)} / ${fmt(p.sl[1].z2E, 2)} · 이끝 두께 ≥ ${fmt(p.san, 2)}m` : '불가: ' + p.why}</title></rect>`).join('');
+      const ticks = m.vals.filter((v, k) => Math.abs(v * 2 - Math.round(v * 2)) < 1e-9).map(v => `<text x="${pad + idx(v) * cs + cs / 2}" y="${6 + N * cs + 12}" text-anchor="middle">${v}</text><text x="${pad - 4}" y="${6 + (N - 1 - idx(v)) * cs + cs / 2 + 3}" text-anchor="end">${v}</text>`).join('');
+      const cu = m.cur, inR = cu.xs >= m.lo && cu.xs <= m.hi && cu.xp >= m.lo && cu.xp <= m.hi;
+      const mark = inR ? `<circle cx="${pad + (cu.xs - m.lo) / m.step * cs + cs / 2}" cy="${6 + (N - 1 - (cu.xp - m.lo) / m.step) * cs + cs / 2}" r="5" fill="none" stroke="#fff" stroke-width="2"/>` : '';
+      return `<div class="card smap"><h3>${i + 1}단 전위 지도 <span class="note">${m.mode === 'curve' ? '링 공유(잇수 지정): 링 전위 고정 → 가능한 점은 곡선 위' : '링 전위는 중심거리가 같도록 자동'}</span></h3>
+        <svg viewBox="0 0 ${W_} ${N * cs + 26}" width="${W_}" style="max-width:100%;font-size:9px;fill:var(--mute)">${cells}${ticks}${mark}<text x="${pad + N * cs / 2}" y="${N * cs + 26}" text-anchor="middle">썬 전위 xs →</text></svg>
+        <p class="note">세로 = 유성 전위 xp. 칸을 누르면 그 전위로 바꿉니다. 현재 xs ${fmt(cu.xs, 3)} · xp ${fmt(cu.xp, 3)} · xr ${fmt(cu.xr, 3)}. 표준 기준 랙(이뿌리 1.25m, 끝 R 0.38m) 기준.</p>
+        <div class="sm-go"><button class="btn" type="button" data-sg="slide" data-st="${i}">미끄럼률 균형</button><button class="btn" type="button" data-sg="cap" data-st="${i}">허용 토크 최대</button><button class="btn" type="button" data-sg="bend" data-st="${i}">굽힘 균형 (썬=유성)</button></div>
+        <div class="sm-out" id="smOut${i}"></div></div>`;
+    };
+    return `<div class="smaps">${maps.map(card).join('')}</div>`;
+  },
 };
 const WB = {
+  shiftmap(m) {
+    const setShift = (i, xs, xp, xr) => { const st = D.stages[i], fixed = i === 1 && D.config.sharedRing && D.stages[0].r != null;
+      st.xs = +(+xs).toFixed(4); st.xp = +(+xp).toFixed(4); if (!fixed) { if (xr != null) { st.autoRingShift = false; st.xr = +(+xr).toFixed(4); } else st.autoRingShift = true; } changed(); };
+    m.querySelectorAll('.smc').forEach(c => c.onclick = () => setShift(+c.dataset.st, c.dataset.sx, c.dataset.sp, null));
+    m.querySelectorAll('[data-sg]').forEach(b => b.onclick = async () => {
+      const i = +b.dataset.st, obj = b.dataset.sg, out = m.querySelector('#smOut' + i);
+      m.querySelectorAll('[data-sg]').forEach(x => x.disabled = true);
+      let list;
+      if (obj === 'slide') list = E.shiftCandidates(D, i, 'slide').list;
+      else {
+        const cand = E.shiftCandidates(D, i, obj).list, res = [];
+        for (let k = 0; k < cand.length; k++) { res.push(E.shiftScore(D, i, cand[k])); if (k % 4 === 3) { out.innerHTML = `<p class="note">정밀 계산 중… ${k + 1} / ${cand.length}</p>`; await new Promise(r => setTimeout(r, 0)); } }
+        list = res.filter(p => p.cap > 0).sort(obj === 'cap' ? (a, b) => b.cap - a.cap : (a, b) => a.bendBal - b.bendBal || b.cap - a.cap).slice(0, 5);
+      }
+      m.querySelectorAll('[data-sg]').forEach(x => x.disabled = false);
+      const name = { slide: '미끄럼률 균형', cap: '허용 토크 최대', bend: '굽힘 균형' }[obj];
+      out.innerHTML = list.length ? `<div class="scroll"><table><tr><th>${name}</th><th>xs</th><th>xp</th><th>xr</th><th>εα S–P / P–R</th><th>미끄럼률 S–P</th>${obj === 'slide' ? '' : '<th>허용 토크 N·m</th><th>SF 썬 / 유성</th>'}<th></th></tr>
+        ${list.map((p, k) => `<tr class="${k ? '' : 'gov'}"><td>${k + 1}</td><td>${fmt(p.xs, 2)}</td><td>${fmt(p.xp, 2)}</td><td>${fmt(p.xr, 3)}</td><td>${fmt(p.ea[0], 2)} / ${fmt(p.ea[1], 2)}</td><td>${fmt(p.sl[0].z1A, 2)} / ${fmt(p.sl[0].z2E, 2)}</td>${obj === 'slide' ? '' : `<td>${fmt(p.cap, 1)}</td><td>${fmt(p.sfS, 2)} / ${fmt(p.sfP, 2)}</td>`}<td><button class="btn" type="button" data-ap="${k}">적용</button></td></tr>`).join('')}</table></div>
+        <p class="note">${obj === 'slide' ? '썬–유성 이뿌리 미끄럼률을 같게 (유성–링은 절반 가중). 강도 계산 없이 형상만으로 고릅니다.' : `가능 영역 ${E.shiftCandidates(D, i, obj).list.length}점(0.1 간격)을 엔진으로 계산. 허용 토크 = 이 단 기어 기준 출력축 환산.`}</p>` : '<p class="bad">가능한 전위가 없습니다.</p>';
+      out.querySelectorAll('[data-ap]').forEach(x => x.onclick = () => { const p = list[+x.dataset.ap]; setShift(i, p.xs, p.xp, p.xr); });
+    });
+  },
   case(m) { const b = m.querySelector('#cApply'); if (b) b.onclick = () => { E.applyCase(D, m.querySelector('#cPos').value + '-' + m.querySelector('#cAxis').value, R?.ratio); D.anim.rpm = D.req.rpm; changed(); }; },
   duty(m) {
     const a = m.querySelector('#addDuty'); if (a) a.onclick = () => { D.req.duty.push({ torque: 50, time: 10, rpm: 0 }); changed(); };
@@ -1023,7 +1066,7 @@ function runJob(type, done) {
   if (bar) bar.style.width = '2%';
   const finish = (r) => { if (bar) bar.style.width = '100%'; done(r); };
   try {
-    if (!worker) worker = new Worker('worker.js?v=pr46-1');
+    if (!worker) worker = new Worker('worker.js?v=pr47-1');
     worker.onmessage = e => { if (e.data.id !== id) return; if (e.data.progress && bar) bar.style.width = (e.data.progress * 100) + '%'; if (e.data.done) finish(e.data.error ? { error: e.data.error } : e.data.result); };
     worker.onerror = () => { worker = null; inline(); };
     worker.postMessage({ id, type, design: JSON.parse(JSON.stringify(D)) });
