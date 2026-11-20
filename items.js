@@ -261,13 +261,19 @@
       ['C', 'fZCa → ZB / ZD (썬–유성)', c => (c.R?.ctx?.stages || []).map((s, i) => { const ms = s.geo.meshes[0]; return s.st.beta > 0 ? `${i + 1}단 fZCa ${f(ms.fZCa, 2)} → ZB ${f(ms.ZB, 3)} / ZD ${f(ms.ZD, 3)}` : `${i + 1}단 스퍼 — 적용 안 됨`; }).join(' · ') || '—', 'ISO 6336-2:2019 6.2: 헬리컬(εα ≤ 2)의 단일 맞물림 계수에만 들어감'],
       ['C', 'KHβ (최대)', c => rows(c).length ? f(mx(c, 'KHb'), 3) : '—', 'ISO 6336-1 부록 E']],
     up: ['4-5'], k: '판정은 5-4에서' };
-  I['4-7'] = { what: '원주 백래시(치합 유격)를 정하고 출력 백래시를 예측·측정한다.',
-    how: '단별 원주 백래시 jt를 출력축 각도로 환산해 합산한다. 링 압입 수축(8-2)은 백래시를 줄인다.',
+  I['4-7'] = { what: '치두께 공차로 백래시를 정하고, 가공 검사용 걸치기 이두께·오버볼 치수를 낸다.',
+    how: '치두께 공차(Asn 상·하한)와 중심거리 공차로 치합 백래시 범위를 계산하거나 직접 입력하고, 출력축 각도로 환산해 합산한다. 같은 치두께로 걸치기 이두께 Wk와 오버볼 치수 MdK를 계산한다 (KISSsoft 11.2–11.5와 같은 식). 링 압입 수축(8-2)은 백래시를 줄인다.',
     why: '백래시 0은 열팽창·편심에서 걸림을, 과대는 위치 정밀도 저하(1-8)를 부른다.',
     rows: [['D', 'num', 'stages.{i}.asn.0.1', '{s}단 썬 치두께 하한 치수차 Asn.i mm (예 −0.084, 빈칸 = 0)', { st: 1 }], ['D', 'num', 'stages.{i}.asn.1.1', '{s}단 유성 Asn.i mm', { st: 1 }], ['D', 'num', 'stages.{i}.asn.2.1', '{s}단 링 Asn.i mm', { st: 1 }],
       ['C', '치근 계산 전위 xE (가장 얇은 이)', c => rows(c).filter((r, k, a) => a.findIndex(q => q.stage === r.stage && q.part === r.part) === k).map(r => `${r.stage}단 ${r.partName} ${f(r.f.xE, 4)}`).join(' · ') || '—', 'xE = x + Asn.i / (2·mn·tan αn) · KISSsoft와 같음'],
-      ['D', 'num', 'stages.{i}.jt.0', '{s}단 썬–유성 백래시 µm', { st: 1 }], ['D', 'num', 'stages.{i}.jt.1', '{s}단 유성–링 백래시 µm', { st: 1 }],
-      ['P', '출력 백래시', c => c.R?.backlash ? `${f(c.R.backlash.arcmin, 2)} arcmin` : '—', '단별 jt → 출력축 환산 합'],
+      ['D', 'sel', 'stages.{i}.blMode', '{s}단 백래시 산출', { st: 1, o: [['jt', '직접 입력 (µm)'], ['asn', '치두께 공차 + 중심거리 공차로 계산']] }],
+      ['D', 'num', 'stages.{i}.jt.0', '{s}단 썬–유성 백래시 µm (직접 입력)', { st: 1 }], ['D', 'num', 'stages.{i}.jt.1', '{s}단 유성–링 백래시 µm (직접 입력)', { st: 1 }],
+      ['D', 'num', 'stages.{i}.aTol.0', '{s}단 썬–유성 중심거리 공차 ± µm (핀 위치)', { st: 1 }], ['D', 'num', 'stages.{i}.aTol.1', '{s}단 유성–링 중심거리 공차 ± µm', { st: 1 }],
+      ['C', '치합 백래시 jt (작동 피치원 원주)', c => (c.R?.backlash?.stages || []).map(x => x.mode === 'asn' ? `${x.stage}단 S–P ${f(x.jtRange[0][0], 1)}–${f(x.jtRange[0][1], 1)} · P–R ${f(x.jtRange[1][0], 1)}–${f(x.jtRange[1][1], 1)} µm` : `${x.stage}단 ${f(x.jt[0], 0)} / ${f(x.jt[1], 0)} µm (입력)`).join(' · ') || '—', 'jt = −(Ast₁ + Ast₂)·cos αt / cos αwt ± 2·Δa·tan αwt (KISSsoft 11.5와 동일)'],
+      ['P', '출력 백래시', c => { const b = c.R?.backlash; if (!b) return '—'; return b.stages.some(x => x.mode === 'asn') ? `${f(b.range[0], 2)} – ${f(b.range[1], 2)} arcmin (평균 ${f(b.arcmin, 2)})` : `${f(b.arcmin, 2)} arcmin`; }, '단별 → 출력축 환산 합 (입력 고정 시 캐리어 회전각)'],
+      ['D', 'num', 'stages.{i}.ballD.0', '{s}단 썬 측정 볼·핀 지름 mm (빈칸 = 이론값)', { st: 1 }], ['D', 'num', 'stages.{i}.ballD.1', '{s}단 유성 측정 볼 지름 mm', { st: 1 }], ['D', 'num', 'stages.{i}.ballD.2', '{s}단 링 측정 볼 지름 mm', { st: 1 }],
+      ['C', '걸치기 이두께 Wk (상한 / 하한)', c => (c.R?.tooth || []).flatMap(t => t.parts.filter(p => !p.internal).map(p => `${t.stage}단 ${p.name} k=${p.k} ${f(p.Wk[0], 3)} / ${f(p.Wk[1], 3)}${p.WkOK ? '' : ` ⚠ 치폭 ${f(p.WkNeedB, 1)} 필요`}`)).join(' · ') || '—', 'Wk = mn·cos αn·[(k−1)π + z·inv αt] + sn·cos αn. 헬리컬은 치폭 ≥ Wk·sin βb + 5 mm일 때만 측정 가능'],
+      ['C', '오버볼 치수 MdK (상한 / 하한)', c => (c.R?.tooth || []).flatMap(t => t.parts.map(p => `${t.stage}단 ${p.name} Ø${f(p.DM, 3)}${p.DMset ? '' : '(이론)'} ${p.internal ? '내측 ' : ''}${f(p.Md[0], 3)} / ${f(p.Md[1], 3)}`)).join(' · ') || '—', 'DIN 3960: inv αMt = inv αt ± sn(en)/(mn·z) ± DM/(mn·z·cos αn) − π/z. 링은 볼 사이 내측 치수'],
       ['M', 'num', 'verify.blMeas', '측정 백래시 arcmin (시제품)']],
     w: ['bl'], up: ['8-2', '4-5'], k: '백래시 ≤ 목표 (1-8)', ok: c => c.R?.backlash ? c.R.backlash.arcmin <= c.D.req.backlashMax : null };
 

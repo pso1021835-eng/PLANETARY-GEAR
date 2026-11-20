@@ -940,18 +940,63 @@
     });
     return { stages: st, total };
   }
+  // ------------------------------------------------------------ tooth thickness → measurement and backlash
+  // Asn = [upper e, lower i] normal tooth thickness allowances (mm, ≤ 0). Internal: ours x > 0 = thinner tooth.
+  const asnOf = (st, k) => { const a = (st.asn || [])[k] || []; return [+a[0] || 0, +a[1] || 0]; };
+  function toothData(ctx) {
+    return ctx.stages.map(stg => {
+      const g = stg.geo, an = g.an, at = g.at, bb = g.bb;
+      const parts = g.parts.map((p, k) => {
+        const mn = p.m, z = p.z, sgn = p.internal ? -1 : 1, [Ae, Ai] = asnOf(stg.st, k);
+        const sn = A => mn * (Math.PI / 2 + sgn * 2 * p.x * Math.tan(an)) + A;          // normal tooth thickness at d
+        const out = { part: k, name: p.name, z, internal: p.internal, sn: [sn(Ae), sn(Ai)], Asn: [Ae, Ai] };
+        // span measurement (external only): k chosen to touch near d + 2xm
+        if (!p.internal) {
+          const ax = Math.acos(Math.min(1, p.db / (p.d + 2 * p.x * mn)));
+          const kk = Math.min(z - 1, Math.max(2, Math.round(z / Math.PI * (Math.tan(ax) / Math.cos(bb) ** 2 - inv(at) - 2 * p.x * Math.tan(an) / z) + .5)));
+          const Wk = A => mn * Math.cos(an) * ((kk - 1) * Math.PI + z * inv(at)) + sn(A) * Math.cos(an);
+          out.k = kk; out.Wk = [Wk(Ae), Wk(Ai)];
+          out.WkNeedB = Wk(Ae) * Math.sin(bb) + 5;                                       // face width needed for a helical span reading
+          out.WkOK = p.width >= out.WkNeedB || !(bb > 0);
+        }
+        // dimension over / between balls (pins for spur): DM ≈ 1.68·mn external, 1.44·mn internal
+        const DMth = Math.round((p.internal ? 1.67 : 1.69) * mn * 1000) / 1000, DMin = +((stg.st.ballD || [])[k]) || 0, DM = DMin > 0 ? DMin : DMth;
+        const Md = A => {
+          const s_ = sn(A), e = Math.PI * mn - s_;
+          const iM = p.internal ? inv(at) - DM / (mn * z * Math.cos(an)) + e / (mn * z) : inv(at) + s_ / (mn * z) + DM / (mn * z * Math.cos(an)) - Math.PI / z;
+          const aM = invSolve(iM), dM = p.d * Math.cos(at) / Math.cos(aM), f = z % 2 ? Math.cos(Math.PI / (2 * z)) : 1;
+          return p.internal ? dM * f - DM : dM * f + DM;
+        };
+        out.DM = DM; out.DMth = DMth; out.DMset = DMin > 0; out.Md = [Md(Ae), Md(Ai)];
+        return out;
+      });
+      return { stage: stg.i + 1, parts };
+    });
+  }
+  function meshBacklashFromAsn(stg, j) {
+    // circumferential backlash at the working circle (µm): −(Ast1 + Ast2)·dw/d ± 2·Δa·tan αwt (Δa = pin position / centre tolerance)
+    const g = stg.geo, ms = g.meshes[j], a = ms.a, c = ms.c, A1 = asnOf(stg.st, j), A2 = asnOf(stg.st, j + 1);
+    const k = Math.cos(g.at) / Math.cos(ms.aw) / Math.cos(g.br), da = (+((stg.st.aTol || [])[j]) || 0) / 1000, ta = 2 * da * Math.tan(ms.aw);
+    const sgn = ms.internal ? -1 : 1;
+    const jmin = -(A1[0] + A2[0]) * k - ta, jmax = -(A1[1] + A2[1]) * k + ta;   // centre tolerance ± (external: +Δa opens; internal: −Δa opens)
+    return [Math.max(0, jmin) * 1000, jmax * 1000, sgn];
+  }
   function backlash(ctx, D) {
-    // circumferential backlash per mesh (µm) → carrier free play at pin radius, propagated to output
-    let out = 0, ratioAfter = 1;
+    // circumferential backlash per mesh (µm) → carrier free play at pin radius, propagated to output.
+    // jt mode: entered backlash; asn mode: from tooth thickness allowances + centre tolerance (min / max, mean used for the verdict)
+    let out = 0, outMin = 0, outMax = 0, ratioAfter = 1;
     const st = [...ctx.stages].reverse().map(stg => {
-      const a = stg.geo.meshes[0].center;
-      const j = stg.st.jt || [0, 0];
-      const th = ((j[0] + j[1]) / 2) / 1000 / a; // rad at this stage's carrier
-      const thOut = th / ratioAfter;
-      out += thOut; ratioAfter *= stg.geo.ratio;
-      return { stage: stg.i + 1, arcmin: th * 180 / Math.PI * 60, arcminOut: thOut * 180 / Math.PI * 60 };
+      const a = stg.geo.meshes[0].center, fromAsn = stg.st.blMode === 'asn';
+      const rng = fromAsn ? [0, 1].map(j => meshBacklashFromAsn(stg, j)) : null;
+      const j = fromAsn ? rng.map(r => (r[0] + r[1]) / 2) : (stg.st.jt || [0, 0]);
+      const toRad = jj => ((jj[0] + jj[1]) / 2) / 1000 / a;
+      const th = toRad(j), thMin = fromAsn ? toRad(rng.map(r => r[0])) : th, thMax = fromAsn ? toRad(rng.map(r => r[1])) : th;
+      out += th / ratioAfter; outMin += thMin / ratioAfter; outMax += thMax / ratioAfter; const rA = ratioAfter; ratioAfter *= stg.geo.ratio;
+      const am = v => v * 180 / Math.PI * 60;
+      return { stage: stg.i + 1, mode: fromAsn ? 'asn' : 'jt', jt: j, jtRange: rng && rng.map(r => [r[0], r[1]]), arcmin: am(th), arcminOut: am(th / rA), arcminOutRange: [am(thMin / rA), am(thMax / rA)] };
     }).reverse();
-    return { stages: st, arcmin: out * 180 / Math.PI * 60 };
+    const am = v => v * 180 / Math.PI * 60;
+    return { stages: st, arcmin: am(out), range: [am(outMin), am(outMax)] };
   }
   function stiffness(ctx, D) {
     // gear-mesh + pin compliance only (housing, carrier, bearings not included) at rated torque
@@ -1079,6 +1124,7 @@
     if (out.lube.lambdaMin < 1) out.warns.push(`유막비 λ 최소 ${out.lube.lambdaMin.toFixed(2)} (정격): 경계 윤활입니다. 극압(EP) 그리스·표면 조도 개선 없이는 마모·마이크로피팅 위험이 큽니다 (이 판정은 피팅·굽힘 강도 계산에 포함되지 않음).`);
     out.eff = efficiency(ctx, D, D.req.Trated);
     out.backlash = backlash(ctx, D);
+    out.tooth = toothData(ctx);
     out.stiffness = stiffness(ctx, D);
     // case depth screen at peak torque
     out.caseDepth = out.peak.rows.map(r => ({ id: r.id, stage: r.stage, partName: r.partName, mesh: r.mesh, zMax: r.zMax, depth: ctx.stages[r.stage - 1].mats[r.part].depth, ratio: r.caseDepthRatio }));
@@ -1120,7 +1166,7 @@
     add('스커핑 안전율 (피크, 섬광온도)', o.lube.SBmin, D.req.SBmin || 1.5, o.lube.SBmin >= (D.req.SBmin || 1.5), '', `운전 ${D.lube.temp} °C · FZG ${D.lube.fzg}`);
 
     add('효율 (정격, 추정)', o.eff.total * 100, D.req.effMin, o.eff.total * 100 >= D.req.effMin, '%', '치합 + 기타 손실 가정');
-    add('출력 백래시 (추정)', o.backlash.arcmin, D.req.backlashMax, o.backlash.arcmin <= D.req.backlashMax, 'arcmin', '치합 백래시만');
+    { const asn = o.backlash.stages.some(x => x.mode === 'asn'), bl = asn ? o.backlash.range[1] : o.backlash.arcmin; add(asn ? '출력 백래시 최대 (치두께 공차)' : '출력 백래시 (추정)', bl, D.req.backlashMax, bl <= D.req.backlashMax, 'arcmin', asn ? '치두께 하한 + 중심거리 공차' : '치합 백래시만'); }
     return items;
   }
 
