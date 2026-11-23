@@ -1704,6 +1704,41 @@ window.addEventListener('hashchange', () => { const [h, a] = location.hash.slice
 { const [h0, a0] = location.hash.slice(1).split('/'); if (validView(h0)) { view = VIEW_ITEM[h0] ? 'it-' + VIEW_ITEM[h0] : h0.startsWith('st-') && a0 && IT()[a0] ? 'it-' + a0 : h0; if (view.startsWith('it-')) LASTITEM = view.slice(3); } }
 $('#vchip').onclick = () => document.body.classList.toggle('vopen');
 document.addEventListener('click', e => { if (document.body.classList.contains('vopen') && !e.target.closest('#verdict,#vchip')) document.body.classList.remove('vopen'); });
+// 설계 파일 DB (초안): 기본 설계(designs/index.json)와 이 브라우저에 저장한 내 설계. 누르면 JSON 불러오기와 같은 경로로 적용.
+const DBKEY = 'pgd-db-v1';
+const dbMine = () => { try { return JSON.parse(localStorage.getItem(DBKEY)) || []; } catch (e) { return []; } };
+const dbPut = list => { try { localStorage.setItem(DBKEY, JSON.stringify(list)); } catch (e) { } };
+let DBLIB = [];
+function dbApply(d) { d = JSON.parse(JSON.stringify(d)); d.schema = 'pgd/1'; d.config.floatingSun = false; D = migrateLoaded(d); $('#dname').value = D.name || ''; $('#moreMenu').hidden = true; changed(); }
+function dbRender() {
+  const mine = dbMine(), row = (k, name, sub, del) => `<div class="dbrow"><button type="button" class="dbload" data-db="${k}">${esc(name)} <small>${esc(sub)}</small></button>${del ? `<button type="button" class="dbdel" data-dbdel="${del}" title="삭제">×</button>` : ''}</div>`;
+  $('#dbList').innerHTML = DBLIB.map((x, i) => row('lib:' + i, x.name, '기본')).join('') + mine.map((x, i) => row('mine:' + i, x.name, `${x.summary?.reducerCap ? (+x.summary.reducerCap).toFixed(0) + ' N·m · ' : ''}${new Date(x.saved).toLocaleDateString('ko-KR')}`, String(i))).join('') || '<span class="note">없음</span>';
+  $('#dbList').querySelectorAll('[data-db]').forEach(b => b.onclick = async e => {
+    e.stopPropagation(); const [k, i] = b.dataset.db.split(':');
+    try {
+      if (k === 'mine') return dbApply(dbMine()[+i].D);
+      const x = DBLIB[+i]; if (x.builtin) return dbApply(E[x.builtin]());
+      const r = await fetch('designs/' + x.file + '?v=db-1'), j = await r.json(); dbApply(j.schema === 'pgd-case/1' ? j.D : j);
+    } catch (err) { alert('불러오기 실패: ' + err.message); }
+  });
+  $('#dbList').querySelectorAll('[data-dbdel]').forEach(b => b.onclick = e => { e.stopPropagation(); const l = dbMine(); l.splice(+b.dataset.dbdel, 1); dbPut(l); dbRender(); });
+}
+fetch('designs/index.json?v=db-1').then(r => r.json()).then(l => { DBLIB = l; dbRender(); }).catch(() => { DBLIB = [{ name: 'HDS 예제', builtin: 'defaultDesign' }, { name: 'RH065 템플릿', builtin: 'templateDesign' }]; dbRender(); });
+// 케이스 레코드 (pgd-case/1): 나중에 모아서 참고·학습에 쓰도록 요구 조건 · 설계 제원 · 결과 요약을 같은 형식으로 남긴다.
+function caseRecord() {
+  const ok = R && !R.errors?.length, S = ok ? R.ctx.stages : [];
+  let L = null; try { if (ok) L = PGD3D.layout(R, D); } catch (e) { }
+  return { schema: 'pgd-case/1', id: Date.now().toString(36), name: D.name || '이름 없음', saved: new Date().toISOString(), source: 'site',
+    request: { Trated: D.req.Trated, Tpeak: D.req.Tpeak, Temerg: D.req.Temerg, rpm: D.req.rpm, lifeH: D.req.lifeH, ratio: D.req.ratio ?? null, Dmax: D.req.Dmax ?? null, Lmax: D.req.Lmax ?? null, ext: D.req.ext, duty: D.req.duty, basis: D.loads?.basis },
+    summary: ok ? { stages: S.length, sharedRing: !!D.config.sharedRing, ratio: R.ratio,
+      gears: S.map(x => ({ s: x.st.s, p: x.st.p, r: x.geo.r, n: x.st.n, m: x.st.m, beta: x.st.beta, b: x.st.b })),
+      OD: L ? 2 * Math.max(L.housR, L.flangeR) : null, L: L ? (L.zFlange[1] + .4) - L.zIn : null, outBearing: D.outBearing?.name,
+      gearCap: R.capacityLife, reducerCap: R.reducerCap, governing: R.reducerGov, eff: R.eff?.total, backlash: R.backlash?.arcmin,
+      verdictFail: R.verdict.filter(v => !v.ok).map(v => v.k) } : { errors: R?.errors || [] },
+    D: JSON.parse(JSON.stringify(D)) };
+}
+$('#dbSave').onclick = e => { e.stopPropagation(); const l = dbMine(); l.unshift(caseRecord()); dbPut(l.slice(0, 50)); dbRender(); };
+$('#dbExport').onclick = e => { e.stopPropagation(); const txt = JSON.stringify(dbMine(), null, 1); dlg('설계 DB 내보내기', txt, `케이스 ${dbMine().length}건 (pgd-case/1: 요구 조건 · 설계 제원 · 결과 요약 · 전체 설계). 저장소 designs/ 폴더에 모아 두면 기본 DB로 공유됩니다.`, '복사', async () => { try { await navigator.clipboard.writeText(txt); return '복사했습니다.'; } catch (err) { return '복사 실패: 직접 선택해 복사하세요.'; } }); };
 $('#bMore').onclick = e => { e.stopPropagation(); $('#moreMenu').hidden = !$('#moreMenu').hidden; };
 document.addEventListener('click', e => { if (!e.target.closest('#moreMenu')) $('#moreMenu').hidden = true; });
 window.PGDApp = { go, state: () => ({ D, R }), view: () => view, rvState: id => rvState(id), sig: id => sigOf(id, ictx()), mapSelect: id => MAPV?.select(id), mapState: () => MAPV?.state(), items: () => procEval().flatMap(g => g.items.map(i => i.id)), groups: () => window.PGDGroups?.ORDER || [], studio: () => ({ id: STUDIO.id, parts: studioParts(), dims: studioDims(STUDIO.id).length, mounted: !!PARTV }), studioPick: id => { STUDIO.id = id; STUDIO.view = null; render(true); } };
