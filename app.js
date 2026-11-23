@@ -551,7 +551,7 @@ function renderRail() {
   const E2 = procEval(), c = ictx(), cur = view.startsWith('st-') ? view.slice(3) : view.startsWith('it-') ? itemStage(view.slice(3)) : null, curItem = view.startsWith('it-') ? view.slice(3) : null;
   const tab = (id, t, on) => `<button data-v="${id}" aria-current="${on}">${t}</button>`;
   const coreOn = view === 'core' || view.startsWith('cg-');
-  $('#tabs').innerHTML = tab('map', '설계 지도', view === 'map') + tab('core', '핵심 검토', coreOn) + tab('it-' + LASTITEM, '전체 항목', !!cur) + tab('studio', '부품 편집', view === 'studio') + tab('overview', '3D · 종합판정', view === 'overview') + tab('proc', '체크리스트', view === 'proc');
+  $('#tabs').innerHTML = tab('db', '설계 DB', view === 'db') + tab('map', '설계 지도', view === 'map') + tab('core', '핵심 검토', coreOn) + tab('it-' + LASTITEM, '전체 항목', !!cur) + tab('studio', '부품 편집', view === 'studio') + tab('overview', '3D · 종합판정', view === 'overview') + tab('proc', '체크리스트', view === 'proc');
   $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.v));
   // 모바일: 현재 탭이 가로 스크롤 밖에 있으면 보이게
   const curTab = $('#tabs').querySelector('[aria-current=true]'); if (curTab && $('#tabs').scrollWidth > $('#tabs').clientWidth) curTab.scrollIntoView({ block: 'nearest', inline: 'center' });
@@ -699,7 +699,7 @@ function render(keepScroll) {
   if (view.startsWith('it-')) LASTITEM = view.slice(3);
   document.body.classList.toggle('has-rail', paged);
   document.body.classList.toggle('structure-mode', view === 'st-2' || view.startsWith('it-2-'));
-  m.className = view === 'overview' || view === 'map' || view === 'studio' ? 'wide' : '';
+  m.className = view === 'overview' || view === 'map' || view === 'studio' || view === 'db' ? 'wide' : '';
   document.body.classList.toggle('mapmode', view === 'map');
   if (!keepScroll) { void m.offsetWidth; m.classList.add('pg-enter'); }
   if (core) {
@@ -790,6 +790,24 @@ const tag = s => `<span class="tag ${s}">${s}</span>`;
 const partLabel = r => `${r.stage}단 ${r.mesh} · ${r.partName}`;
 
 const VIEWS = {
+  // 설계 파일 DB: 케이스(요구 조건 · 설계 제원 · 결과 요약 · 전체 설계)를 쌓아 참고·학습에 쓴다. 초안 — 이 브라우저 저장 + 기본 설계.
+  db() {
+    const mine = dbMine(), q = (DBQ || '').trim().toLowerCase();
+    const fN = (x, d = 1) => x == null || !Number.isFinite(+x) ? '—' : (+x).toFixed(d);
+    const row = (k, x, kind, del) => { const sm = x.summary || {}, rq = x.request || {}; if (q && !JSON.stringify([x.name, sm, rq]).toLowerCase().includes(q)) return '';
+      const cfg = sm.stages ? `${sm.stages}단${sm.sharedRing ? ' 공용 링' : ''} · ${(sm.gears || []).map(g => `m${g.m} ${g.s}/${g.p}/${g.r}×${g.n}`).join(' + ')}` : '—';
+      return `<tr><td><b>${esc(x.name || '')}</b><br><small class="note">${kind}${x.saved ? ' · ' + new Date(x.saved).toLocaleString('ko-KR') : ''}</small></td><td>${esc(cfg)}</td><td>${fN(sm.ratio, 3)}</td><td>${sm.OD ? `Ø${fN(sm.OD)} × ${fN(sm.L)}` : '—'}</td>
+        <td>${rq.Trated != null ? fN(rq.Trated) + ' N·m' : '—'}</td><td>${sm.reducerCap != null ? `<b>${fN(sm.reducerCap)}</b> N·m` : '—'}</td><td class="l note">${esc(sm.governing || '')}</td>
+        <td>${sm.verdictFail ? (sm.verdictFail.length ? `<b class="bad">${sm.verdictFail.length}개 미달</b>` : '<b class="good">전 항목 충족</b>') : '—'}</td>
+        <td><button class="btn" data-dbo="${k}">불러오기</button>${del != null ? ` <button class="btn" data-dbx="${del}">삭제</button>` : ''}</td></tr>`; };
+    const lib = DBLIB.map((x, i) => row('lib:' + i, x, '기본 설계')).join(''), my = mine.map((x, i) => row('mine:' + i, x, '내 케이스', i)).join('');
+    return head('설계 DB', '설계 케이스를 같은 형식(pgd-case/1: 요구 조건 · 설계 제원 · 결과 요약 · 전체 설계)으로 쌓아 두고 참고하거나 불러옵니다. 초안: 내 케이스는 이 브라우저에 저장되며, 내보낸 파일을 저장소 designs/ 에 모으면 기본 설계로 공유됩니다.') + `
+      <div class="card"><div class="grid"><label class="f">검색 (이름 · 구성 · 지배 부위)<input type="text" id="dbQ" value="${esc(DBQ || '')}"></label></div>
+      <p><button class="btn primary" id="dbSave2">현재 설계를 DB에 저장</button> <button class="btn" id="dbExp2">DB 내보내기 (케이스 JSON)</button> <button class="btn" id="dbImp2">케이스 JSON 가져오기</button>
+      <span class="note">내 케이스 ${mine.length}건 · 기본 설계 ${DBLIB.length}건</span></p></div>
+      <div class="card scroll"><table class="dbt"><tr><th class="l">이름</th><th>구성</th><th>감속비</th><th>외경 × 길이 mm</th><th>요구 정격</th><th>감속기 한계</th><th class="l">지배 부위</th><th>판정</th><th></th></tr>${my}${lib}</table>
+      ${!my && !lib ? '<p class="note">케이스가 없습니다.</p>' : ''}</div>`;
+  },
   overviewOld() {
     if (!R || R.errors?.length) return head('종합 판정', '입력에 오류가 있어 계산하지 못했습니다.') + errBox();
     const tgt = D.req.Trated, cap = R.capacityLife;
@@ -1264,6 +1282,16 @@ function bindMapDetail(el) {
   if (id) bindItemCommon(el, id);
 }
 const AFTER = {
+  db(m) {
+    const q = m.querySelector('#dbQ'); if (q) q.oninput = () => { DBQ = q.value; const pos = q.selectionStart; render(true); const n = $('#dbQ'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
+    m.querySelector('#dbSave2').onclick = () => { const l = dbMine(); l.unshift(caseRecord()); dbPut(l.slice(0, 200)); dbRender(); render(true); };
+    m.querySelector('#dbExp2').onclick = () => $('#dbExport').click();
+    m.querySelector('#dbImp2').onclick = () => dlg('케이스 JSON 가져오기', '', 'DB 내보내기로 받은 케이스 JSON(배열 또는 한 건)을 붙여 넣으세요. 내 케이스에 추가됩니다.', '가져오기', () => {
+      try { let a = JSON.parse($('#dlgText').value); if (!Array.isArray(a)) a = [a]; a = a.filter(x => x && x.schema === 'pgd-case/1' && x.D); if (!a.length) throw new Error('pgd-case/1 케이스가 없습니다');
+        dbPut([...a, ...dbMine()].slice(0, 200)); dbRender(); $('#dlg').close(); render(true); return null; } catch (e) { return '가져오기 실패: ' + e.message; } });
+    m.querySelectorAll('[data-dbo]').forEach(b => b.onclick = () => dbOpen(b.dataset.dbo, true));
+    m.querySelectorAll('[data-dbx]').forEach(b => b.onclick = () => { if (!confirm('이 케이스를 삭제할까요?')) return; const l = dbMine(); l.splice(+b.dataset.dbx, 1); dbPut(l); dbRender(); render(true); });
+  },
   map(m) {
     if (!window.PGDMap) return;
     const E = procEval(); if (!E.length) return;
@@ -1709,23 +1737,36 @@ const DBKEY = 'pgd-db-v1';
 const dbMine = () => { try { return JSON.parse(localStorage.getItem(DBKEY)) || []; } catch (e) { return []; } };
 const dbPut = list => { try { localStorage.setItem(DBKEY, JSON.stringify(list)); } catch (e) { } };
 let DBLIB = [];
-function dbApply(d) { d = JSON.parse(JSON.stringify(d)); d.schema = 'pgd/1'; d.config.floatingSun = false; D = migrateLoaded(d); $('#dname').value = D.name || ''; $('#moreMenu').hidden = true; changed(); }
-function dbRender() {
-  const mine = dbMine(), row = (k, name, sub, del) => `<div class="dbrow"><button type="button" class="dbload" data-db="${k}">${esc(name)} <small>${esc(sub)}</small></button>${del ? `<button type="button" class="dbdel" data-dbdel="${del}" title="삭제">×</button>` : ''}</div>`;
-  $('#dbList').innerHTML = DBLIB.map((x, i) => row('lib:' + i, x.name, '기본')).join('') + mine.map((x, i) => row('mine:' + i, x.name, `${x.summary?.reducerCap ? (+x.summary.reducerCap).toFixed(0) + ' N·m · ' : ''}${new Date(x.saved).toLocaleDateString('ko-KR')}`, String(i))).join('') || '<span class="note">없음</span>';
-  $('#dbList').querySelectorAll('[data-db]').forEach(b => b.onclick = async e => {
-    e.stopPropagation(); const [k, i] = b.dataset.db.split(':');
-    try {
-      if (k === 'mine') return dbApply(dbMine()[+i].D);
-      const x = DBLIB[+i]; if (x.builtin) return dbApply(E[x.builtin]());
-      const r = await fetch('designs/' + x.file + '?v=db-1'), j = await r.json(); dbApply(j.schema === 'pgd-case/1' ? j.D : j);
-    } catch (err) { alert('불러오기 실패: ' + err.message); }
-  });
-  $('#dbList').querySelectorAll('[data-dbdel]').forEach(b => b.onclick = e => { e.stopPropagation(); const l = dbMine(); l.splice(+b.dataset.dbdel, 1); dbPut(l); dbRender(); });
+let DBQ = '';
+function dbApply(d, toOverview) { d = JSON.parse(JSON.stringify(d)); d.schema = 'pgd/1'; d.config.floatingSun = false; D = migrateLoaded(d); $('#dname').value = D.name || ''; $('#moreMenu').hidden = true; changed(); if (toOverview) go('overview'); }
+async function dbOpen(key, toOverview) {
+  const [k, i] = key.split(':');
+  try {
+    if (k === 'mine') return dbApply(dbMine()[+i].D, toOverview);
+    const x = DBLIB[+i]; if (x.D) return dbApply(x.D, toOverview);
+    if (x.builtin) return dbApply(E[x.builtin](), toOverview);
+  } catch (err) { alert('불러오기 실패: ' + err.message); }
 }
-fetch('designs/index.json?v=db-1').then(r => r.json()).then(l => { DBLIB = l; dbRender(); }).catch(() => { DBLIB = [{ name: 'HDS 예제', builtin: 'defaultDesign' }, { name: 'RH065 템플릿', builtin: 'templateDesign' }]; dbRender(); });
+// 기본 설계: 설계와 결과 요약을 한 번 계산해 둔다 (DB 페이지 표시용)
+async function dbLoadLib(list) {
+  for (const x of list) {
+    try {
+      if (x.file) { const j = await (await fetch('designs/' + x.file + '?v=db-2')).json(); x.D = j.schema === 'pgd-case/1' ? j.D : j; }
+      else if (x.builtin) x.D = E[x.builtin]();
+      if (x.D && !x.summary) { const d = JSON.parse(JSON.stringify(x.D)); if (window.PGDChecks) { PGDChecks.ensure(d); PGDChecks.applyNeedles(d); } const c = caseRecord(d, E.analyze(d)); x.summary = c.summary; x.request = c.request; }
+    } catch (e) { console.error(e); }
+  }
+  return list;
+}
+function dbRender() {
+  const mine = dbMine(), row = (k, name, sub) => `<div class="dbrow"><button type="button" class="dbload" data-db="${k}">${esc(name)} <small>${esc(sub)}</small></button></div>`;
+  $('#dbList').innerHTML = DBLIB.map((x, i) => row('lib:' + i, x.name, '기본')).join('') + mine.slice(0, 5).map((x, i) => row('mine:' + i, x.name, `${x.summary?.reducerCap ? (+x.summary.reducerCap).toFixed(0) + ' N·m · ' : ''}${new Date(x.saved).toLocaleDateString('ko-KR')}`)).join('') || '<span class="note">없음</span>';
+  $('#dbList').querySelectorAll('[data-db]').forEach(b => b.onclick = e => { e.stopPropagation(); dbOpen(b.dataset.db); });
+}
+fetch('designs/index.json?v=db-2').then(r => r.json()).catch(() => [{ name: 'HDS 예제', builtin: 'defaultDesign' }, { name: 'RH065 템플릿', builtin: 'templateDesign' }])
+  .then(l => { DBLIB = l; dbRender(); return dbLoadLib(l); }).then(() => { if (view === 'db') render(true); });
 // 케이스 레코드 (pgd-case/1): 나중에 모아서 참고·학습에 쓰도록 요구 조건 · 설계 제원 · 결과 요약을 같은 형식으로 남긴다.
-function caseRecord() {
+function caseRecord(D = PGDApp.state().D, R = PGDApp.state().R) {
   const ok = R && !R.errors?.length, S = ok ? R.ctx.stages : [];
   let L = null; try { if (ok) L = PGD3D.layout(R, D); } catch (e) { }
   return { schema: 'pgd-case/1', id: Date.now().toString(36), name: D.name || '이름 없음', saved: new Date().toISOString(), source: 'site',
@@ -1737,7 +1778,8 @@ function caseRecord() {
       verdictFail: R.verdict.filter(v => !v.ok).map(v => v.k) } : { errors: R?.errors || [] },
     D: JSON.parse(JSON.stringify(D)) };
 }
-$('#dbSave').onclick = e => { e.stopPropagation(); const l = dbMine(); l.unshift(caseRecord()); dbPut(l.slice(0, 50)); dbRender(); };
+$('#dbPage').onclick = e => { e.stopPropagation(); $('#moreMenu').hidden = true; go('db'); };
+$('#dbSave').onclick = e => { e.stopPropagation(); const l = dbMine(); l.unshift(caseRecord()); dbPut(l.slice(0, 200)); dbRender(); if (view === 'db') render(true); };
 $('#dbExport').onclick = e => { e.stopPropagation(); const txt = JSON.stringify(dbMine(), null, 1); dlg('설계 DB 내보내기', txt, `케이스 ${dbMine().length}건 (pgd-case/1: 요구 조건 · 설계 제원 · 결과 요약 · 전체 설계). 저장소 designs/ 폴더에 모아 두면 기본 DB로 공유됩니다.`, '복사', async () => { try { await navigator.clipboard.writeText(txt); return '복사했습니다.'; } catch (err) { return '복사 실패: 직접 선택해 복사하세요.'; } }); };
 $('#bMore').onclick = e => { e.stopPropagation(); $('#moreMenu').hidden = !$('#moreMenu').hidden; };
 document.addEventListener('click', e => { if (!e.target.closest('#moreMenu')) $('#moreMenu').hidden = true; });
