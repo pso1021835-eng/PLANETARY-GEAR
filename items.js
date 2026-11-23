@@ -20,7 +20,7 @@
   const per = (c, fn) => S(c).map((s, i) => `${i + 1}단 ${fn(s, i)}`).join(' · ') || '—';
   const chk = (c, name) => S(c).map(s => s.geo.checks.find(x => x.k === name)).filter(Boolean);
   const chv = (c, name, d = 3) => chk(c, name).map((x, i) => `${i + 1}단 ${typeof x.v === 'number' ? f(x.v, d) : x.v}`).join(' · ') || '—';
-  const vd = (c, k) => { const x = c.R?.verdict?.find(v => v.k === k); return x ? (x.unit === 'h' ? fh(x.value) + ' h' : f(x.value, x.unit === '%' ? 1 : 2) + (x.unit ? ' ' + x.unit : '')) : '—'; };
+  const vd = (c, k) => { const x = c.R?.verdict?.find(v => (v.id || v.k) === k); return x ? (x.unit === 'h' ? fh(x.value) + ' h' : f(x.value, x.unit === '%' ? 1 : 2) + (x.unit ? ' ' + x.unit : '')) : '—'; };
   const rows = c => c.R?.rated?.rows || [];
   const mx = (c, k) => Math.max(...rows(c).map(r => r.f[k]));
   const mn = (c, k) => Math.min(...rows(c).map(r => r[k]));
@@ -65,7 +65,7 @@
     why: '정격 토크 일정 운전보다 실제 관절은 저부하 시간이 길다. 스펙트럼이 실제보다 가혹하면 과설계, 가벼우면 조기 파손이다.',
     rows: [['D', 'num', 'req.lifeH', '목표 수명 h'],
       ['A', 'duty', null, '부하 스펙트럼 (아래 표, 케이스 대표값 — 실제 운전 로그로 교체 권장)'],
-      ['C', '등가 토크 (3승 평균)', c => { const d = c.D.req.duty || [], tt = d.reduce((s, l) => s + (l.time || 0), 0) || 1; return `${f(c.D.req.Trated * Math.cbrt(d.reduce((s, l) => s + (l.time || 0) * Math.pow(l.torque / 100, 3), 0) / tt), 2)} N·m`; }, 'Teq = Trated·(Σ tᵢ·(Tᵢ/Trated)³ / Σ tᵢ)^(1/3)'],
+      ['C', '등가 토크 (3승 평균)', c => { const d = c.D.req.duty || [], tt = d.reduce((s, l) => s + (l.time || 0), 0) || 1; return `${f(c.D.req.Trated * Math.cbrt(d.reduce((s, l) => s + (l.time || 0) * Math.pow(Math.abs(l.torque) / 100, 3), 0) / tt), 2)} N·m`; }, 'Teq = Trated·(Σ tᵢ·(Tᵢ/Trated)³ / Σ tᵢ)^(1/3)'],
       ['C', '스펙트럼 수명 (기어 최소)', c => vd(c, '부하 스펙트럼 수명 (기어)'), 'Miner 합, ISO 6336 S-N 기울기'],
       ['M', 'str', 'req.dutySrc', '실측 운전 로그 출처 (파일명·측정일)'],
       ['J', 'log', '모터 전류 로그 또는 동작 시뮬레이션으로 스펙트럼을 확인했다']],
@@ -98,7 +98,7 @@
     rows: [['D', 'num', 'req.backlashMax', '최대 백래시 arcmin'], ['D', 'num', 'req.stiffMin', '비틀림 강성 목표 N·m/arcmin'],
       ['P', '예측 백래시', c => c.R?.backlash ? `${f(c.R.backlash.arcmin, 2)} arcmin` : '—', '치합 유격 모델 (4-7 입력)'],
       ['P', '예측 비틀림 강성', c => c.R?.stiffness ? `${f(c.R.stiffness.NmPerArcmin, 1)} N·m/arcmin` : '—', '치합·핀·캐리어 직렬 강성 모델']],
-    k: '예측 백래시 ≤ 목표, 예측 강성 ≥ 목표', ok: c => { const a = c.R?.backlash?.arcmin <= c.D.req.backlashMax, b = c.D.req.stiffMin ? c.R?.stiffness?.NmPerArcmin >= c.D.req.stiffMin : true; return c.R?.backlash ? a && b : null; } };
+    k: '예측 백래시 ≤ 목표, 예측 강성 ≥ 목표', ok: c => { const a = c.R?.backlash?.ok, b = c.D.req.stiffMin ? c.R?.stiffness?.NmPerArcmin >= c.D.req.stiffMin : true; return c.R?.backlash ? a && b : null; } };
   I['1-9'] = { what: '효율·소음·최고 온도 목표를 정한다.',
     how: '효율은 10-5 모델, 온도는 10-6 열평형과 비교한다. 소음은 계산 모델이 없어 정밀도 등급·물림률로 간접 관리한다.',
     why: '효율 목표가 모터 선정과 발열을, 온도가 윤활(5-10)과 실 수명을 정한다.',
@@ -275,7 +275,7 @@
       ['C', '걸치기 이두께 Wk (상한 / 하한)', c => (c.R?.tooth || []).flatMap(t => t.parts.filter(p => !p.internal).map(p => `${t.stage}단 ${p.name} k=${p.k} ${f(p.Wk[0], 3)} / ${f(p.Wk[1], 3)}${p.WkOK ? '' : ` ⚠ 치폭 ${f(p.WkNeedB, 1)} 필요`}`)).join(' · ') || '—', 'Wk = mn·cos αn·[(k−1)π + z·inv αt] + sn·cos αn. 헬리컬은 치폭 ≥ Wk·sin βb + 5 mm일 때만 측정 가능'],
       ['C', '오버볼 치수 MdK (상한 / 하한)', c => (c.R?.tooth || []).flatMap(t => t.parts.map(p => `${t.stage}단 ${p.name} Ø${f(p.DM, 3)}${p.DMset ? '' : '(이론)'} ${p.internal ? '내측 ' : ''}${f(p.Md[0], 3)} / ${f(p.Md[1], 3)}`)).join(' · ') || '—', 'DIN 3960: inv αMt = inv αt ± sn(en)/(mn·z) ± DM/(mn·z·cos αn) − π/z. 링은 볼 사이 내측 치수'],
       ['M', 'num', 'verify.blMeas', '측정 백래시 arcmin (시제품)']],
-    w: ['bl'], up: ['8-2', '4-5'], k: '백래시 ≤ 목표 (1-8)', ok: c => c.R?.backlash ? c.R.backlash.arcmin <= c.D.req.backlashMax : null };
+    w: ['bl'], up: ['8-2', '4-5'], k: '백래시 ≤ 목표 (1-8)', ok: c => c.R?.backlash ? c.R.backlash.ok : null };
 
   // ============================================================== 5 하중계수·기어 강도
   I['5-1'] = { what: '단별 썬·캐리어 토크, 유성당 접선력, 상대 회전수를 확인한다.',
@@ -346,7 +346,7 @@
     how: '정적 허용응력(수명계수 정적값)과 피크·비상 토크 응력을 비교한다.',
     why: '피로가 아니라 한 번에 부러지거나 소성 변형하는지를 본다. 비상 토크(1-2)가 지배하는 경우가 많다.',
     rows: [['D', 'num', 'req.SHstat', '정적 접촉 SH 목표'], ['D', 'num', 'req.SFstat', '정적 굽힘 SF 목표'],
-      ['C', '피크 · 비상 최소 안전율', c => c.R ? `${f(c.R.peakS, 3)} · ${f(c.R.emergS, 3)}` : '—', '정적 허용 / 응력 (목표로 나눈 비)'], ['C', '정적 한계 토크', c => c.R ? `${f(c.R.staticCap, 2)} N·m` : '—', '']],
+      ['C', '피크 · 비상 최소 안전율', c => c.R ? `${f(c.R.peakS, 3)} · ${f(c.R.emergS, 3)}` : '—', 'min(SH/SH목표, SF/SF목표) · 1 이상 합격'], ['C', '정적 한계 토크', c => c.R ? `${f(c.R.staticCap, 2)} N·m` : '—', '']],
     w: ['limits'], up: ['1-2'], k: '피크·비상 안전율 ≥ 1', ok: c => c.R?.verdict ? ['피크 토크 정적 안전율', '비상 토크 정적 안전율'].every(k => c.R.verdict.find(v => v.k === k)?.ok !== false) : null };
 
   // ============================================================== 6 캐리어·핀
@@ -413,10 +413,10 @@
       ['C', '정격 C · C0', c => ck(c, '7-2'), 'ISO 281 식']],
     up: ['6-4', '9-4'], k: '유성 림 ≥ 1.2·h' };
   I['7-3'] = { what: '유성 베어링 수명 L10과 정적 안전율 s0를 확인한다.',
-    how: '유성 1개 반경 하중 = 두 치합 접선력 합 × Kγ × Kv. L10 = (C/P)^(10/3) × 10⁶ / (60·n_rel), 스펙트럼 합산. s0 = C0 / P0(피크).',
+    how: '유성 1개 반경 하중 = 두 치합 접선력 합 × Kγ × Kv. L10 = (C/P)^(10/3) × 10⁶ / (60·n_rel), 스펙트럼 합산. s0 = C0 / P0(회전·정지·피크·비상 중 최저).',
     why: '감속기 수명을 베어링이 정하는 경우가 많다.',
-    rows: [['D', 'num', 'req.s0', '베어링 정적 s0 목표'], ['C', 'L10 (스펙트럼)', c => vd(c, '유성 베어링 L10 (스펙트럼)'), 'ISO 281'], ['C', 's0 (피크)', c => vd(c, '유성 베어링 정적 s0 (피크)'), 'C0/P0']],
-    w: ['brgPlanet'], up: ['7-1', '7-2', '5-6'], k: 'L10 ≥ 목표 수명, s0 ≥ 목표', ok: c => { const v = c.R?.verdict; if (!v) return null; return ['유성 베어링 L10 (스펙트럼)', '유성 베어링 정적 s0 (피크)'].every(k => v.find(x => x.k === k)?.ok !== false); } };
+    rows: [['D', 'num', 'req.s0', '베어링 정적 s0 목표'], ['C', 'L10 (스펙트럼)', c => vd(c, '유성 베어링 L10 (스펙트럼)'), 'ISO 281'], ['C', 's0 (최저)', c => vd(c, '유성 베어링 정적 s0 (최저)'), 'C0/P0']],
+    w: ['brgPlanet'], up: ['7-1', '7-2', '5-6'], k: 'L10 ≥ 목표 수명, s0 ≥ 목표', ok: c => { const v = c.R?.verdict; if (!v) return null; return ['유성 베어링 L10 (스펙트럼)', '유성 베어링 정적 s0 (최저)'].every(k => v.find(x => x.k === k)?.ok !== false); } };
   I['7-4'] = { what: '썬을 받치는 지지 베어링과 축 치수를 정한다.',
     how: '1단 = 입력 중공축 지지 베어링, 2단 = C1을 받치는 베어링. 지지 강성 = 베어링 반경 강성 ⊕ 축 굽힘 강성 (직렬), 유격 포함.',
     why: '지지 강성·유격이 Kγ(5-6)를 정한다. 강성이 무한이면 완전 고정, 0이면 플로팅.',
@@ -436,10 +436,10 @@
   I['7-6'] = { what: '출력 베어링 수명·정적 안전율·모멘트 강성·기울기를 확인한다.',
     how: 'P = X(Fr + 2000M/dp) + Y·Fa (카탈로그 식) → L10. 롤러 하중분포는 반경·축·기울기 3자유도와 Palmgren 선접촉 강성으로 풀어 최대 접촉응력·기울기를 구한다.',
     why: '관절의 외부 모멘트를 받는 유일한 부품이다. 기울기가 2단 KHβ(5-4)로 들어간다.',
-    rows: [['C', 'L10 · s0 (피크)', c => `${vd(c, '출력 베어링 L10')} · ${vd(c, '출력 베어링 정적 s0 (피크)')}`, 'ISO 281 / 카탈로그 식'],
-      ['P', '롤러 접촉 s0 (피크)', c => vd(c, '출력 베어링 롤러 접촉 s0 (피크)'), '롤러 분포 모델, (4000/p0)²'],
+    rows: [['C', 'L10 · s0 (최저)', c => `${vd(c, '출력 베어링 L10')} · ${vd(c, '출력 베어링 정적 s0 (최저)')}`, 'ISO 281 / 카탈로그 식'],
+      ['P', '롤러 접촉 s0 (최저)', c => vd(c, '출력 베어링 롤러 접촉 s0 (최저)'), '롤러 분포 모델, (4000/p0)²'],
       ['M', 'num', 'outBearing.Km', '카탈로그 모멘트 강성 N·m/arcmin (비교용)'], ['P', '모델 기울기 (정격 / 피크)', c => c.R?.outBearing ? `${f(c.R.outBearing.tiltRated, 3)}′ / ${f(c.R.outBearing.tiltPeak, 3)}′` : '—', 'M / 모멘트 강성']],
-    w: ['ob', 'roll'], up: ['1-5', '7-5'], k: 'L10 ≥ 목표, s0 ≥ 목표', ok: c => { const v = c.R?.verdict; if (!v) return null; return ['출력 베어링 L10', '출력 베어링 정적 s0 (피크)', '출력 베어링 롤러 접촉 s0 (피크)'].every(k => v.find(x => x.k === k)?.ok !== false); } };
+    w: ['ob', 'roll'], up: ['1-5', '7-5'], k: 'L10 ≥ 목표, s0 ≥ 목표', ok: c => { const v = c.R?.verdict; if (!v) return null; return ['출력 베어링 L10', '출력 베어링 정적 s0 (최저)', '출력 베어링 롤러 접촉 s0 (최저)'].every(k => v.find(x => x.k === k)?.ok !== false); } };
   I['7-7'] = { what: '출력 베어링 예압과 유성·캐리어 축방향 유격을 정한다.',
     how: '예압(+) 은 강성을 올리고 기울기를 줄이지만 마찰·발열을 키운다. 틈새(−)는 반대. 헬리컬 추력(3-8)이 축방향 하중을 더한다.',
     why: '예압이 모멘트 강성(7-6)·효율(10-5)·온도(10-6)를 동시에 바꾼다.',
@@ -535,8 +535,8 @@
   I['10-4'] = { what: '백래시·로스트 모션을 예측하고 실측과 비교한다.',
     how: '4-7의 치합 유격 모델. 로스트 모션(저토크 강성 영역)은 모델에 없어 측정으로 본다.',
     why: '위치 정밀도의 직접 지표다.',
-    rows: [['P', '출력 백래시', c => vd(c, '출력 백래시 (추정)'), '4-7 모델'], ['M', 'num', 'verify.lostMotion', '측정 로스트 모션 arcmin (시제품)']],
-    up: ['4-7'], k: '백래시 ≤ 목표', ok: c => c.R?.verdict?.find(v => v.k === '출력 백래시 (추정)')?.ok ?? null };
+    rows: [['P', '출력 백래시', c => c.R?.backlash ? `${f(c.R.backlash.range[1], 2)} arcmin` : '—', '4-7 모델'], ['M', 'num', 'verify.lostMotion', '측정 로스트 모션 arcmin (시제품)']],
+    up: ['4-7'], k: '백래시 ≤ 목표', ok: c => c.R?.backlash?.ok ?? null };
   I['10-5'] = { what: '효율(치합·베어링·실)을 예측하고 실측과 비교한다.',
     how: '치합 손실 = Ohlendorf 손실계수 × μ, μ는 ISO/TR 14179-2 식(윤활 조건 반영) 또는 고정값. 단당 기타 손실 % 더함. 링 고정·썬 입력 유성 효율식.',
     why: '모터 크기·발열(10-6)·배터리 소모를 정한다.',

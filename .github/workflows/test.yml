@@ -25,5 +25,11 @@ jobs:
         run: node recommend_test.js
       - name: 출력 베어링 카탈로그
         run: node bearing_catalog_test.js
+      - name: 계산 수정 회귀 (피크·정역·정지 시간·구 JSON)
+        run: node engine_fix_test.js
+      - name: 정격토크 기준별 분해 (RH065 9:1)
+        run: node rating_basis_test.js
+      - name: 설계 판정 · 지정 잇수 · 해석 상태
+        run: node design_review_test.js
       - name: 문법 검사
         run: for f in *.js; do node --check "$f" || exit 1; done

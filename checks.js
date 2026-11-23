@@ -97,7 +97,7 @@
     }
     // 1-8 강성 목표
     const k = R.stiffness?.NmPerArcmin;
-    put('1-8', { kind: 'calc', val: `백래시 ≤ ${D.req.backlashMax} arcmin · 강성 ${f(k, 1)}${D.req.stiffMin ? ` / 목표 ${D.req.stiffMin}` : ''} N·m/arcmin`, ok: D.req.stiffMin ? k >= D.req.stiffMin : null });
+    put('1-8', { kind: 'calc', val: `백래시 ≤ ${D.req.backlashMax} arcmin · 강성 ${f(k, 1)}${D.req.stiffMin ? ` / 목표 ${D.req.stiffMin}` : ''} N·m/arcmin`, ok: R.backlash ? R.backlash.ok && (!D.req.stiffMin || k >= D.req.stiffMin) : null });
 
     // 2-4 / 8-2 링–하우징 결합
     const ringType = D.struct.ringHousing, rf = D.struct.ringFit;
