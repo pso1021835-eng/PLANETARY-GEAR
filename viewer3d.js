@@ -602,9 +602,9 @@
       const raceMat = mkMat('race');
       // 카탈로그 형번: 단순 내륜·외륜 링 (내륜 내경·외륜 외경 삽입부 R 표현, 볼트 탭 취부는 후순위)
       const secW = L.raceOut - L.raceIn, Dw = L.cat ? Math.min(L.Dw, secW * .3, L.Bw * .7) : L.Dw, gap = L.cat ? Math.min(Dw * .35, secW * .1) : L.Dw * .35;
-      const rC = L.cat ? (L.ob.r ?? .5) : 0;
-      add(new TH.Mesh(L.cat ? ringRounded(L.raceIn, L.dp / 2 - gap, L.zBear[0], L.zBear[1], rC, 0) : ringSolid(L.raceIn, L.dp / 2 - gap, L.zBear[0], L.zBear[1], .3), raceMat), 'xroller', outG, 3, unit * 2.6);
-      add(new TH.Mesh(L.cat ? ringRounded(L.dp / 2 + gap, L.raceOut, L.zBear[0], L.zBear[1], 0, rC) : ringSolid(L.dp / 2 + gap, L.raceOut, L.zBear[0], L.zBear[1], .3), raceMat), 'xroller', fixG, 3, unit * 2.6);
+      const rI = L.cat ? (L.ob.rIn ?? L.ob.r ?? .5) : 0, rO = L.cat ? (L.ob.rOut ?? L.ob.r ?? .5) : 0;
+      add(new TH.Mesh(L.cat ? ringRounded(L.raceIn, L.dp / 2 - gap, L.zBear[0], L.zBear[1], rI, 0) : ringSolid(L.raceIn, L.dp / 2 - gap, L.zBear[0], L.zBear[1], .3), raceMat), 'xroller', outG, 3, unit * 2.6);
+      add(new TH.Mesh(L.cat ? ringRounded(L.dp / 2 + gap, L.raceOut, L.zBear[0], L.zBear[1], 0, rO) : ringSolid(L.dp / 2 + gap, L.raceOut, L.zBear[0], L.zBear[1], .3), raceMat), 'xroller', fixG, 3, unit * 2.6);
       const Z = Math.max(8, Math.round(L.ob.Z || (L.cat ? Math.PI * L.dp / (Dw * 1.3) : 40))), Lw = L.cat ? Dw * .9 : L.ob.Lw || Dw * .9;
       const rollers = new TH.InstancedMesh(new TH.CylinderGeometry(Dw / 2, Dw / 2, Lw, 16), mkMat('roller'), Z);
       const m4 = new TH.Matrix4(), q = new TH.Quaternion(), e = new TH.Euler(), sc = new TH.Vector3(1, 1, 1), p = new TH.Vector3();
