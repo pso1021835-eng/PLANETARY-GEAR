@@ -31,5 +31,7 @@ jobs:
         run: node rating_basis_test.js
       - name: 설계 판정 · 지정 잇수 · 해석 상태
         run: node design_review_test.js
+      - name: 공용 링 · 듀티 전체 핀 · 베어링 출처 · 외력 검증 · 듀티 단위
+        run: node shared_ring_duty_test.js
       - name: 문법 검사
         run: for f in *.js; do node --check "$f" || exit 1; done

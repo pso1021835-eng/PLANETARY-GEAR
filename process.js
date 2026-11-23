@@ -86,7 +86,7 @@
       ['6-5', '핀 굽힘·처짐', 'calc', 'scar', R => (R.bearings || []).map((b, i) => `${i + 1}단 ${f(b.pinSigmaPeak, 0)} MPa`).join(' · ') + ' (피크)'],
       ['6-6', '캐리어 비틀림 강성', 'calc', 'scar', R => (R.stiffness?.stages || []).map(s => `${s.stage}단 ${f(s.Kcar / 1000, 0)} N·m/mrad`).join(' · ')],
       ['6-7', 'C1–S2 결합부 강도', 'none', 'scar'],
-    ], gate: ['정적 안전율 ≥ 2', R => vdOk(R, '유성 핀·캐리어 정적 (피크)')] },
+    ], gate: ['정적 안전율 ≥ 2', R => vdOk(R, '유성 핀·캐리어 정적 (듀티 전체)')] },
     { n: 7, name: '베어링', views: ['s9'], items: [
       ['7-1', '유성 베어링 방식', 'in', 's9', (R, D) => D.stages.map(s => s.bearing.name).join(' / ')],
       ['7-2', '니들 Dw·Lw·Z', 'none', 's9'],
