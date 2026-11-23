@@ -205,6 +205,20 @@
     return [Math.max(2, f05(tot * f1)), Math.max(2, f05(tot * (1 - f1)))];
   }
 
+  // 출력 베어링: 카탈로그(bearings.js)가 있으면 외경에 들어가는 크로스 롤러 중 정정격하중 C0가 가장 큰 형번
+  // (같으면 폭이 얇은 것). 폭은 길이 한계의 20 % 이하. 카탈로그가 없으면 외경 비 추정값.
+  function pickOutBearing(spec, wall) {
+    const list = root.PGDBearings?.crossRoller; if (!list?.length) return null;
+    const Dmax = spec.OD - 2 * (wall + 1.5), Bmax = Math.max(6, .2 * spec.H);
+    const ok = list.filter(b => b.D <= Dmax + 1e-9 && b.B <= Bmax + 1e-9 && b.C0 > 0 && b.d >= .4 * spec.OD);
+    return ok.sort((x, y) => y.C0 - x.C0 || x.B - y.B)[0] || null;
+  }
+  function catalogBearing(T, b) {
+    const dp = b.dp ?? (b.d + b.D) / 2, sec = (b.D - b.d) / 2, Dw = Math.max(.5, r05(Math.min(sec * .3, b.B * .7)));
+    return { ...T, name: `${b.maker} ${b.model}`, type: 'roller', maker: b.maker, series: b.series, model: b.model, d: b.d, D: b.D, B: b.B, dp, dpEst: b.dp == null,
+      C: b.C, C0: b.C0, mass: b.mass, r: b.r, rIn: b.rIn ?? b.r, rOut: b.rOut ?? b.r, rSrc: b.rSrc, status: b.status, source: b.source, holes: !!b.holes, Dw, Lw: +(Dw * .9).toFixed(2), DwEst: true, Z: 0, auto: '추천 제원: 외경 안 최대 C0' };
+  }
+
   // ---- 후보 → 전체 설계
   function build(base, spec, cand, bs, E) {
     const T = (E.templateDesign || E.defaultDesign)(), D = clone(T);   // 비례 기준: RDP-RH065 템플릿
@@ -212,13 +226,17 @@
     for (const k of ['req', 'materials', 'lube', 'loads', 'design', 'reliability', 'perf', 'mc', 'anim']) if (base[k]) D[k] = clone(base[k]);
     D.req.ratio = spec.ratio;
     const k = spec.OD / OD0, kz = k, ns = cand.stages.length, beta = spec.beta;   // 축방향 부품(커버·판·보스)도 외경 비로
+    // 축방향 부품 두께: 외경 비로 키운 값(a = 1)과 가공 가능한 최소 두께(a = 0) 사이. 길이 한계가 짧으면 baseHeight가 a를 줄인다.
+    const a = cand.axial ?? 1, ax = (v, min) => Math.max(min, r05(min + (Math.max(min, v) - min) * a));
     const tag = cand.stages.map(s => `m${s.m} ${s.s}/${s.p}/${s.R}×${s.n}`).join(' + ');
     D.name = `추천 · i ${Number(candidateRatio(cand).toFixed(6))} · ${tag}`;
     D.config = { stages: ns, sharedRing: cand.type === 'shared', floatingSun: false };
     const wall = wallOf(spec.OD);
-    D.housing = { ...T.housing, wall, coverT: Math.max(3, r05(T.housing.coverT * kz)), flangeT: Math.max(2, r05(T.housing.flangeT * kz)) };
-    const Dw = Math.max(1.5, r05(2.5 * k));
-    D.outBearing = { ...T.outBearing, name: `크로스 롤러 Dw ${Dw} (외경 비 추정 · 카탈로그 확인)`, Dw, Lw: Dw, dp: spec.OD - 2 * (wall + 1.5) - 2.2 * Dw, C: Math.round(T.outBearing.C * k * k), C0: Math.round(T.outBearing.C0 * k * k) };
+    D.housing = { ...T.housing, wall, coverT: ax(T.housing.coverT * kz, 3), flangeT: ax(T.housing.flangeT * kz, 3) };
+    const Dw = Math.max(1.5, r05(2.5 * k * (a + (1 - a) * .8)));
+    const cat = pickOutBearing(spec, wall);
+    D.outBearing = cat ? catalogBearing(T.outBearing, cat)
+      : { ...T.outBearing, name: `크로스 롤러 Dw ${Dw} (외경 비 추정 · 카탈로그 확인)`, Dw, Lw: Dw, dp: spec.OD - 2 * (wall + 1.5) - 2.2 * Dw, C: Math.round(T.outBearing.C * k * k), C0: Math.round(T.outBearing.C0 * k * k) };
     D.geom = {};
     const sc = o => Object.fromEntries(Object.entries(o).map(([key, v]) => [key, typeof v === 'number' && !['n', 'p'].includes(key) ? r05(v * k) || v : v]));
     D.struct = { ...T.struct, c1s2Dim: sc(T.struct.c1s2Dim), s1Dim: sc(T.struct.s1Dim) };
@@ -233,15 +251,15 @@
       const Z = Math.max(6, Math.floor(Math.PI * (pin + nDw) / (nDw * 1.05)));
       D.needle.push({ use: true, apply: true, Dw: nDw, Lw: null, Z, HRCpin: 60, HRCbore: 58 });
       const bscale = (Z * nDw * b) / (11 * 1.5 * tpl.b);
-      const plate = Math.max(1.5, r05((out ? 2.9 : 4) * kz));
+      const plate = ax((out ? 2.9 : 4) * kz, 2.5);
       return Object.assign(clone(tpl), {
         s: c.s, p: c.p, r: c.profile ? c.R : null, n: c.n, m, beta, b,
         ...(c.profile || { xs: 0, xp: 0, xr: 0 }), autoRingShift: !c.profile, sunBore: null, planetBore: bore, ringOD,
         tipChamfer: [0, 0, 0],
         bearing: { name: `풀니들 Ø${nDw} × ${Z} (추정)`, C: Math.round(1600 * bscale), C0: Math.round(1500 * bscale), count: 1 },
-        pin: out ? { d: pin, type: 'double', material: 'SUJ2', wall: plate, allow: 1200, holeMode: 'blind', depth: null }
+        pin: out ? { d: pin, type: 'double', material: 'SUJ2', wall: plate, allow: 1200, holeMode: a < 1 ? 'through' : 'blind', depth: null }   // 얇은 판: 막힌 홀 드릴 끝(118°)이 판을 다 먹으므로 관통
           : { d: pin, type: 'single', material: 'SUJ2', wall: plate, allow: 1200, holeMode: 'through', depth: null },
-        carrier: out ? { width: null, groove: null, pocket: null, pocketShape: 'slot', outerD: null, innerD: null, bossD: null, bossT: Math.max(2, r05(9.6 * kz)), material: 'S45C' }
+        carrier: out ? { width: null, groove: null, pocket: null, pocketShape: 'slot', outerD: null, innerD: null, bossD: null, bossT: ax(9.6 * kz, 2), material: 'S45C' }
           : { width: plate, outerD: null, innerD: null, bossT: 0, bossD: null, axialClearance: 0.3, material: 'S45C' }
       });
     });
@@ -256,12 +274,21 @@
   }
 
   // 치폭 2 mm 기준 설계의 높이 − 치폭 합 = 치폭 외 고정 높이 (구성·모듈 조합별로 한 번)
+  // 축방향 부품 두께 a(1 = 외경 비, 0 = 최소)는 길이 한계에서 치폭 몫(전체의 30 % 이상)이 남는 가장 큰 값으로 정한다.
   function baseHeight(base, spec, cand, E, layout, cache) {
     const key = cand.type + cand.stages.map(s => s.m).join(',');
-    if (cache.has(key)) return cache.get(key);
-    const bs = cand.stages.map(() => 2), env = envelope(build(base, spec, cand, bs, E), E, layout);
-    const h = env.errors ? spec.H * 0.6 : env.H - 2 * bs.length;
-    cache.set(key, h); return h;
+    if (!cache.has(key)) {
+      const bs = cand.stages.map(() => 2), faceMin = Math.max(4 * bs.length, .3 * spec.H);
+      let pick = null;
+      for (const a of [1, .75, .5, .25, 0]) {
+        const env = envelope(build(base, spec, { ...cand, axial: a }, bs, E), E, layout);
+        const h = env.errors ? spec.H * 0.6 : env.H - 2 * bs.length;
+        pick = { h, a };
+        if (h <= spec.H - faceMin) break;
+      }
+      cache.set(key, pick);
+    }
+    const p = cache.get(key); cand.axial = p.a; return p.h;
   }
 
   // 후보 하나 정밀 평가: 치폭 확정(자동이면 높이에 맞춰 두 번 보정) → 외형 확인 → 강도 계산 → 단별 허용 토크
@@ -332,7 +359,7 @@
     return { res, total: sl.total, counts: sl.counts, checked: sl.list.length };
   }
 
-  const api = { inspectTeeth, ringRange, stageOptions, candidates, proxy, build, envelope, evaluateOne, shortlist, run, runSync };
+  const api = { pickOutBearing, inspectTeeth, ringRange, stageOptions, candidates, proxy, build, envelope, evaluateOne, shortlist, run, runSync };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PGDRecommend = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

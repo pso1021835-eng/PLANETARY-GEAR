@@ -33,5 +33,7 @@ jobs:
         run: node design_review_test.js
       - name: 공용 링 · 듀티 전체 핀 · 베어링 출처 · 외력 검증 · 듀티 단위
         run: node shared_ring_duty_test.js
+      - name: 추천 제원 짧은 외형 · 허용 토크 탐색 단조성
+        run: node recommend_compact_test.js
       - name: 문법 검사
         run: for f in *.js; do node --check "$f" || exit 1; done

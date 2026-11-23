@@ -1,0 +1,425 @@
+{
+ "schema": "pgd/1",
+ "name": "제안안 · 저소음 2단 헬리컬 유성 i 23.96 · Ø100×50 · 50 N·m",
+ "req": {
+  "case": "custom",
+  "ext": {
+   "Fr": 500,
+   "Fa": 300,
+   "M": 15
+  },
+  "Trated": 50,
+  "Tpeak": 100,
+  "Temerg": 125,
+  "rpm": 3000,
+  "lifeH": 20000,
+  "SH": 1,
+  "SF": 1.4,
+  "SHstat": 1,
+  "SFstat": 1.2,
+  "s0": 1,
+  "SBmin": 1.5,
+  "effMin": 90,
+  "backlashMax": 10,
+  "duty": [
+   {
+    "torque": 100,
+    "time": 100,
+    "mode": "rated"
+   }
+  ],
+  "ratio": 24,
+  "Dmax": 100,
+  "Lmax": 50,
+  "stiffMin": null
+ },
+ "config": {
+  "stages": 2,
+  "sharedRing": true,
+  "floatingSun": false
+ },
+ "design": {
+  "quality": "MQ"
+ },
+ "stages": [
+  {
+   "s": 22,
+   "p": 42,
+   "n": 4,
+   "m": 0.7,
+   "beta": 20,
+   "alpha": 20,
+   "b": 9.5,
+   "xs": 0,
+   "xp": 0,
+   "xr": 0,
+   "autoRingShift": true,
+   "grade": 6,
+   "mod": {
+    "crown": 3,
+    "tip": 0,
+    "verified": "none"
+   },
+   "sunBore": null,
+   "planetBore": 16,
+   "ringOD": 94,
+   "bearing": {
+    "name": "풀니들 Ø3.5×9.1 × 10 (계산)",
+    "C": 11275,
+    "C0": 10090,
+    "count": 1,
+    "manual": {
+     "name": "풀니들 (계산)",
+     "C": 1,
+     "C0": 1,
+     "planetBore": null
+    },
+    "calc": {
+     "name": "풀니들 Ø3.5×9.1 × 10 (계산)",
+     "C": 11275,
+     "C0": 10090,
+     "planetBore": 16
+    },
+    "src": "needle"
+   },
+   "jt": [
+    20,
+    25
+   ],
+   "pin": {
+    "d": 9,
+    "type": "single",
+    "material": "SUJ2",
+    "wall": 2.5,
+    "allow": 1200,
+    "holeMode": "through",
+    "depth": null
+   },
+   "carrier": {
+    "width": 2.5,
+    "outerD": null,
+    "innerD": null,
+    "bossT": 0,
+    "bossD": null,
+    "axialClearance": 0.3,
+    "material": "S45C"
+   },
+   "r": null,
+   "tipChamfer": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "s": 34,
+   "p": 36,
+   "n": 5,
+   "m": 0.7,
+   "beta": 20,
+   "alpha": 20,
+   "b": 7,
+   "xs": 0,
+   "xp": 0,
+   "xr": 0,
+   "autoRingShift": true,
+   "grade": 6,
+   "mod": {
+    "crown": 3,
+    "tip": 0,
+    "verified": "none"
+   },
+   "sunBore": null,
+   "planetBore": 13.5,
+   "ringOD": null,
+   "bearing": {
+    "name": "풀니들 Ø3×6.6 × 10 (계산)",
+    "C": 7408,
+    "C0": 6223,
+    "count": 1,
+    "manual": {
+     "name": "풀니들 (계산)",
+     "C": 1,
+     "C0": 1,
+     "planetBore": null
+    },
+    "calc": {
+     "name": "풀니들 Ø3×6.6 × 10 (계산)",
+     "C": 7408,
+     "C0": 6223,
+     "planetBore": 13.5
+    },
+    "src": "needle"
+   },
+   "jt": [
+    20,
+    25
+   ],
+   "pin": {
+    "d": 7.5,
+    "type": "double",
+    "material": "SUJ2",
+    "wall": 3,
+    "allow": 1200,
+    "holeMode": "through",
+    "depth": null
+   },
+   "carrier": {
+    "width": null,
+    "groove": null,
+    "pocket": null,
+    "pocketShape": "slot",
+    "outerD": null,
+    "innerD": null,
+    "bossD": null,
+    "bossT": 2,
+    "material": "S45C",
+    "pocketR": 2
+   },
+   "r": null,
+   "tipChamfer": [
+    0,
+    0,
+    0
+   ],
+   "autoPlanetShift": true
+  }
+ ],
+ "materials": [
+  {
+   "family": "Eh",
+   "surfaceHRC": 60,
+   "coreHRC": 36,
+   "depth": 0.3
+  },
+  {
+   "family": "Eh",
+   "surfaceHRC": 60,
+   "coreHRC": 36,
+   "depth": 0.3
+  },
+  {
+   "family": "NV",
+   "surfaceHRC": 56,
+   "coreHRC": 30,
+   "depth": 0.3
+  },
+  {
+   "family": "Eh",
+   "surfaceHRC": 60,
+   "coreHRC": 36,
+   "depth": 0.3
+  },
+  {
+   "family": "Eh",
+   "surfaceHRC": 60,
+   "coreHRC": 36,
+   "depth": 0.3
+  },
+  {
+   "family": "NV",
+   "surfaceHRC": 56,
+   "coreHRC": 30,
+   "depth": 0.3
+  }
+ ],
+ "lube": {
+  "type": "grease",
+  "nu40": 320,
+  "nu100": 25,
+  "temp": 70,
+  "rho": 0.88,
+  "alphaP": 2,
+  "starvation": 0.7,
+  "XL": 1,
+  "XW": 1,
+  "fzg": 12,
+  "rzFlank": 1,
+  "rzRoot": 6
+ },
+ "loads": {
+  "basis": "ideal",
+  "KA": 1,
+  "kgMode": "model",
+  "kgFixed": 1.1,
+  "posError": 5,
+  "sunSupport": [
+   {
+    "mode": "structure",
+    "k": 20,
+    "play": 2.5,
+    "bearingK": 30,
+    "od": 25,
+    "id": 17.5,
+    "overhang": 7.8
+   },
+   {
+    "mode": "structure",
+    "k": 20,
+    "play": 1.5,
+    "bearingK": 30,
+    "od": 17,
+    "id": 15,
+    "overhang": 3
+   }
+  ],
+  "fmaMode": "rss",
+  "carrierParallel": 10,
+  "extraFsh": [
+   0,
+   0
+  ],
+  "reverse": false
+ },
+ "reliability": {
+  "mode": "iso",
+  "covH": 0.08,
+  "covF": 0.07
+ },
+ "perf": {
+  "muMode": "model",
+  "mu": 0.06,
+  "otherLoss": 1.5
+ },
+ "outBearing": {
+  "name": "IKO CRBS708V",
+  "rows": 2,
+  "type": "roller",
+  "C": 8190,
+  "C0": 13600,
+  "dp": 78,
+  "Km": 30,
+  "Z": 0,
+  "Dw": 2.5,
+  "Lw": 2.25,
+  "preload": 0,
+  "maker": "IKO",
+  "series": "CRBS…V",
+  "model": "CRBS708V",
+  "d": 70,
+  "D": 86,
+  "B": 8,
+  "dpEst": true,
+  "mass": 0.108,
+  "r": 0.4,
+  "rIn": 0.4,
+  "rOut": 0.4,
+  "rSrc": "카탈로그",
+  "status": "IKO 공식 확인",
+  "source": "IKO 공식 CAD 카탈로그 (PARTcommunity/MISUMI)",
+  "holes": false,
+  "DwEst": true
+ },
+ "carrier": {
+  "allowP": 300,
+  "allowB": 250
+ },
+ "housing": {
+  "wall": 3,
+  "coverT": 3,
+  "flangeT": 4,
+  "boltN": 8,
+  "boltD": 5
+ },
+ "geom": {},
+ "struct": {
+  "ringHousing": "integral",
+  "c1s2": "pin",
+  "c1s2Dim": {
+   "d": 17,
+   "L": 4.5,
+   "p": 40,
+   "n": 6,
+   "dp": 3,
+   "pcd": 21.5
+  },
+  "s1motor": "flange",
+  "s1Dim": {
+   "d": 17.5,
+   "L": 7.5,
+   "p": 40,
+   "n": 4,
+   "bd": 1.6,
+   "pcd": 22
+  },
+  "c1Support": "nested",
+  "obPos": "outside",
+  "ringFit": {
+   "delta": 0.03,
+   "mu": 0.12,
+   "E": 70000,
+   "nu": 0.33,
+   "Sy": 240,
+   "boltN": 6,
+   "boltD": 3
+  }
+ },
+ "needle": [
+  {
+   "use": true,
+   "apply": true,
+   "Dw": 3.5,
+   "Lw": null,
+   "Z": null,
+   "HRCpin": 60,
+   "HRCbore": 58
+  },
+  {
+   "use": true,
+   "apply": true,
+   "Dw": 3,
+   "Lw": null,
+   "Z": null,
+   "HRCpin": 60,
+   "HRCbore": 58
+  }
+ ],
+ "verify": {
+  "feaKcar": [
+   null,
+   null
+  ],
+  "feaSigmaF": null,
+  "testT": 28,
+  "testNote": "시험성적서 정격 (RDP-RH065 9N)"
+ },
+ "anim": {
+  "rpm": 1000,
+  "slow": 0.02
+ },
+ "mc": {
+  "samples": 200,
+  "utilization": 0.7
+ },
+ "bolts": {
+  "grade": 12.9,
+  "mu": 0.12,
+  "util": 0.7
+ },
+ "thermal": {
+  "Tamb": 25,
+  "h": 12,
+  "duty": 0.5
+ },
+ "review": {
+  "by": "",
+  "date": "",
+  "status": "draft",
+  "note": ""
+ },
+ "dfm": {
+  "qty": 100,
+  "rate": 60000,
+  "steel": 3000,
+  "alu": 7000,
+  "ht": 8000,
+  "proc": {
+   "sun": "hob",
+   "planet": "hob",
+   "ring": "shape",
+   "carrier": "mill",
+   "housing": "turn",
+   "pin": "buy"
+  }
+ }
+}
