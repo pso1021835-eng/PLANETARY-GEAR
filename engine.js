@@ -166,7 +166,7 @@
     chk('등간격 조립 (S+R)/Np', (s + r) / n, (s + r) % n === 0);
     if ((s + r) % n) errors.push('유성 등간격 조립 불가: (S+R)/Np가 정수가 아닙니다');
     chk('외접·내접 중심거리 차 (mm)', sp.center - pr.center, Math.abs(sp.center - pr.center) < 1e-4, '전위로 맞춥니다');
-    if (Math.abs(sp.center - pr.center) >= 1e-4) errors.push('외접·내접 작용 중심거리가 다릅니다 · "링 전위 자동"을 쓰세요');
+    if (Math.abs(sp.center - pr.center) >= 1e-4) errors.push(st.sharedRing ? `외접·내접 작용 중심거리가 다릅니다: 썬–유성 ${sp.center.toFixed(4)} / 유성–링 ${pr.center.toFixed(4)} mm (차 ${(sp.center - pr.center).toFixed(4)} mm) · 공용 링은 1단에서 고정 — 2단 "유성 전위 자동"을 켜거나 썬·유성 전위를 맞추세요` : `외접·내접 작용 중심거리가 다릅니다 (차 ${(sp.center - pr.center).toFixed(4)} mm) · "링 전위 자동"을 쓰세요`);
     const gap = 2 * sp.center * Math.sin(Math.PI / n) - parts[1].da;
     chk('인접 유성 이끝 간격 (mm)', gap, gap > 0.5 * m);
     if (!(gap > 0)) errors.push('인접 유성이 간섭합니다');
@@ -207,17 +207,60 @@
     return fin(offset) ? xp + offset : 0;
   }
 
+  // Working centre distances (mm) of the external (sun–planet) and internal (planet–ring) meshes for a planet shift xp.
+  function centresFor(st, xp) {
+    const r = ringTeeth(st), an = (st.alpha || 20) * rad, at = Math.atan(Math.tan(an) / Math.cos((st.beta || 0) * rad));
+    const mt = st.m / Math.cos((st.beta || 0) * rad), xs = st.xs || 0, xr = st.xr || 0;
+    const awE = workingAngle(at, an, xs + xp, st.s + st.p), awI = workingAngle(at, an, xp - xr, st.p - r);
+    return [mt * (st.s + st.p) * Math.cos(at) / (2 * Math.cos(awE)), mt * (r - st.p) * Math.cos(at) / (2 * Math.cos(awI))];
+  }
+  // Planet shift that makes both working centres equal with the sun and ring shifts held (shared ring: the ring is fixed).
+  function planetShiftFor(st) {
+    const g = xp => { const [e, i] = centresFor(st, xp); return e - i; };
+    let a = -1.5, b = 2.5, ga = g(a), gb = g(b);
+    for (let k = 0; k < 40 && !Number.isFinite(gb); k++) { b -= .1; gb = g(b); }
+    for (let k = 0; k < 40 && !Number.isFinite(ga); k++) { a += .1; ga = g(a); }
+    if (!(Number.isFinite(ga) && Number.isFinite(gb)) || Math.sign(ga) === Math.sign(gb)) return NaN;
+    for (let k = 0; k < 80; k++) { const m = (a + b) / 2, gm = g(m); if (!Number.isFinite(gm)) return NaN; if (Math.sign(gm) === Math.sign(ga)) { a = m; ga = gm; } else b = m; }
+    return (a + b) / 2;
+  }
+  // Shared ring (공용 링): one physical part. Teeth, shift, tooth-thickness allowance, tip chamfer, width and the
+  // shaping cutter come from stage 1 only; stage 2's own ring fields are ignored. Stage 2 then fits its planet shift to
+  // the fixed ring (autoPlanetShift, default on — legacy files: the stage-2 "링 전위 자동" flag), or keeps the entered
+  // planet shift and reports the centre-distance mismatch.
+  function sharedRingOf(first) {
+    return { r: ringTeeth(first), rAuto: first.r == null, xr: first.autoRingShift ? matchRingShift(first) : (+first.xr || 0), xrAuto: !!first.autoRingShift };
+  }
   function sharedStage(first, second) {
     const stage = { ...second, m: first.m, beta: first.beta, alpha: first.alpha };
-    if (first.r == null) {
-      stage.r = null;
-      stage.p = (ringTeeth(first) - stage.s) / 2;
-    } else {
-      stage.r = ringTeeth(first);
-      stage.xr = first.autoRingShift ? matchRingShift(first) : first.xr;
-      stage.autoRingShift = false;
-    }
+    const ring = sharedRingOf(first);
+    if (first.r == null) { stage.r = null; stage.p = (ring.r - stage.s) / 2; } else stage.r = ring.r;
+    stage.xr = ring.xr; stage.autoRingShift = false;
+    const k2 = (a, b) => { const out = [...(a || [])]; out[2] = (b || [])[2]; return out; };
+    stage.asn = k2(second.asn, first.asn); stage.tipChamfer = k2(second.tipChamfer, first.tipChamfer);
+    if ('bRing' in first || 'bRing' in second) stage.bRing = first.bRing;
+    if (first.cutter !== undefined) stage.cutter = first.cutter;
+    const auto = second.autoPlanetShift ?? (second.autoRingShift !== false);
+    const xpIn = +second.xp || 0, xpFit = planetShiftFor(stage);
+    if (auto && Number.isFinite(xpFit)) stage.xp = +xpFit.toFixed(6);
+    const [ce, ci] = centresFor(stage, stage.xp || 0);
+    stage.sharedRing = { ...ring, auto, xpIn, xpFit, xpUsed: stage.xp || 0, adjusted: auto && Math.abs((stage.xp || 0) - xpIn) > 5e-7, centreExt: ce, centreInt: ci, gap: ce - ci };
     return stage;
+  }
+  // Copy the shared-ring fields of stage 1 into the stored stage-2 inputs (JSON, 3D, recommendations read one value).
+  // Returns the stage-2 values that differed (legacy pgd/1 files may hold their own) so the app can say which was adopted.
+  function syncSharedRing(D) {
+    if (!D?.config?.sharedRing || !(D.config.stages > 1) || !D.stages?.[1]) return [];
+    const a = D.stages[0], b = D.stages[1], diff = [], same = (x, y) => JSON.stringify(x ?? null) === JSON.stringify(y ?? null);
+    const take = (label, getB, getA, setB) => { const va = getA(), vb = getB(); if (!same(va, vb)) { diff.push({ label, was: vb, now: va }); } setB(va); };
+    take('링 잇수 (빈칸 = 자동)', () => b.r, () => a.r, v => { b.r = v; });
+    take('링 전위 자동', () => b.autoRingShift, () => a.autoRingShift, v => { b.autoRingShift = v; });
+    take('링 전위', () => b.xr, () => a.xr, v => { b.xr = v; });
+    take('링 치두께 공차', () => b.asn?.[2], () => a.asn?.[2], v => { if (b.asn || v != null) { b.asn = b.asn || []; b.asn[2] = v; } });
+    take('링 이끝 모따기', () => b.tipChamfer?.[2], () => a.tipChamfer?.[2], v => { if (b.tipChamfer || v != null) { b.tipChamfer = b.tipChamfer || []; b.tipChamfer[2] = v; } });
+    if (D.materials?.[5] && D.materials?.[2]) take('링 재료', () => D.materials[5], () => D.materials[2], v => { D.materials[5] = JSON.parse(JSON.stringify(v)); });
+    if (b.autoPlanetShift == null) b.autoPlanetShift = true;
+    return diff.filter(d => !(d.label === '링 전위' && a.autoRingShift));
   }
 
   // ------------------------------------------------------------ profile-shift map (단별 썬·유성 전위 평면)
@@ -243,7 +286,7 @@
   function shiftMap(D, i, opt = {}) {
     const step = opt.step || .05, lo = opt.lo ?? -.5, hi = opt.hi ?? 1;
     const shared = i === 1 && D.config.sharedRing, st = shared ? sharedStage(D.stages[0], D.stages[1]) : { ...D.stages[i] };
-    const fixedRing = shared && D.stages[0].r != null, pts = [], vals = [];
+    const fixedRing = shared, pts = [], vals = [];
     for (let v = lo; v <= hi + 1e-9; v += step) vals.push(+v.toFixed(4));
     if (fixedRing) {
       // the physical ring (teeth and shift) is set by stage 1: for each planet shift solve the sun shift that keeps both centres equal
@@ -562,7 +605,7 @@
     // speed-dependent Kv use magnitudes. op.Tout < 0 → coast flank (역방향 하중 치면).
     const flank = op.Tout < 0 ? 'coast' : 'drive';
     let Tin = Math.abs(op.Tout) / ctx.ratio, nIn = op.rpm || 0;
-    const obr = D.outBearing?.Z ? rollerModel(D, Math.abs(op.Tout) / D.req.Trated) : null;
+    const obr = D.outBearing?.Z && validateExt(D.req.ext).ok ? rollerModel(D, Math.abs(op.Tout) / D.req.Trated) : null;
     for (const stg of ctx.stages) {
       const { st, geo, mats } = stg, ratio = geo.ratio, nc = nIn / ratio, rel = nIn - nc;
       const sun = geo.parts[0], planet = geo.parts[1];
@@ -724,12 +767,22 @@
   function dutyMode(l) { return l.mode === 'rated' || l.mode === 'set' || l.mode === 'stop' ? l.mode : (l.rpm ? 'set' : 'rated'); }
   // All levels with time > 0 (including idle and stop levels) normalised by total elapsed time. T and rpm keep their sign.
   // extK: output-bearing external load as a fraction of D.req.ext — l.ext (%) if given, else |torque| / 100.
+  // Torque of a duty level (N·m, signed): entered in N·m (l.Tnm, table unit N·m) or as % of the rated torque.
+  function dutyTorque(l, D) { return D.req.dutyUnits?.torque === 'Nm' && l.Tnm != null && Number.isFinite(+l.Tnm) ? +l.Tnm : D.req.Trated * (+l.torque || 0) / 100; }
+  // Duty table units (D.req.dutyUnits): torque 'pct' | 'Nm', time 'pct' | 's'. Values stay as entered; switching only
+  // fills or drops the N·m column, never rescales the stored numbers (time is a relative weight in either unit).
+  function setDutyUnit(D, kind, v) {
+    const U = (D.req.dutyUnits ||= { torque: 'pct', time: 'pct' }); if (U[kind] === v) return; U[kind] = v;
+    if (kind === 'torque') D.req.duty.forEach(l => { if (v === 'Nm') { if (l.Tnm == null) l.Tnm = +(D.req.Trated * (+l.torque || 0) / 100).toPrecision(12); } else delete l.Tnm; });
+  }
+  // keep the % column of N·m levels in step (other readers use l.torque)
+  function syncDutyTorque(D) { if (D.req.dutyUnits?.torque === 'Nm' && D.req.Trated) D.req.duty.forEach(l => { if (l.Tnm != null && Number.isFinite(+l.Tnm)) l.torque = +(l.Tnm / D.req.Trated * 100).toPrecision(12); }); }
   function dutyLevels(D) {
     const all = (D.req.duty || []).filter(l => l.time > 0), totalT = all.reduce((s, l) => s + l.time, 0) || 1;
     return all.map(l => {
       const mode = dutyMode(l), rpm = mode === 'stop' ? 0 : mode === 'set' ? (+l.rpm || 0) : D.req.rpm;
-      const torque = +l.torque || 0, frac = l.time / totalT;
-      return { src: l, mode, rpm, torque, T: D.req.Trated * torque / 100, frac, hours: D.req.lifeH * frac,
+      const T = dutyTorque(l, D), torque = D.req.Trated ? T / D.req.Trated * 100 : (+l.torque || 0), frac = l.time / totalT;
+      return { src: l, mode, rpm, torque, T, frac, hours: D.req.lifeH * frac,
         extK: (l.ext != null && l.ext !== '' && isFinite(+l.ext) ? Math.abs(+l.ext) : Math.abs(torque)) / 100,
         rotating: rpm !== 0, loaded: torque !== 0 };
     });
@@ -984,8 +1037,28 @@
   }
 
   // ------------------------------------------------------------ output main bearing (cross-roller style equivalent load)
+  // Output-bearing external loads: the catalogue formulas use magnitudes, so each entry is a size ≥ 0 in its unit.
+  // Blank = not entered (not "no load"): the result is "계산 불가" until 0 (no load) or a value is entered.
+  const EXT = { Fr: ['반경 하중 Fr', 'N'], Fa: ['축 하중 Fa', 'N'], M: ['모멘트 M', 'N·m'] }, EXT_MAX = { Fr: 1e6, Fa: 1e6, M: 1e5 };
+  function validateExt(ext) {
+    const out = { ok: true, why: [] };
+    for (const k in EXT) {
+      const [name, unit] = EXT[k], v = ext?.[k], note = `${unit} · 크기 0 ~ ${EXT_MAX[k].toLocaleString('ko-KR')} (0 = 무하중, 방향 무관)`;
+      let err = null;
+      if (v === null || v === undefined || v === '') err = `${name}: 빈칸 — 하중이 없으면 0을 입력하세요 (계산 불가)`;
+      else if (typeof v !== 'number' || !Number.isFinite(v)) err = `${name}: 숫자가 아닙니다 (계산 불가)`;
+      else if (v < 0) err = `${name} ${v} ${unit}: 음수 불가 — 카탈로그 식은 하중 크기를 씁니다. 방향과 무관하게 크기로 입력하세요 (계산 불가)`;
+      else if (v > EXT_MAX[k]) err = `${name} ${v} ${unit}: 허용 범위(≤ ${EXT_MAX[k].toLocaleString('ko-KR')}) 밖 (계산 불가)`;
+      out[k] = err ? { ok: false, err, note } : { ok: true, note };
+      if (err) { out.ok = false; out.why.push(err); }
+    }
+    return out;
+  }
   function outputBearing(ctx, D) {
     const ob = D.outBearing, ext = D.req.ext || { Fr: 0, Fa: 0, M: 0 };
+    const V = validateExt(ext);
+    if (!V.ok) { const na = { s0: NaN, load: NaN, label: '계산 불가 (외력 입력 오류)' };
+      return { invalid: true, why: V.why, governing: na, name: ob.name, type: ob.type, C: ob.C, C0: ob.C0, dp: ob.dp, Peq: NaN, L10h: NaN, outRpm: D.req.rpm / ctx.ratio, s0peak: NaN, s0emerg: NaN, tiltRated: NaN, tiltPeak: NaN, ext, roll: null }; }
     const levels = dutyLevels(D);
     const p = ob.type === 'ball' ? 3 : 10 / 3;
     const Pof = (Fr, Fa, M) => { const Fre = Fr + 2000 * M / ob.dp; const ratio = Fa / Math.max(Fre, 1e-9); const [X, Y] = ratio <= 1.5 ? [1, .45] : [.67, .67]; return X * Fre + Y * Fa; };
@@ -1012,26 +1085,44 @@
       roll: ob.Z ? { governing: rollerModel(D, governing.scale), rated: rollerModel(D, 1), peak: rollerModel(D, kp), emerg: rollerModel(D, ke) } : null };
   }
   // ------------------------------------------------------------ carrier & planet pin
+  // Pin bending, pin-hole pressure and (double carrier) web bending at every load case the design names:
+  // each duty level (rotating levels with their speed → Kv; stop = 0 rpm hold, static), the set peak and the emergency
+  // torque. Each failure mode keeps its lowest safety and where it happened (stage, case, torque, pin force).
+  // Legacy pgd/1 levels with rpm 0 mean "rated rpm" (dutyMode → 'rated') and stay rotating; only mode 'stop' holds.
   function carrierPin(ctx, D) {
+    const levels = dutyLevels(D), KIND = { rated: '회전', set: '회전', stop: '정지 유지' };
+    const cases = [
+      ...levels.filter(l => l.loaded).map(l => { const idx = D.req.duty.indexOf(l.src); return { key: 'duty' + idx, duty: idx, kind: KIND[l.mode], label: `구간 ${idx + 1} · ${KIND[l.mode]}`, T: l.T, op: l.rotating ? { Tout: l.T, rpm: l.rpm, cycles: () => 1e8 } : { Tout: l.T, rpm: 0, static: true } }; }),
+      { key: 'peak', kind: '지정 피크', label: '지정 피크', T: D.req.Tpeak, op: { Tout: D.req.Tpeak, rpm: 0, static: true } },
+      { key: 'emerg', kind: '비상', label: '비상', T: D.req.Temerg, op: { Tout: D.req.Temerg, rpm: 0, static: true } }];
+    const res = cases.map(c => evaluate(ctx, c.op));
+    const rr = evaluate(ctx, { Tout: D.req.Trated, rpm: D.req.rpm, cycles: () => 1e8 });
     return ctx.stages.map(stg => {
       const st = stg.st, pin = st.pin, b = stg.geo.parts[1].width;
-      const at = T => evaluate(ctx, { Tout: T, rpm: 0, static: true }).stages[stg.i];
-      const rr = evaluate(ctx, { Tout: D.req.Trated, rpm: D.req.rpm, cycles: () => 1e8 }).stages[stg.i];
-      const pk = at(D.req.Tpeak), em = at(D.req.Temerg);
       const A = Math.PI * pin.d ** 2 / 4;
-      const engagement = stg.carrier.engagement, fit = Math.min(...engagement), reactions = pk.pin.reactions;
-      const shear = F => 4 / 3 * F * Math.max(...reactions) / A;
-      const press = F => Math.max(...engagement.map((length, i) => F * reactions[i] / (pin.d * length)));
-      const out = { stage: stg.i + 1, d: pin.d, type: pin.type, span: rr.pin.span, fit, geometry: stg.carrier,
-        rated: { F: rr.pinForce, sigma: rr.pin.sigma, tau: shear(rr.pinForce), defl: rr.pin.meanDefl * 1000, tilt: rr.pin.tilt * b * 1000, p: press(rr.pinForce) },
-        peak: { F: pk.pinForce, sigma: pk.pin.sigma, tau: shear(pk.pinForce), p: press(pk.pinForce) },
-        emerg: { F: em.pinForce, sigma: em.pin.sigma, tau: shear(em.pinForce), p: press(em.pinForce) },
+      const engagement = stg.carrier.engagement, fit = Math.min(...engagement);
+      const R0 = rr.stages[stg.i], reactions = R0.pin.reactions;
+      const shear = F => 4 / 3 * Math.abs(F) * Math.max(...reactions) / A;
+      const press = F => Math.max(...engagement.map((length, i) => Math.abs(F) * reactions[i] / (pin.d * length)));
+      const one = so => ({ F: so.pinForce, sigma: Math.abs(so.pin.sigma), tau: shear(so.pinForce), p: press(so.pinForce) });
+      const at = key => res[cases.findIndex(c => c.key === key)].stages[stg.i];
+      const out = { stage: stg.i + 1, d: pin.d, type: pin.type, span: R0.pin.span, fit, geometry: stg.carrier,
+        rated: { ...one(R0), defl: R0.pin.meanDefl * 1000, tilt: R0.pin.tilt * b * 1000 },
+        peak: one(at('peak')), emerg: one(at('emerg')),
         allow: pin.allow, carrierAllowP: D.carrier.allowP };
-      out.Sbend = pin.allow / out.peak.sigma; out.Spress = D.carrier.allowP / out.peak.p;
-      // carrier torque (output side of this stage) and plate shear at pin web (simple)
+      const modes = { bend: { name: '핀 굽힘', S: Infinity }, press: { name: '핀 구멍 면압', S: Infinity }, web: { name: '캐리어 기둥 굽힘', S: Infinity } };
+      out.cases = cases.map((c, k) => {
+        const so = res[k].stages[stg.i], v = one(so), car = so.car;
+        const S = { bend: pin.allow / v.sigma, press: D.carrier.allowP / v.p, web: car.double ? D.carrier.allowB / Math.abs(car.sigma) : Infinity };
+        for (const m in S) if (S[m] < modes[m].S) Object.assign(modes[m], { S: S[m], stage: stg.i + 1, part: m === 'web' ? `C${stg.i + 1} 기둥` : `${stg.i + 1}단 유성 핀`, case: c.label, kind: c.kind, duty: c.duty, T: c.T, F: v.F, sigma: m === 'bend' ? v.sigma : m === 'press' ? v.p : Math.abs(car.sigma) });
+        const { op, ...info } = c;
+        return { ...info, ...v, carSigma: car.double ? Math.abs(car.sigma) : null, S };
+      });
+      out.modes = modes;
+      out.Sbend = modes.bend.S; out.Spress = modes.press.S; out.Sweb = modes.web.S;
+      out.gov = Object.entries(modes).reduce((g, [k, m]) => m.S < g.S ? { mode: k, ...m } : g, { S: Infinity });
       out.carrierTorque = D.req.Tpeak / ctx.stages.slice(stg.i + 1).reduce((v, s) => v * s.geo.ratio, 1);
-      out.car = { rated: rr.car, peak: pk.car };
-      out.Sweb = out.car.peak.double ? D.carrier.allowB / out.car.peak.sigma : Infinity;
+      out.car = { rated: R0.car, peak: at('peak').car };
       return out;
     });
   }
@@ -1299,12 +1390,18 @@
     { const c = o.emergCheck; add('비상 토크 정적 안전율', c.S, c.target, c.ok, '', `${D.req.Temerg} N·m · ${c.where} S${c.mode}`, c.ok ? null : `비상 ${c.what} 미달`); }
     const worst = o.bearings.reduce((a, b) => a.governing.s0 <= b.governing.s0 ? a : b);
     add('유성 베어링 정적 s0 (최저)', worst.governing.s0, D.req.s0, worst.governing.s0 >= D.req.s0, '', `${worst.stage}단 · ${worst.governing.label} · ${worst.governing.load.toFixed(1)} N`);
+    if (o.outBearing.invalid) {
+      const why = '계산 불가 — ' + o.outBearing.why.join(' · ');
+      items.push({ id: '출력 베어링 L10', k: '출력 베어링 L10 — 계산 불가', value: NaN, target: D.req.lifeH, ok: false, na: true, unit: 'h', note: why });
+      items.push({ id: '출력 베어링 정적 s0 (최저)', k: '출력 베어링 정적 s0 — 계산 불가', value: NaN, target: D.req.s0, ok: false, na: true, unit: '', note: why });
+    } else {
     add('출력 베어링 L10', o.outBearing.L10h, D.req.lifeH, o.outBearing.L10h >= D.req.lifeH, 'h', '외부 하중·모멘트 포함');
     const ob = o.outBearing.governing;
     add('출력 베어링 정적 s0 (최저)', ob.s0, D.req.s0, ob.s0 >= D.req.s0, '', `${ob.label} · ${ob.load.toFixed(1)} N`);
+    }
     if (o.outBearing.roll) { const rs = o.outBearing.roll.governing.s0; add('출력 베어링 롤러 접촉 s0 (최저)', rs, D.req.s0, rs >= D.req.s0, '', '롤러 하중분포 · 4000 MPa 기준'); }
-    const pinS = Math.min(...o.carrierPin.map(c => Math.min(c.Sbend, c.Spress, c.Sweb)));
-    add('유성 핀·캐리어 정적 (피크)', pinS, 1, pinS >= 1, '', '핀 굽힘·구멍 면압·캐리어 기둥 굽힘');
+    { const g = o.carrierPin.map(c => c.gov).reduce((a, b) => b.S < a.S ? b : a), ok = g.S >= 1;
+      add('유성 핀·캐리어 정적 (듀티 전체)', g.S, 1, ok, '', `${g.name} · ${g.part} · ${g.case} ${fmtN(g.T)} N·m · 핀 하중 ${Math.abs(g.F).toFixed(0)} N (회전·정지 유지·지정 피크·비상 중 최저)`, ok ? null : `${g.name} 미달 · ${g.kind} ${fmtN(g.T)} N·m`); }
     add('스커핑 안전율 (피크, 섬광온도)', o.lube.SBmin, D.req.SBmin || 1.5, o.lube.SBmin >= (D.req.SBmin || 1.5), '', `운전 ${D.lube.temp} °C · FZG ${D.lube.fzg}`);
 
     add('효율 (정격, 추정)', o.eff.total * 100, D.req.effMin, o.eff.total * 100 >= D.req.effMin, '%', '치합 + 기타 손실 가정');
@@ -1319,7 +1416,7 @@
     const R = [];
     const add = (group, item, value, src, basis) => R.push({ group, item, value, src, basis });
     add('요구', '정격·피크·비상 토크', `${D.req.Trated} / ${D.req.Tpeak} / ${D.req.Temerg} N·m`, '가정', '사용자 입력 · 실제 운전 조건으로 확정 필요');
-    add('요구', '부하 스펙트럼', D.req.duty.map(l => { const m = dutyMode(l); return `${l.torque}%×${l.time}%${m === 'stop' ? ' (정지)' : m === 'set' ? ` @${l.rpm} rpm` : ''}`; }).join(', '), '가정', '시간 비율 = 전체 경과 시간 기준 (정지·무부하 구간 포함) · 음수 토크 = 역방향 하중 치면');
+    add('요구', '부하 스펙트럼', dutyLevels(D).map(l => `${fmtN(l.T)} N·m (${(+l.torque.toFixed(2))}%)×${(l.frac * 100).toFixed(1)}%${l.mode === 'stop' ? ' (정지)' : l.mode === 'set' ? ` @${l.rpm} rpm` : ''}`).join(', '), '가정', D.req.dutyUnits?.time === 's' ? '시간 = 초 단위 입력, 비중 = 구간 시간 / 합 · 음수 토크 = 역방향 하중 치면' : '시간 비율 = 전체 경과 시간 기준 (정지·무부하 구간 포함) · 음수 토크 = 역방향 하중 치면');
     add('하중', 'KA', D.loads.KA, D.loads.KA === 1 ? '모델' : '가정', '스펙트럼에 피크를 포함하므로 1.0');
     const so = o.rated.stages;
     so.forEach(s => add('하중', `${s.i + 1}단 Kγ`, s.Kg.toFixed(3), s.KgSrc, s.KgNote));
@@ -1444,7 +1541,7 @@
     };
   }
 
-  const api = { shiftMap, shiftCandidates, shiftScore, lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, ringTeeth, ringShiftOffset, matchRingShift, sharedStage, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, templateDesign, cyclesFor, spectrumDamage, bearingLife, staticCheck, dutyMode, dutyLevels, migrateDuty, NAMES };
+  const api = { shiftMap, shiftCandidates, shiftScore, lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, ringTeeth, ringShiftOffset, matchRingShift, sharedStage, sharedRingOf, syncSharedRing, planetShiftFor, centresFor, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, templateDesign, cyclesFor, spectrumDamage, bearingLife, staticCheck, dutyMode, dutyLevels, dutyTorque, setDutyUnit, syncDutyTorque, migrateDuty, validateExt, NAMES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PGD = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

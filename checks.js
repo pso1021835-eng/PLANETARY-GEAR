@@ -80,6 +80,34 @@
     if (type === 'spline') return (PI / 8) * d * d * L * 0.75 * 60 / 1000 * 2;  // 이 전단 60 MPa · 하중분배 0.75 (가정)
     return null;
   }
+  // Ring reaction torque per stage (signed, same sign as the output torque T): ring holds T_carrier − T_sun of its stage.
+  const RING_SF = 1.5;
+  const sgn = (x, d = 2) => (x >= 0 ? '+' : '−') + f(Math.abs(x), d);
+  function ringReaction(R, D, T) {
+    const S = stg(R), car = [], sun = []; let t = T;
+    for (let i = S.length - 1; i >= 0; i--) { car[i] = t; sun[i] = t / ratioOf(S[i]); t = sun[i]; }
+    const stages = S.map((s, i) => ({ stage: i + 1, car: car[i], sun: sun[i], ring: car[i] - sun[i] }));
+    const shared = !!(D.config.sharedRing && S.length > 1);
+    const groups = shared ? [{ name: '공용 링 R1-2', idx: stages.map((_, i) => i), shared: true, T: stages.reduce((v, x) => v + x.ring, 0) }]
+      : stages.map((x, i) => ({ name: `링 R${x.stage}`, idx: [i], shared: false, T: x.ring }));
+    groups.forEach(g => { g.need = RING_SF * Math.abs(g.T); });
+    return { T, stages, shared, groups };
+  }
+  // Transfer capacity of each ring–housing joint (press fit: Lamé pressure over the engaged length; bolts: friction).
+  function ringJoints(R, D, L, RR) {
+    const S = stg(R), rf = D.struct.ringFit, type = D.struct.ringHousing;
+    return RR.groups.map(g => {
+      const a = Math.max(...g.idx.map(i => S[i].geo.parts[2].df)) / 2, b = Math.max(...g.idx.map(i => L.S?.[i]?.ringOD || L.ringOD)) / 2, c = L.housR;
+      const len = g.shared ? L.gearEnd : S[g.idx[0]].geo.parts[2].width;
+      let Tcap, extra = {};
+      if (type === 'press') {
+        const pf = pressFit(a, b, c, rf.delta, rf.E, rf.nu, 206000, .3);
+        Tcap = rf.mu * pf.p * PI * 2 * b * len * b / 1000;
+        extra = { p: pf.p, shrink: pf.shrinkInner, hoop: pf.hoopOuter, dj: pf.shrinkInner * Math.tan(20 * PI / 180) * 1000 };
+      } else { const F = (D.bolts.util * RP[D.bolts.grade] || 770) * (AS[rf.boltD] || 5); Tcap = rf.boltN * F * D.bolts.mu * (b + 2) / 1000; }
+      return { ...g, len, Tcap, ok: Tcap >= g.need, ...extra };
+    });
+  }
   const JNAME = { integral: '일체', spline: '스플라인', key: '키', press: '압입', clamp: '클램프', pin: '핀 결합', flange: '볼트 플랜지' };
 
   // ---------------------------------------------------------------- the checks
@@ -99,23 +127,19 @@
     const k = R.stiffness?.NmPerArcmin;
     put('1-8', { kind: 'calc', val: `백래시 ≤ ${D.req.backlashMax} arcmin · 강성 ${f(k, 1)}${D.req.stiffMin ? ` / 목표 ${D.req.stiffMin}` : ''} N·m/arcmin`, ok: R.backlash ? R.backlash.ok && (!D.req.stiffMin || k >= D.req.stiffMin) : null });
 
-    // 2-4 / 8-2 링–하우징 결합
-    const ringType = D.struct.ringHousing, rf = D.struct.ringFit;
+    // 2-4 / 8-2 링–하우징 결합: 단별 링 반력(부호 유지)을 체결부별로 합산 — 공용 링은 한 부품이므로 1·2단 반력의 합,
+    // 분리 링은 링마다 따로. 압입·볼트 모두 같은 반력(ringReaction)을 쓰고, 요구 = 1.5 × |합계|.
+    const ringType = D.struct.ringHousing;
     if (L) {
-      const a = S[0].geo.parts[2].df / 2, b = L.ringOD / 2, c = L.housR;
-      const len = L.shared ? L.gearEnd : S[0].st.b, Tring = Math.max(...PT.ring) * (L.shared ? 1 : 1);
-      const need = 1.5 * (L.shared ? PT.ring.reduce((s, x) => Math.max(s, x), 0) : Tring);
-      if (ringType === 'integral') put('2-4', { val: '하우징 일체 (강 하우징 · 링 가공 = 하우징 가공)', ok: true }), put('8-2', { val: '일체 — 체결 없음', ok: true });
-      else if (ringType === 'press') {
-        const pf = pressFit(a, b, c, rf.delta, rf.E, rf.nu, 206000, .3), Tcap = rf.mu * pf.p * PI * 2 * b * len * b / 1000;
-        const dj = pf.shrinkInner * Math.tan(20 * PI / 180) * 1000;   // 백래시 감소 (µm, 원주)
-        put('2-4', { val: `압입 · 면압 ${f(pf.p, 1)} MPa · 전달 ${f(Tcap, 1)} N·m`, ok: Tcap >= need });
-        put('8-2', { val: `면압 ${f(pf.p, 1)} MPa · 전달 ${f(Tcap, 1)} / 필요 ${f(need, 1)} N·m · 링 수축 ${f(pf.shrinkInner * 1000, 1)} µm → 백래시 −${f(dj, 1)} µm · 하우징 응력 ${f(pf.hoopOuter, 0)} / ${rf.Sy} MPa`,
-          ok: Tcap >= need && pf.hoopOuter <= rf.Sy / 1.5, p: pf.p, Tcap, need, dj });
-      } else {
-        const F = (D.bolts.util * RP[D.bolts.grade] || 770) * (AS[rf.boltD] || 5) , Tcap = rf.boltN * F * D.bolts.mu * (b + 2) / 1000;
-        put('2-4', { val: `볼트 체결 M${rf.boltD} × ${rf.boltN} · 전달 ${f(Tcap, 1)} N·m`, ok: Tcap >= need });
-        put('8-2', { val: `볼트 마찰 전달 ${f(Tcap, 1)} / 필요 ${f(need, 1)} N·m`, ok: Tcap >= need });
+      const RR = ringReaction(R, D, D.req.Tpeak), J = ringJoints(R, D, L, RR);
+      const head = `반력 (피크 ${f(D.req.Tpeak, 2)} N·m) ${RR.stages.map(x => `${x.stage}단 ${sgn(x.ring)}`).join(' · ')} N·m`;
+      if (ringType === 'integral') put('2-4', { val: '하우징 일체 (강 하우징 · 링 가공 = 하우징 가공)', ok: true, RR }), put('8-2', { val: `일체 — 체결 없음 · ${head}`, ok: true, RR });
+      else {
+        const ok = J.every(j => j.ok), txt = J.map(j => `${j.name}: ${j.shared ? '합계' : '반력'} ${sgn(j.T)} N·m × ${RING_SF} = 필요 ${f(j.need, 2)} · 전달 ${f(j.Tcap, 2)} ${j.ok ? '≥' : '<'} ${f(j.need, 2)} N·m ${j.ok ? '합격' : '미달'}`).join(' · ');
+        const j0 = J[0];
+        put('2-4', { val: `${ringType === 'press' ? `압입 · 면압 ${f(j0.p, 1)} MPa` : `볼트 체결 M${D.struct.ringFit.boltD} × ${D.struct.ringFit.boltN}`} · ${txt}`, ok, RR, J });
+        put('8-2', { val: `${head} · ${txt}${ringType === 'press' ? ` · 링 수축 ${f(j0.shrink * 1000, 1)} µm → 백래시 −${f(j0.dj, 1)} µm · 하우징 응력 ${f(j0.hoop, 0)} / ${D.struct.ringFit.Sy} MPa` : ''}`,
+          ok: ok && (ringType !== 'press' || J.every(j => j.hoop <= D.struct.ringFit.Sy / 1.5)), p: j0.p, Tcap: j0.Tcap, need: j0.need, dj: j0.dj, RR, J });
       }
     }
     // 2-5 / 6-7 C1–S2, 2-6 S1–모터축
@@ -255,13 +279,37 @@
     const bore = pinD + 2 * Dw, m = s.st.m, dfP = m * s.st.p / Math.cos(s.st.beta * PI / 180) - 2.5 * m, rim = (dfP - bore) / 2;
     return { Dw, Lw, Z, Zmax, C, C0, fH, bore, rim, rimOk: rim >= 1.2 * 2.25 * m };
   }
+  // Planet bearing source per stage: 'manual' (직접 입력 — catalogue values the designer typed) or 'needle' (풀니들 계산).
+  // bearing.manual keeps the typed name/C/C0/planet bore while the calculation is applied; bearing.calc keeps the last
+  // calculated set. Turning the calculation off restores the typed values. Files saved before this split may have lost
+  // the typed values (bearing.manualLost) — the app says so instead of guessing.
   function applyNeedles(D) {
     if (!D.needle) return;
     D.stages.forEach((s, i) => {
-      const N = D.needle[i]; if (!N?.use || !N.apply) return;
-      const r = needleCalc({ st: s }, N);
-      if (r) { s.bearing = Object.assign({}, s.bearing, { name: `풀니들 Ø${r.Dw}×${f(r.Lw, 1)} × ${r.Z} (계산)`, C: Math.round(r.C), C0: Math.round(r.C0) }); s.planetBore = +r.bore.toFixed(3); }
+      const N = D.needle[i], br = s.bearing || (s.bearing = {}), on = !!(N?.use && N.apply);
+      if (on) {
+        const r = needleCalc({ st: s }, N); if (!r) return;
+        if (br.src !== 'needle') { br.manual = { name: br.name ?? null, C: br.C ?? null, C0: br.C0 ?? null, planetBore: s.planetBore ?? null }; delete br.manualLost; }
+        br.calc = { name: `풀니들 Ø${r.Dw}×${f(r.Lw, 1)} × ${r.Z} (계산)`, C: Math.round(r.C), C0: Math.round(r.C0), planetBore: +r.bore.toFixed(3) };
+        Object.assign(br, { name: br.calc.name, C: br.calc.C, C0: br.calc.C0, src: 'needle' }); s.planetBore = br.calc.planetBore;
+      } else if (br.src === 'needle') {
+        if (br.manual && !br.manualMissing) { Object.assign(br, { name: br.manual.name, C: br.manual.C, C0: br.manual.C0 }); s.planetBore = br.manual.planetBore; }
+        else br.manualLost = true;
+        delete br.manualMissing; br.src = 'manual';
+      } else if (!br.src) br.src = 'manual';
     });
+  }
+  // pgd/1 files saved before the source split: decide what the stored bearing values are and report it.
+  function migrateNeedles(d) {
+    const notes = [];
+    (d.stages || []).forEach((s, i) => {
+      const br = s.bearing; if (!br || br.src) return;
+      const N = d.needle?.[i], calcName = /\(계산\)/.test(br.name || '');
+      if (N?.use && N.apply && calcName) { br.src = 'needle'; br.manualMissing = true; notes.push(`${i + 1}단 유성 베어링: 파일에 풀니들 계산값(C ${br.C} N)만 있고 적용 전 직접 입력값이 없습니다 — 적용을 해제하면 카탈로그 값을 다시 입력해야 합니다.`); }
+      else if (calcName) { br.src = 'manual'; br.manualLost = true; notes.push(`${i + 1}단 유성 베어링: 풀니들 적용이 꺼져 있지만 저장된 C ${br.C} N은 계산값입니다 — 원래 직접 입력값은 파일에 없어 복원하지 못했습니다.`); }
+      else br.src = 'manual';
+    });
+    return notes;
   }
 
   function assemblySteps(D, S) {
@@ -370,5 +418,5 @@
     'D6': { view: 'out', title: '원가 절감 대안', f: [] },
   };
 
-  globalThis.PGDChecks = { ensure, compute, applyNeedles, FORMS, needleCalc, costModel, assemblySteps };
+  globalThis.PGDChecks = { ensure, compute, ringReaction, ringJoints, applyNeedles, migrateNeedles, FORMS, needleCalc, costModel, assemblySteps };
 })();

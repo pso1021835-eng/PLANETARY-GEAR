@@ -131,8 +131,9 @@
     why: '링 반력 토크를 하우징이 받는 경로다. 압입은 링을 수축시켜 백래시를 줄이고(4-7), 하우징 재질·가공 방식(D1)을 정한다.',
     rows: [['D', 'sel', 'struct.ringHousing', '링–하우징 결합', { o: [['integral', '일체 (강 하우징)'], ['press', '압입'], ['bolt', '볼트']] }],
       ['C', '전달 능력', c => ck(c, '2-4'), '압입: T = μ·p·π·d·L·d/2 · 볼트: n·F·μ·r'],
+      ['C', '링 반력 → 요구 토크', c => { const J = c.CK?.['8-2']?.J || c.CK?.['2-4']?.J, RR = c.CK?.['8-2']?.RR; if (!RR) return '—'; const sg = x => (x >= 0 ? '+' : '−') + f(Math.abs(x), 2); return `단별 ${RR.stages.map(x => `${x.stage}단 ${sg(x.ring)}`).join(' · ')} N·m` + (J ? ' · ' + J.map(j => `${j.name} ${j.shared ? '합계 ' : ''}${sg(j.T)} × 1.5 = 요구 ${f(j.need, 2)} / 전달 ${f(j.Tcap, 2)} N·m`).join(' · ') : ''); }, 'T_ring,i = T_car,i − T_sun,i (피크, 부호 유지) · 공용 링 = 단별 반력의 합 · 분리 링 = 링마다 · 요구 = 1.5 × |합계|'],
       ['J', 'path', '링 반력이 하우징 → 고정부로 가는 경로를 확인했다']],
-    k: '전달 토크 ≥ 링 반력 피크 × 1.5' };
+    k: '전달 토크 ≥ 1.5 × |링 반력| (공용 링은 1·2단 반력을 부호대로 더한 값)' };
   I['2-5'] = { what: '1단 캐리어(C1)와 2단 썬(S2)을 어떻게 연결할지 정한다.',
     how: '일체 / 스플라인 / 키 / 압입. 전달 능력을 피크 S2 토크와 비교한다. 스플라인 유격은 S2가 유성 사이에서 자리 잡게 해 2단 Kγ를 낮춘다.',
     why: '2단 입력 토크가 전부 이 결합부를 지난다. 유격 유무가 2단 하중분배(5-6)를 바꾼다.',
@@ -219,10 +220,11 @@
       ['C', '축방향 추력 (정격, 썬–유성)', c => { const t = trq(c, c.D.req.Trated); return per(c, (s, i) => `${f(2000 * t.sun[i] / dsun(s) * Math.tan(s.st.beta * Math.PI / 180), 0)} N`); }, 'Fa = Ft·tanβ']],
     k: 'εβ = 0 또는 ≥ 1' };
   I['3-9'] = { what: '전위계수·압력각과 썬·유성 보어, 링 외경(림)을 정한다.',
-    how: '외접(S–P)과 내접(P–R) 작용 중심거리가 같아야 한다. 링 전위 자동이면 일치시키도록 계산. 전위 지도에서 가능 영역(언더컷·이끝 두께 0.4m·내접 간섭·간극·유성 간격·εα ≥ 1.2)을 보고, 미끄럼률 균형 / 허용 토크 최대 / 굽힘 균형으로 자동 추천받을 수 있다. 림 두께가 이 높이 대비 부족하면 YB > 1로 굽힘 응력이 커진다.',
+    how: '외접(S–P)과 내접(P–R) 작용 중심거리가 같아야 한다. 링 전위 자동이면 일치시키도록 계산. 공용 링이면 링(잇수·전위·치두께·모따기·재료)은 1단에서만 정하고, 2단은 그 링에 맞춰 유성 전위를 자동 조정하거나(입력 보존 시) 중심거리 차를 보여준다. 전위 지도에서 가능 영역(언더컷·이끝 두께 0.4m·내접 간섭·간극·유성 간격·εα ≥ 1.2)을 보고, 미끄럼률 균형 / 허용 토크 최대 / 굽힘 균형으로 자동 추천받을 수 있다. 림 두께가 이 높이 대비 부족하면 YB > 1로 굽힘 응력이 커진다.',
     why: '전위가 언더컷·이끝 두께(4-1)·내접 간섭(4-4)·굽힘 강도(5-8)를, 보어가 림(D4)·핀(6-4)·니들(7-2)을 묶는다.',
-    rows: [['D', 'num', 'stages.{i}.alpha', '{s}단 압력각 °', { st: 1, lk: 1 }], ['D', 'num', 'stages.{i}.xs', '{s}단 썬 전위', { st: 1 }], ['D', 'num', 'stages.{i}.xp', '{s}단 유성 전위', { st: 1 }],
-      ['D', 'chk', 'stages.{i}.autoRingShift', '{s}단 링 전위 자동', { st: 1, lk: D => D.stages[0].r != null }], ['D', 'num', 'stages.{i}.xr', '{s}단 링 전위', { st: 1, lk: D => D.stages[0].r != null, if: (D, i) => !D.stages[i].autoRingShift }],
+    rows: [['D', 'num', 'stages.{i}.alpha', '{s}단 압력각 °', { st: 1, lk: 1 }], ['D', 'num', 'stages.{i}.xs', '{s}단 썬 전위', { st: 1 }], ['D', 'num', 'stages.{i}.xp', '{s}단 유성 전위', { st: 1, lk: D => D.stages[1]?.autoPlanetShift !== false }],
+      ['D', 'chk', 'stages.{i}.autoPlanetShift', '{s}단 유성 전위 자동 (공용 링 치형 고정, 중심거리 일치)', { st: 1, if: (D, i) => i === 1 && D.config.sharedRing && D.config.stages > 1 }],
+      ['D', 'chk', 'stages.{i}.autoRingShift', '{s}단 링 전위 자동', { st: 1, lk: 1 }], ['D', 'num', 'stages.{i}.xr', '{s}단 링 전위', { st: 1, lk: 1, if: (D, i) => !D.stages[i].autoRingShift }],
       ['D', 'num', 'stages.{i}.sunBore', '{s}단 썬 보어 mm (0 중실, 빈칸 자동)', { st: 1 }], ['D', 'num', 'stages.{i}.planetBore', '{s}단 유성 보어 mm (빈칸 자동)', { st: 1 }],
       ['D', 'num', 'stages.{i}.ringOD', '{s}단 링 외경 mm (빈칸 자동)', { st: 1, if: (D, i) => !(i === 1 && D.config.sharedRing) }],
       ['C', '외접·내접 중심거리 차', c => chv(c, '외접·내접 중심거리 차 (mm)', 4) + ' mm', 'a_w(S–P) − a_w(P–R)']],
@@ -237,7 +239,7 @@
   I['4-2'] = { what: '정면 물림률 εα를 검사한다.',
     how: 'εα = 작용선 물림 길이 / 기초 피치. 외접·내접 각각. 이끝 모따기 hK(45°)가 있으면 이끝원 대신 유효 이끝원 dFa = da ∓ 2·hK로 계산한다 (KISSsoft 동일).',
     why: 'εα < 1.2면 하중이 한 이에 몰리는 구간이 길어 강도·소음이 나빠진다. 링 이끝 모따기는 εα·Zε·cγα와 유성 링쪽 하중점(YF)을 바꾼다.',
-    rows: [['D', 'num', 'stages.{i}.tipChamfer.0', '{s}단 썬 이끝 모따기 hK mm (45°, 빈칸 = 0)', { st: 1 }], ['D', 'num', 'stages.{i}.tipChamfer.1', '{s}단 유성 이끝 모따기 hK mm', { st: 1 }], ['D', 'num', 'stages.{i}.tipChamfer.2', '{s}단 링 이끝 모따기 hK mm', { st: 1 }],
+    rows: [['D', 'num', 'stages.{i}.tipChamfer.0', '{s}단 썬 이끝 모따기 hK mm (45°, 빈칸 = 0)', { st: 1 }], ['D', 'num', 'stages.{i}.tipChamfer.1', '{s}단 유성 이끝 모따기 hK mm', { st: 1 }], ['D', 'num', 'stages.{i}.tipChamfer.2', '{s}단 링 이끝 모따기 hK mm', { st: 1, lk: 1 }],
       ['C', 'εα (S–P · P–R)', c => `${chv(c, '썬–유성 εα')} / ${chv(c, '유성–링 εα')}`, 'εα = (√(rFa₁²−rb₁²) ± √(rFa₂²−rb₂²) − a·sinαw) / pbt']],
     w: [['checks', '썬–유성 εα', '유성–링 εα']], up: ['3-9'], k: 'εα ≥ 1.2' };
   I['4-4'] = { what: '내접(유성–링) 치합의 간섭을 검사한다.',
@@ -264,7 +266,7 @@
   I['4-7'] = { what: '치두께 공차로 백래시를 정하고, 가공 검사용 걸치기 이두께·오버볼 치수를 낸다.',
     how: '치두께 공차(Asn 상·하한)와 중심거리 공차로 치합 백래시 범위를 계산하거나 직접 입력하고, 출력축 각도로 환산해 합산한다. 같은 치두께로 걸치기 이두께 Wk와 오버볼 치수 MdK를 계산한다 (KISSsoft 11.2–11.5와 같은 식). 링 압입 수축(8-2)은 백래시를 줄인다.',
     why: '백래시 0은 열팽창·편심에서 걸림을, 과대는 위치 정밀도 저하(1-8)를 부른다.',
-    rows: [['D', 'num', 'stages.{i}.asn.0.1', '{s}단 썬 치두께 하한 치수차 Asn.i mm (예 −0.084, 빈칸 = 0)', { st: 1 }], ['D', 'num', 'stages.{i}.asn.1.1', '{s}단 유성 Asn.i mm', { st: 1 }], ['D', 'num', 'stages.{i}.asn.2.1', '{s}단 링 Asn.i mm', { st: 1 }],
+    rows: [['D', 'num', 'stages.{i}.asn.0.1', '{s}단 썬 치두께 하한 치수차 Asn.i mm (예 −0.084, 빈칸 = 0)', { st: 1 }], ['D', 'num', 'stages.{i}.asn.1.1', '{s}단 유성 Asn.i mm', { st: 1 }], ['D', 'num', 'stages.{i}.asn.2.1', '{s}단 링 Asn.i mm', { st: 1, lk: 1 }],
       ['C', '치근 계산 전위 xE (가장 얇은 이)', c => rows(c).filter((r, k, a) => a.findIndex(q => q.stage === r.stage && q.part === r.part) === k).map(r => `${r.stage}단 ${r.partName} ${f(r.f.xE, 4)}`).join(' · ') || '—', 'xE = x + Asn.i / (2·mn·tan αn) · KISSsoft와 같음'],
       ['D', 'sel', 'stages.{i}.blMode', '{s}단 백래시 산출', { st: 1, o: [['jt', '직접 입력 (µm)'], ['asn', '치두께 공차 + 중심거리 공차로 계산']] }],
       ['D', 'num', 'stages.{i}.jt.0', '{s}단 썬–유성 백래시 µm (직접 입력)', { st: 1 }], ['D', 'num', 'stages.{i}.jt.1', '{s}단 유성–링 백래시 µm (직접 입력)', { st: 1 }],
@@ -370,7 +372,7 @@
     rows: [['D', 'num', 'stages.{i}.carrier.pocketR', '{s}단 포켓 모서리 R mm (엔드밀 반경, 빈칸 = 안착 폭에 들어가는 최대 정수 mm 공구)', { st: .5, if: (D, i) => D.stages[i].pin.type !== 'single' }],
       ['C', '기둥 단면 (형상에서 자동)', c => S(c).map((s, i) => { const w = s.carrier?.web; return w ? `${i + 1}단 평행 홈 · R${f(w.rmin, 1)}~${f(w.rmax, 1)} · A ${f(w.A, 0)} mm² · I ${f(w.I, 0)} mm⁴` : `${i + 1}단 편단 (기둥 없음)`; }).join(' / '), 'I = ∫y²dA (기둥 대칭축 기준, 단면 다각형 적분)'],
       ['A', 'num', 'carrier.allowB', '기둥 허용 굽힘 MPa (재료 근거)'],
-      ['C', '기둥 굽힘 안전율 (피크)', c => (c.R?.carrierPin || []).map((x, i) => `${i + 1}단 ${x.car?.rated?.double ? f(x.Sweb, 2) : '편단'}`).join(' · ') || '—', '양단 고정 보, σ = M/Z']],
+      ['C', '기둥 굽힘 안전율 (듀티 전체 최저)', c => (c.R?.carrierPin || []).map((x, i) => `${i + 1}단 ${x.car?.rated?.double ? `${f(x.Sweb, 2)} (${x.modes.web.kind} ${f(x.modes.web.T, 1)} N·m)` : '편단'}`).join(' · ') || '—', '양단 고정 보, σ = M/Z']],
     w: ['carStiff'], up: ['6-1', '2-9'], k: '기둥 안전율 ≥ 1', ok: c => (c.R?.carrierPin || []).length ? c.R.carrierPin.every(x => !x.car?.rated?.double || x.Sweb >= 1) : null };
   I['6-4'] = { what: '유성 핀 지름·조립홀·소재와 허용응력을 정한다.',
     how: '핀 지름은 굽힘·면압과 유성 보어(= 핀 + 2·Dw, 니들일 때)·유성 림 사이의 절충이다. 막힌 홀은 깊이 지정.',
@@ -379,8 +381,8 @@
       ['D', 'num', 'stages.{i}.pin.depth', '{s}단 원통 깊이 mm', { st: 1, if: (D, i) => D.stages[i].pin.holeMode === 'blind' }],
       ['D', 'sel', 'stages.{i}.pin.material', '{s}단 핀 소재', { st: 1, o: [['SUJ2', 'SUJ2'], ['SCM440', 'SCM440'], ['S45C', 'S45C']] }],
       ['A', 'num', 'stages.{i}.pin.allow', '{s}단 핀 허용 굽힘 MPa', { st: 1 }], ['A', 'num', 'carrier.allowP', '캐리어 구멍 허용 면압 MPa'],
-      ['C', '굽힘 / 면압 안전율 (피크)', c => (c.R?.carrierPin || []).map((x, i) => `${i + 1}단 ${f(x.Sbend, 2)} / ${f(x.Spress, 2)}`).join(' · ') || '—', 'σ = M/Z, p = F/(d·L)']],
-    up: ['1-2', '3-9'], k: '안전율 ≥ 1 (피크)', ok: c => c.R?.verdict?.find(v => v.k === '유성 핀·캐리어 정적 (피크)')?.ok ?? null };
+      ['C', '굽힘 / 면압 안전율 (듀티 전체 최저)', c => (c.R?.carrierPin || []).map((x, i) => `${i + 1}단 굽힘 ${f(x.Sbend, 2)} (${x.modes.bend.kind} ${f(x.modes.bend.T, 1)} N·m) / 면압 ${f(x.Spress, 2)} (${x.modes.press.kind} ${f(x.modes.press.T, 1)} N·m)`).join(' · ') || '—', 'σ = M/Z, p = F/(d·L)']],
+    up: ['1-2', '3-9'], k: '안전율 ≥ 1 (회전·정지 유지·지정 피크·비상 중 최저)', ok: c => c.R?.verdict?.find(v => (v.id || v.k) === '유성 핀·캐리어 정적 (듀티 전체)')?.ok ?? null };
   I['6-5'] = { what: '핀의 굽힘 응력·처짐·치폭 방향 기울기를 확인한다.',
     how: '핀을 지지 스팬(양단) 또는 외팔 길이(편단)의 보로 보고, 유성 1개 반경 하중으로 처짐 δ와 치폭 끝 기울기를 구한다.',
     why: '기울기가 fsh로 KHβ(5-4)에 들어간다. 강도뿐 아니라 하중 분포를 정한다.',
@@ -459,8 +461,9 @@
     rows: [['D', 'num', 'struct.ringFit.delta', '압입 죔새 (지름) mm', { if: D => D.struct.ringHousing === 'press' }], ['A', 'num', 'struct.ringFit.mu', '마찰계수', { if: D => D.struct.ringHousing !== 'integral' }],
       ['M', 'num', 'struct.ringFit.E', '하우징 탄성계수 E MPa (재료 시험서)', { if: D => D.struct.ringHousing === 'press' }], ['M', 'num', 'struct.ringFit.Sy', '하우징 항복 MPa (재료 시험서)', { if: D => D.struct.ringHousing === 'press' }],
       ['D', 'num', 'struct.ringFit.boltN', '볼트 수', { if: D => D.struct.ringHousing === 'bolt' }], ['D', 'num', 'struct.ringFit.boltD', '볼트 호칭 M', { if: D => D.struct.ringHousing === 'bolt' }],
+      ['C', '링 반력 → 요구 토크', c => { const J = c.CK?.['8-2']?.J || c.CK?.['2-4']?.J, RR = c.CK?.['8-2']?.RR; if (!RR) return '—'; const sg = x => (x >= 0 ? '+' : '−') + f(Math.abs(x), 2); return `단별 ${RR.stages.map(x => `${x.stage}단 ${sg(x.ring)}`).join(' · ')} N·m` + (J ? ' · ' + J.map(j => `${j.name} ${j.shared ? '합계 ' : ''}${sg(j.T)} × 1.5 = 요구 ${f(j.need, 2)} / 전달 ${f(j.Tcap, 2)} N·m`).join(' · ') : ''); }, 'T_ring,i = T_car,i − T_sun,i (피크, 부호 유지) · 공용 링 = 단별 반력의 합 · 분리 링 = 링마다 · 요구 = 1.5 × |합계|'],
       ['C', '면압 · 전달 · 수축 · 응력', c => ck(c, '8-2'), 'Lamé']],
-    up: ['2-4', '8-1'], k: '전달 ≥ 필요 × 1.5, 하우징 응력 ≤ 항복/1.5' };
+    up: ['2-4', '8-1'], k: '전달 ≥ 필요 (= 1.5 × |링 반력 합|, 공용 링은 1·2단 부호 합), 하우징 응력 ≤ 항복/1.5' };
   I['8-3'] = { what: '출력 플랜지 볼트의 수·호칭·등급을 정하고 마찰 전달 토크를 본다.',
     how: '축력 F = 이용률 × 항복 × 유효 단면적, 전달 T = n·F·μ·r_bolt. 피크 × 1.5와 비교.',
     why: '볼트 미끄럼은 위치 정밀도 상실, 볼트 파단은 관절 탈락이다.',

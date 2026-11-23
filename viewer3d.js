@@ -385,13 +385,13 @@
         verdict: (() => { const v = [gearVerdict(1, 2), L.shared ? gearVerdict(2, 2) : null].filter(Boolean); return v.length ? { ok: v.every(q => q.ok), text: v.map(q => q.text).join(' / ') } : null; })() });
       const cp = R.carrierPin[i];
       out.push({ id: `pin${st}`, name: `${st}단 유성핀`, qty: n, material: x.st.pin.material, heat: '담금질', mass: Math.PI / 4 * x.carrier.diameter ** 2 * x.carrier.pinLength * STEEL, step: 'scar',
-        verdict: cp ? { ok: Math.min(cp.Sbend, cp.Spress) >= 1, text: `굽힘 S ${fmt(cp.Sbend, 2)}` } : null });
+        verdict: cp ? (() => { const g = cp.Sbend <= cp.Spress ? cp.modes.bend : cp.modes.press, ok = g.S >= 1; return { ok, text: `${g.name} ${fmt(g.S, 2)}${ok ? '' : ' · 미달'} · ${g.kind} ${fmt(g.T, 1)} N·m` }; })() : null });
       const br = R.bearings[i];
       out.push({ id: `needle${st}`, name: `${st}단 유성베어링 (${x.st.bearing.name})`, qty: n * (x.st.bearing.count || 1), material: '베어링강', heat: '—', mass: annulusMass(x.st.pin.d / 2, (x.planetBore || x.st.pin.d + 3) / 2, x.b, STEEL) * .45, step: 's9',
         verdict: br ? { ok: br.L10h >= D.req.lifeH && br.governing.s0 >= D.req.s0, text: `L10 ${br.L10h >= 1e6 ? fmt(br.L10h / 1e6, 1) + 'M' : fmt(br.L10h / 1e3, 1) + 'k'} h · s0 ${fmt(br.governing.s0, 2)}` } : null });
       out.push({ id: `carrier${st}`, name: compName(R, D, `carrier${st}`), qty: 1, material: x.st.carrier?.material || 'S45C', heat: '조질', step: 'scar',
         mass: x.carrier.materialVolume * STEEL,
-        verdict: cp ? { ok: cp.Sweb >= 1, text: Number.isFinite(cp.Sweb) ? `기둥 S ${fmt(cp.Sweb, 2)}` : '편단 지지' } : null });
+        verdict: cp ? { ok: cp.Sweb >= 1, text: Number.isFinite(cp.Sweb) ? `기둥 S ${fmt(cp.Sweb, 2)} · ${cp.modes.web.kind} ${fmt(cp.modes.web.T, 1)} N·m` : '편단 지지' } : null });
     });
     const ob = R.outBearing, roll = ob.roll;
     out.push({ id: 'xroller', name: `출력베어링 (${D.outBearing.name})`, qty: 1, material: '베어링강', heat: '담금질', step: 's9',

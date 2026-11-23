@@ -3,14 +3,25 @@
 const E = window.PGD;
 const $ = s => document.querySelector(s);
 const fmt = (x, n = 2) => Number.isFinite(x) ? x.toFixed(n) : (x === Infinity ? '∞' : '—');
+const fmtN0 = x => Number.isFinite(x) ? Math.round(x).toLocaleString('ko-KR') : '—';
 const fmtH = h => !Number.isFinite(h) ? (h === Infinity ? '∞' : '—') : h >= 1e6 ? (h / 1e6).toFixed(1) + 'M' : h >= 1e4 ? (h / 1e3).toFixed(0) + 'k' : h.toFixed(0);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const KEY = 'pgd-design-v1';
 let D = load(), R = null, MC = null, SENS = null, view = 'map', GOOD = null;
-const analysisJobs = window.createAnalysisJobs(E, () => new Worker('worker.js?v=design-review-1'));
+const analysisJobs = window.createAnalysisJobs(E, () => new Worker('worker.js?v=ring-duty-1'));
 
 function fillMissing(dst, src) { for (const k in src) { if (dst[k] === undefined || dst[k] === null && src[k] !== null && typeof src[k] === 'object') dst[k] = JSON.parse(JSON.stringify(src[k])); else if (Array.isArray(src[k]) && Array.isArray(dst[k])) { dst[k].forEach((v, i) => { if (v && typeof v === 'object' && src[k][i] && typeof src[k][i] === 'object' && !Array.isArray(v)) fillMissing(v, src[k][i]); }); } else if (src[k] && typeof src[k] === 'object' && dst[k] && typeof dst[k] === 'object') fillMissing(dst[k], src[k]); } return dst; }
-function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.schema === 'pgd/1') { s.config.floatingSun = false; return fillMissing(E.migrateDuty(s), E.defaultDesign()); } } catch (e) { } return E.defaultDesign(); }
+let LOADNOTES = [];
+// pgd/1 files: duty modes, legacy shared-ring values (stage 2 may hold its own) and needle bearing sources are migrated
+// here; anything that changed the file's meaning is listed in LOADNOTES and shown with the warnings.
+function migrateLoaded(d) {
+  d = fillMissing(E.migrateDuty(d), E.defaultDesign());
+  const diff = E.syncSharedRing(d);
+  LOADNOTES = diff.length ? [`불러온 파일의 공용 링: 2단에 1단과 다른 값이 있어 1단 값을 채택했습니다 — ${diff.map(x => `${x.label} ${JSON.stringify(x.was ?? '빈칸')} → ${JSON.stringify(x.now ?? '빈칸')}`).join(' · ')}`] : [];
+  if (window.PGDChecks) LOADNOTES.push(...PGDChecks.migrateNeedles(d));
+  return d;
+}
+function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.schema === 'pgd/1') { s.config.floatingSun = false; return migrateLoaded(s); } } catch (e) { } return E.defaultDesign(); }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(D)); } catch (e) { } }
 const get = p => p.split('.').reduce((o, k) => o?.[k], D);
 const set = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((o, k) => (o[k] ??= {}), D)[last] = v; };
@@ -18,27 +29,67 @@ const set = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((o, 
 function compute() {
   analysisJobs.cancel();
   ensureD();
-  // Keep calculated fields in step with the engine for the shared-ring inputs.
+  // Shared ring = one part: stage 1 holds its teeth/shift/allowance/material; copy them into the stored stage-2 inputs and
+  // write back the stage-2 values the engine derives (planet teeth, fitted planet shift) so JSON, 3D and recommendations agree.
   if (D.config.sharedRing && D.config.stages > 1 && D.stages[1]) {
+    E.syncSharedRing(D);
     const b = D.stages[1], stage = E.sharedStage(D.stages[0], b);
     for (const key of ['p','m','beta','alpha']) b[key] = stage[key];
+    if (stage.sharedRing.auto && Number.isFinite(stage.sharedRing.xpFit)) b.xp = +stage.sharedRing.xpFit.toFixed(4);
   }
+  E.syncDutyTorque(D);
   if (window.PGDChecks) { PGDChecks.ensure(D); PGDChecks.applyNeedles(D); }
   try { R = E.analyze(D); } catch (e) { R = { errors: ['계산 오류: ' + e.message], warns: [] }; console.error(e); }
+  if (LOADNOTES.length && R) R.warns = [...LOADNOTES, ...(R.warns || [])];
   if (R?.ctx && !R.errors?.length) GOOD = { R, D: JSON.parse(JSON.stringify(D)) };
   MC = null; SENS = null; XC = null;
 }
 
 // ------------------------------------------------------------------ inputs
 function num(path, label, opt = {}) {
-  const v = get(path);
-  return `<label class="f">${label}<input type="number" step="${opt.step ?? 'any'}" ${opt.min != null ? `min="${opt.min}"` : ''} data-p="${path}" data-t="num" value="${v ?? ''}" ${opt.placeholder != null ? `placeholder="${esc(opt.placeholder)}"` : ''} ${opt.disabled ? 'disabled' : ''}></label>`;
+  const v = get(path), fi = fieldInfo(path);
+  return `<label class="f${fi.err ? ' ferr' : ''}">${label}<input type="number" step="${opt.step ?? 'any'}" ${opt.min != null ? `min="${opt.min}"` : ''} data-p="${path}" data-t="num" value="${v ?? ''}" ${opt.placeholder != null ? `placeholder="${esc(opt.placeholder)}"` : ''} ${opt.disabled || fi.lock ? 'disabled' : ''}>${fieldNote(fi)}</label>`;
 }
 function sel(path, label, options, opt = {}) {
   const v = String(get(path));
   return `<label class="f">${label}<select data-p="${path}" data-t="${opt.type || 'str'}" ${opt.disabled ? 'disabled' : ''}>${options.map(([k, t]) => `<option value="${esc(k)}" ${String(k) === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
 }
-function chk(path, label) { return `<label class="c"><input type="checkbox" data-p="${path}" data-t="bool" ${get(path) ? 'checked' : ''}> ${label}</label>`; }
+function chk(path, label, opt = {}) { const fi = fieldInfo(path); return `<label class="c"><input type="checkbox" data-p="${path}" data-t="bool" ${get(path) ? 'checked' : ''} ${opt.disabled || fi.lock ? 'disabled' : ''}> ${label}${fieldNote(fi)}</label>`; }
+// Per-field annotation shared by every place a field is drawn: where a linked value comes from (공용 링), which value the
+// analysis actually uses (베어링 C·C0 출처), or why an entry cannot be used (출력 베어링 외력).
+const fieldNote = fi => fi.err ? `<small class="fnote bad">${esc(fi.err)}</small>` : fi.note ? `<small class="fnote">${esc(fi.note)}</small>` : '';
+function fieldInfo(path) {
+  const m = /^stages\.1\.(r|xr|autoRingShift|m|beta|alpha|p|xp|tipChamfer\.2|asn\.2\.\d)$/.exec(path);
+  if (m && D.config.sharedRing && D.config.stages > 1) {
+    const sh = R?.ctx?.stages?.[1]?.st?.sharedRing, k = m[1];
+    if (k === 'xp') {
+      if (!sh) return {};
+      if (sh.auto) return { note: `자동 조정 ${fmt(sh.xpUsed, 4)} (공용 링 고정 · 중심거리 ${fmt(sh.centreExt, 4)} mm 일치)${sh.adjusted ? ` · 입력 ${fmt(sh.xpIn, 4)}에서 조정` : ''}` };
+      return Math.abs(sh.gap) >= 1e-4 ? { err: `입력 보존 · 중심거리 썬–유성 ${fmt(sh.centreExt, 4)} / 유성–링 ${fmt(sh.centreInt, 4)} mm (차 ${fmt(sh.gap, 4)} mm) — 성립하지 않음` } : { note: '입력값 사용 · 중심거리 일치' };
+    }
+    if (k === 'p') return D.stages[0].r == null ? { note: '공용 링 잇수(1단)에서 계산: (zr − zs) / 2' } : {};
+    const src = { r: '링 잇수', xr: '링 전위', autoRingShift: '링 전위 자동', m: '모듈', beta: '비틀림각', alpha: '압력각', 'tipChamfer.2': '링 이끝 모따기' }[k] || '링 치두께 공차';
+    const val = k === 'xr' && sh ? ` = ${fmt(sh.xr, 4)}` : k === 'r' && sh ? ` = ${sh.r}${sh.rAuto ? ' (자동)' : ''}` : '';
+    return { lock: true, note: `공용 링 · 1단 ${src}${val} 값과 연동 (1단 입력에서 변경)` };
+  }
+  const b = /^stages\.(\d)\.bearing\.(C0?|name)$/.exec(path);
+  if (b) {
+    const br = D.stages[+b[1]]?.bearing, src = br?.src === 'needle';
+    if (!br) return {};
+    if (b[2] === 'name') return src ? { lock: true, note: `풀니들 계산 적용 중 · 직접 입력 "${br.manual?.name ?? '—'}" 보관` } : {};
+    const lost = br.manualLost && !src;
+    return src ? { lock: true, note: `현재 적용 ${b[2]} ${fmtN0(br[b[2]])} N · 풀니들 계산${br.manual ? ` (직접 입력 ${fmtN0(br.manual[b[2]])} N 보관 — 적용 해제 시 복원)` : ''}` }
+      : lost ? { err: `현재 적용 ${b[2]} ${fmtN0(br[b[2]])} N · 직접 입력 — 이 파일에는 풀니들 적용 전 수동값이 없어 복원하지 못했습니다. 카탈로그 값을 다시 입력하세요.` }
+      : { note: `현재 적용 ${b[2]} ${fmtN0(br[b[2]])} N · 직접 입력` };
+  }
+  const pb = /^stages\.(\d)\.planetBore$/.exec(path);
+  if (pb) { const br = D.stages[+pb[1]]?.bearing; if (br?.src === 'needle') return { lock: true, note: `풀니들 계산 보어 Ø${fmt(br.calc?.planetBore, 3)} 적용 중 (직접 입력 ${br.manual?.planetBore ?? '빈칸'} 보관)` }; }
+  const na = /^needle\.(\d)\.apply$/.exec(path);
+  if (na) { const br = D.stages[+na[1]]?.bearing; if (!br) return {}; return { note: br.src === 'needle' ? `현재 적용: 풀니들 계산 C ${fmtN0(br.C)} / C0 ${fmtN0(br.C0)} N · 직접 입력 ${br.manual ? `C ${fmtN0(br.manual.C)} / C0 ${fmtN0(br.manual.C0)} N 보관` : '값 없음 (해제 시 복원 불가)'}` : `현재 적용: 직접 입력 C ${fmtN0(br.C)} / C0 ${fmtN0(br.C0)} N${br.calc ? ` · 풀니들 계산값 C ${fmtN0(br.calc.C)} N 보관` : ''}` }; }
+  const x = /^req\.ext\.(Fr|Fa|M)$/.exec(path);
+  if (x) { const v = E.validateExt(D.req.ext)[x[1]]; return v.ok ? { note: v.note } : { err: v.err }; }
+  return {};
+}
 function bindInputs(root) {
   root.querySelectorAll('[data-p]').forEach(elm => elm.addEventListener('change', () => {
     const t = elm.dataset.t; let v = elm.value;
@@ -71,7 +122,7 @@ function status(id) {
     case 'smat': return !v['스커핑 안전율 (피크, 섬광온도)'] ? 'bad' : (R.lube.lambdaMin < 1 || R.ctx.stages.some(s => s.mats.some(m => m.warnings.length))) ? 'warn' : 'ok';
     case 's8': return v['정격 토크 · 목표 수명 (기어)'] && v['부하 스펙트럼 수명 (기어)'] && v['피크 토크 정적 안전율'] ? 'ok' : 'bad';
     case 's9': return v['유성 베어링 L10 (스펙트럼)'] && v['유성 베어링 정적 s0 (최저)'] && v['출력 베어링 L10'] && v['출력 베어링 정적 s0 (최저)'] && v['출력 베어링 롤러 접촉 s0 (최저)'] !== false ? 'ok' : 'bad';
-    case 'scar': return v['유성 핀·캐리어 정적 (피크)'] ? 'ok' : 'bad';
+    case 'scar': return v['유성 핀·캐리어 정적 (듀티 전체)'] ? 'ok' : 'bad';
     case 's10': return v['효율 (정격, 추정)'] && R.backlash?.ok ? 'ok' : 'warn';
     case 's11': return MC ? (MC.passLife >= .9 ? 'ok' : 'bad') : '';
     default: return '';
@@ -149,7 +200,7 @@ function inHTML(r) {
   if (r.type === 'duty') return `<div class="f note wide">${esc(r.label)}</div>`;
   if (r.type === 'num') return num(r.path, r.label, { step: r.o.step, disabled: r.dis });
   if (r.type === 'sel') return sel(r.path, r.label, r.o.o, { type: r.o.t, disabled: r.dis });
-  if (r.type === 'chk') return chk(r.path, r.label);
+  if (r.type === 'chk') return chk(r.path, r.label, { disabled: r.dis });
   if (r.type === 'str') return `<label class="f">${r.label}<input type="text" data-p="${r.path}" data-t="str" value="${esc(get(r.path) ?? '')}"></label>`;
   return '';
 }
@@ -384,8 +435,9 @@ function studioVerdict(id) {
     if (part === 0 && R.rated.stages?.[st - 1]) chip('Kγ', fmt(R.rated.stages[st - 1].Kg, 2), R.rated.stages[st - 1].Kg <= 1.3);
   } else if (m[1] === 'carrier' && R.carrierPin?.[st - 1]) {
     const c = R.carrierPin[st - 1];
-    chip('핀 굽힘', fmt(c.Sbend, 2), c.Sbend >= 1); chip('구멍 면압', fmt(c.Spress, 2), c.Spress >= 1);
-    if (Number.isFinite(c.Sweb)) chip('기둥', fmt(c.Sweb, 0), c.Sweb >= 1);
+    const at = k => c.modes[k].case ? ` · ${c.modes[k].kind} ${fmt(c.modes[k].T, 1)} N·m` : '';
+    chip('핀 굽힘', fmt(c.Sbend, 2) + (c.Sbend < 1 ? ' · 미달' : '') + at('bend'), c.Sbend >= 1); chip('구멍 면압', fmt(c.Spress, 2) + at('press'), c.Spress >= 1);
+    if (Number.isFinite(c.Sweb)) chip('기둥', fmt(c.Sweb, 2) + at('web'), c.Sweb >= 1);
     chip('핀 처짐', fmt(c.rated.defl, 2) + ' µm', null);
   }
   const p = bomList().find(x => x.id === id); if (p) chip('중량', fmt(p.mass * 1000, 1) + ' g' + (p.qty > 1 ? ` × ${p.qty}` : ''), null);
@@ -522,7 +574,7 @@ function go(id, anchor) {
   if (id.startsWith('cg-') && !window.PGDGroups?.G[id.slice(3)]) id = 'core';
   view = id; ANCHOR = null; setRail(false);
   try { history.replaceState(null, '', '#' + id); } catch (e) { }
-  renderRail(); render(); window.scrollTo(0, 0);
+  renderRail(); render(); window.scrollTo(0, 0); applyFocus();
 }
 function renderVerdict() {
   const el = $('#verdict'), chip = $('#vchip');
@@ -536,7 +588,35 @@ function renderVerdict() {
    <div class="kpi"><div class="label">감속기 한계 · ${BASIS()} (${D.req.lifeH} h)</div><div class="big ${R.reducerCap < D.req.Trated ? 'bad' : ''}">${fmt(R.reducerCap, 1)}<small> N·m</small></div><div class="note">${esc(R.reducerGov)}</div><button type="button" class="btn" data-torque-trace>한계 근거 · 기준안 비교</button></div>
    ${MC ? `<div class="kpi"><div class="label">시편 예측 · 중앙값 (P10–P90)</div><div class="big">${fmt(MC.capacity.p50, 1)}<small> N·m</small></div><div class="note">${fmt(MC.capacity.p10, 1)} – ${fmt(MC.capacity.p90, 1)} N·m · 몬테카를로 ${MC.n}회</div></div>` : `<div class="kpi"><div class="label">시편 예측</div><div class="note">11단계 검증에서 가상 검증을 실행하면 표시됩니다.</div></div>`}
    <div class="kpi"><div class="label">목표 정격 ${D.req.Trated} N·m · 판정</div><div class="big ${ok ? 'good' : 'bad'}" style="font-size:28px">${ok ? '전 항목 충족' : R.verdict.filter(x => !x.ok).length + '개 항목 미달'}</div></div>
-   <ul>${R.verdict.map(x => `<li><span>${esc(x.k)}</span><b class="${x.ok ? 'good' : 'bad'}">${x.ok ? '✓' : '✗'} ${fmtV(x)}</b></li>`).join('')}</ul>`;
+   <ul>${R.verdict.map(x => `<li><span>${esc(x.k)}${verdictLinks(x)}</span><b class="${x.ok ? 'good' : 'bad'}">${x.ok ? '✓' : '✗'} ${fmtV(x)}</b></li>`).join('')}</ul>`;
+  bindVerdictLinks(el);
+}
+// Links from a verdict line to the inputs that decide it (governing duty row, pin entries, external loads).
+function verdictLinks(x) {
+  const id = x.id || x.k, out = [];
+  if (id.startsWith('유성 핀') && R.carrierPin?.length) {
+    const c = R.carrierPin.reduce((m, q) => q.gov.S < m.gov.S ? q : m), g = c.gov;
+    if (g.duty != null) out.push(`<button type="button" class="lnk" data-vgo="duty:${g.duty}">듀티 ${g.duty + 1}행</button>`);
+    out.push(`<button type="button" class="lnk" data-vgo="pin:${c.stage}">${c.stage}단 핀 입력</button>`);
+  }
+  if (x.na && id.startsWith('출력 베어링')) out.push('<button type="button" class="lnk" data-vgo="ext:0">외력 입력</button>');
+  return out.length ? ` <span class="vlinks">${out.join('')}</span>` : '';
+}
+let FOCUS = null;   // { duty: row } or { path } — highlighted once on the next render of that page
+function bindVerdictLinks(root) {
+  root.querySelectorAll('[data-vgo]').forEach(b => b.onclick = e => {
+    e.stopPropagation(); const [k, v] = b.dataset.vgo.split(':');
+    if (k === 'duty') { FOCUS = { duty: +v }; go('it-1-4'); }
+    else if (k === 'pin') { FOCUS = { path: `stages.${+v - 1}.pin.allow` }; go('it-6-4'); }
+    else if (k === 'ext') { FOCUS = { path: 'req.ext.Fr' }; go('it-1-5'); }
+  });
+}
+function applyFocus() {
+  if (!FOCUS) return; const f = FOCUS; FOCUS = null;
+  const el = f.duty != null ? document.querySelector(`[data-duty-row="${f.duty}"]`) : document.querySelector(`[data-p="${f.path}"]`);
+  if (!el) return; const row = el.closest('tr, label') || el;
+  row.classList.add('focus-hl'); row.scrollIntoView({ block: 'center' }); setTimeout(() => row.classList.remove('focus-hl'), 4000);
+  if (el.matches?.('input, select')) el.focus({ preventScroll: true });
 }
 let torqueBaseline = null;
 function torqueSummary() {
@@ -545,11 +625,30 @@ function torqueSummary() {
   const sizes = R.ctx.stages.map(({st}) => `${fmt(st.b, 2)} mm / ${st.n}개`).join(' · ');
   return { sizes, gear: R.capacityLife, total: R.reducerCap, gov: R.reducerGov,
     part: `${stage}단 · ${gear.row.mesh} · ${gear.row.partName} · ${gear.mode}`, after,
-    loadFactors: `Kγ ${fmt(gear.row.f.Kg,3)} · Kv ${fmt(gear.row.f.Kv,3)}`, life: D.req.lifeH, rpm: D.req.rpm, basis: BASIS() };
+    loadFactors: `Kγ ${fmt(gear.row.f.Kg,3)} · Kv ${fmt(gear.row.f.Kv,3)}`, life: D.req.lifeH, rpm: D.req.rpm, basis: BASIS(),
+    L10: Math.min(...R.bearings.map(b => b.L10h)),
+    brg: R.ctx.stages.map(({st}) => ({ C: st.bearing.C, C0: st.bearing.C0, src: st.bearing.src === 'needle' ? '풀니들 계산' : '직접 입력' })),
+    share: `${BASIS()} · Kγ ${(R.rated?.stages || []).map(x => `${fmt(x.Kg, 3)} (${x.KgSrc || '—'})`).join(' / ')}`,
+    duty: E.dutyLevels(D).map(l => `${fmt(l.T, 1)} N·m×${fmt(l.frac * 100, 0)}%${l.rotating ? '' : ' 정지'}`).join(', ') };
+}
+// What changed between the saved baseline and the current design, in the words of the inputs (for the trace table).
+function traceCauses(ref, cur) {
+  if (!ref) return { brg: '', any: '' };
+  const c = [];
+  if (ref.sizes !== cur.sizes) c.push(`치폭·유성 개수 ${ref.sizes} → ${cur.sizes}`);
+  cur.brg.forEach((b, i) => { const a = ref.brg?.[i]; if (!a) return;
+    if (a.C !== b.C) c.push(`${i + 1}단 동정격하중 ${fmtN0(a.C)} → ${fmtN0(b.C)} N`);
+    if (a.C0 !== b.C0) c.push(`${i + 1}단 정정격하중 ${fmtN0(a.C0)} → ${fmtN0(b.C0)} N`);
+    if (a.src !== b.src) c.push(`${i + 1}단 베어링 출처 ${a.src} → ${b.src}`); });
+  if (ref.share !== cur.share) c.push(`하중분배 ${ref.share} → ${cur.share}`);
+  if (ref.life !== cur.life) c.push(`목표 수명 ${fmtN0(ref.life)} → ${fmtN0(cur.life)} h`);
+  if (ref.rpm !== cur.rpm) c.push(`정격 회전수 ${fmtN0(ref.rpm)} → ${fmtN0(cur.rpm)} rpm`);
+  if (ref.duty !== cur.duty) c.push(`부하 스펙트럼 ${ref.duty} → ${cur.duty}`);
+  return { brg: c.filter(t => /정격하중|베어링 출처|목표 수명|정격 회전수|스펙트럼/.test(t)).join(' · '), any: c.join(' · ') };
 }
 function showTorqueTrace() {
   if (!R?.govRated || R.errors?.length) return;
-  const cur = torqueSummary(), ref = torqueBaseline, row = R.govRated.row, f = row.f;
+  const cur = torqueSummary(), ref = torqueBaseline, row = R.govRated.row, f = row.f, causes = traceCauses(ref, cur);
   const tr = (label, a, b) => `<tr><th scope="row">${label}</th><td>${esc(a)}</td><td>${esc(b)}</td></tr>`;
   const diff = (key) => fmt(cur[key], 2) + (ref ? ` (Δ ${fmt(cur[key]-ref[key],2)})` : '');
   const bending = row.SF / D.req.SF < row.SH / D.req.SH;
@@ -569,7 +668,12 @@ function showTorqueTrace() {
     ${support}<div class="scroll"><table><tr><th>비교 항목</th><th>기준안</th><th>현재안</th></tr>
     ${tr('단별 유성 치폭 / 개수',ref?.sizes || '—',cur.sizes)}${tr('운전 기준',renderCase(ref),renderCase(cur))}
     ${tr('기어 한계 N·m',ref ? fmt(ref.gear,2) : '—',diff('gear'))}${tr('기어 지배 부위',ref?.part || '—',cur.part)}${tr('지배점 하중계수',ref?.loadFactors || '—',cur.loadFactors)}
-    ${tr('감속기 한계 N·m',ref ? fmt(ref.total,2) : '—',diff('total'))}${tr('감속기 지배 부위',ref?.gov || '—',cur.gov)}</table></div>`;
+    ${tr('감속기 한계 N·m',ref ? fmt(ref.total,2) : '—',diff('total'))}${tr('감속기 지배 부위',ref?.gov || '—',cur.gov)}
+    ${tr('유성 베어링 L10 (최저)', ref ? (ref.L10 < 1e4 ? fmtN0(ref.L10) : fmtH(ref.L10)) + ' h' : '—', (cur.L10 < 1e4 ? fmtN0(cur.L10) : fmtH(cur.L10)) + ' h' + (ref && Math.abs(ref.L10 - cur.L10) > 1e-6 * Math.max(1, ref.L10) ? ` — ${causes.brg || '베어링 입력 변화 없음 (하중 변화)'}` : ''))}
+    ${tr('유성 베어링 C / C0 · 출처', ref ? ref.brg.map((b, i) => `${i + 1}단 ${fmtN0(b.C)} / ${fmtN0(b.C0)} N · ${b.src}`).join(' · ') : '—', cur.brg.map((b, i) => `${i + 1}단 ${fmtN0(b.C)} / ${fmtN0(b.C0)} N · ${b.src}`).join(' · '))}
+    ${tr('하중분배 방식', ref?.share || '—', cur.share)}${tr('목표 수명', ref ? fmt(ref.life, 0) + ' h' : '—', fmt(cur.life, 0) + ' h' + (ref && ref.life !== cur.life ? ' (변경)' : ''))}
+    ${tr('부하 스펙트럼', ref?.duty || '—', cur.duty)}
+    ${ref ? tr('바뀐 입력', '', causes.any || '없음') : ''}</table></div>`;
   const dlg = $('#torqueTrace');
   if (!dlg.open) dlg.showModal();
 }
@@ -580,7 +684,7 @@ $('#traceSave').onclick = () => { torqueBaseline = torqueSummary(); showTorqueTr
 function bearingCaseHTML(c) {
   return `<b>${fmt(c.s0, 2)}</b><br>${esc(c.label)} · ${fmt(c.load, 1)} N<br>${fmt(c.torque, 1)} N·m · ${fmt(c.rpm, 0)} rpm`;
 }
-function fmtV(x) { return x.unit === 'h' ? fmtH(x.value) + ' h' : fmt(x.value, x.unit === '%' ? 1 : 2) + (x.unit ? ' ' + x.unit : ''); }
+function fmtV(x) { if (x.na) return '계산 불가'; return x.unit === 'h' ? fmtH(x.value) + ' h' : fmt(x.value, x.unit === '%' ? 1 : 2) + (x.unit ? ' ' + x.unit : ''); }
 
 // ------------------------------------------------------------------ views
 function render(keepScroll) {
@@ -777,14 +881,17 @@ const W = {
       <p class="note">Fr·Fa는 정격 토크 1 N·m당 N, M은 1 N·m당 N·m.</p></div>`;
   },
   duty() {
-    const d = D.req.duty;
-    return `<div class="card"><h3>부하 스펙트럼 (정격 대비 %, 시간 비율 %)</h3>
-      <div class="scroll"><table><tr><th>구간</th><th>토크 % (음수 = 역방향)</th><th>토크 N·m</th><th>시간 %</th><th>회전</th><th>입력 rpm</th><th>외부 하중 % (빈칸 = |토크 %|)</th><th></th></tr>
-      ${d.map((l, i) => { const m = E.dutyMode(l); return `<tr><td>${i + 1}</td><td><input type="number" data-p="req.duty.${i}.torque" data-t="num" value="${l.torque}" style="width:80px"></td><td>${fmt(D.req.Trated * l.torque / 100, 1)}</td><td><input type="number" data-p="req.duty.${i}.time" data-t="num" value="${l.time}" style="width:80px"></td>
+    const d = D.req.duty, U = dutyUnits(), tot = d.reduce((s, l) => s + (+l.time || 0), 0) || 1, Nm = U.torque === 'Nm', sec = U.time === 's';
+    const tsel = `<select data-dunit="torque"><option value="pct" ${Nm ? '' : 'selected'}>정격 대비 %</option><option value="Nm" ${Nm ? 'selected' : ''}>N·m</option></select>`;
+    const hsel = `<select data-dunit="time"><option value="pct" ${sec ? '' : 'selected'}>비율 (%)</option><option value="s" ${sec ? 'selected' : ''}>초 (s)</option></select>`;
+    return `<div class="card"><h3>부하 스펙트럼</h3>
+      <div class="grid"><label class="f">토크 입력 단위${tsel}</label><label class="f">시간 입력 단위${hsel}</label></div>
+      <div class="scroll"><table><tr><th>구간</th><th>토크 ${Nm ? 'N·m' : '%'} (음수 = 역방향)</th><th>${Nm ? '정격 대비 %' : '토크 N·m'}</th><th>시간 ${sec ? '초' : '%'}</th><th>시간 비중</th><th>회전</th><th>입력 rpm</th><th>외부 하중 % (빈칸 = |토크 %|)</th><th></th></tr>
+      ${d.map((l, i) => { const m = E.dutyMode(l), T = E.dutyTorque(l, D); return `<tr data-duty-row="${i}"><td>${i + 1}</td><td>${Nm ? `<input type="number" step="any" data-p="req.duty.${i}.Tnm" data-t="num" value="${l.Tnm ?? ''}" style="width:80px">` : `<input type="number" step="any" data-p="req.duty.${i}.torque" data-t="num" value="${l.torque}" style="width:80px">`}</td><td>${Nm ? fmt(T / D.req.Trated * 100, 2) + ' %' : fmt(T, 2)}</td><td><input type="number" step="any" data-p="req.duty.${i}.time" data-t="num" value="${l.time}" style="width:80px"></td><td>${fmt((+l.time || 0) / tot * 100, 1)} %</td>
         <td><select data-p="req.duty.${i}.mode" data-t="str">${[['rated', '정격 rpm 사용'], ['set', '지정 rpm으로 회전'], ['stop', '0 rpm 정지 (유지 토크)']].map(([k, t]) => `<option value="${k}" ${k === m ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
         <td>${m === 'set' ? `<input type="number" data-p="req.duty.${i}.rpm" data-t="num" value="${l.rpm ?? ''}" style="width:90px">` : `<span class="note">${m === 'stop' ? '0' : `${D.req.rpm} (정격)`}</span>`}</td>
-        <td><input type="number" data-p="req.duty.${i}.ext" data-t="num" value="${l.ext ?? ''}" placeholder="${Math.abs(l.torque)}" style="width:80px"></td><td><button class="btn" data-del="${i}">삭제</button></td></tr>`; }).join('')}
-      </table></div><p><button class="btn" id="addDuty">구간 추가</button> <span class="note">시간 합 ${fmt(d.reduce((s, l) => s + (l.time || 0), 0), 1)} % — 정지·무부하 구간을 포함한 전체 경과 시간으로 정규화 (합이 100이 아니어도 비율로 계산) · 정지 구간은 회전수 0(피로 손상 없음), 유지 토크는 정적 판정 · 음수 rpm = 역회전</span></p>${dutyChart()}</div>`;
+        <td><input type="number" data-p="req.duty.${i}.ext" data-t="num" value="${l.ext ?? ''}" placeholder="${fmt(Math.abs(T / D.req.Trated * 100), 1)}" style="width:80px"></td><td><button class="btn" data-del="${i}">삭제</button></td></tr>`; }).join('')}
+      </table></div><p><button class="btn" id="addDuty">구간 추가</button> <span class="note">시간 합 ${fmt(tot, 2)} ${sec ? '초' : '%'} — 시간 비중 = 구간 시간 / 합 (정지·무부하 구간 포함 전체 경과 시간 기준) · ${Nm ? 'N·m로 입력한 값은 그대로 보관 (정격 토크를 바꿔도 유지)' : '% 값은 정격 토크 대비'} · 정지 구간은 회전수 0(피로 손상 없음), 유지 토크는 정적 판정 · 음수 rpm = 역회전</span></p>${dutyChart()}</div>`;
   },
   finder() {
     const st = R?.ctx?.stages || [];
@@ -954,9 +1061,10 @@ const W = {
   },
   pinLoad() {
     if (!R?.carrierPin) return '';
-    return `<div class="card scroll"><h3>핀 하중·응력</h3><table><tr><th>단</th><th>조건</th><th>핀 하중 N</th><th>굽힘 σ MPa</th><th>전단 τ MPa</th><th>구멍 면압 MPa</th><th>처짐 µm</th><th>치폭 기울기 µm</th></tr>
-      ${R.carrierPin.map(c => ['rated', 'peak', 'emerg'].map(k => `<tr class="${k !== 'rated' && (c[k].sigma > c.allow || c[k].p > c.carrierAllowP) ? 'bad' : ''}"><td>${c.stage}단</td><td>${{ rated: '정격', peak: '피크', emerg: '비상' }[k]}</td><td>${fmt(c[k].F, 0)}</td><td>${fmt(c[k].sigma, 0)}</td><td>${fmt(c[k].tau, 1)}</td><td>${fmt(c[k].p, 1)}</td><td>${k === 'rated' ? fmt(c.rated.defl, 2) : ''}</td><td>${k === 'rated' ? fmt(Math.abs(c.rated.tilt), 3) : ''}</td></tr>`).join('')).join('')}</table>
-      <p class="note">핀 지지판은 강체로 가정합니다. 피크 시 캐리어 전달 토크 ${R.carrierPin.map(c => fmt(c.carrierTorque, 1)).join(' / ')} N·m.</p></div>`;
+    const sc = v => `<td class="${v < 1 ? 'bad' : ''}">${Number.isFinite(v) ? fmt(v, 2) : '—'}</td>`;
+    return `<div class="card scroll"><h3>핀 하중·응력 (운전 구간 전체)</h3><table><tr><th>단</th><th>운전 조건</th><th>출력 토크 N·m</th><th>핀 하중 N</th><th>굽힘 σ MPa</th><th>구멍 면압 MPa</th><th>S 핀 굽힘</th><th>S 구멍 면압</th><th>S 기둥</th></tr>
+      ${R.carrierPin.map(c => c.cases.map(k => { const gov = c.gov.case === k.label && c.gov.S < 1; return `<tr class="${gov ? 'bad' : ''}"${k.duty != null ? ` data-vgo="duty:${k.duty}" style="cursor:pointer" title="듀티 ${k.duty + 1}행으로 이동"` : ''}><td>${c.stage}단</td><td>${esc(k.label)}</td><td>${fmt(k.T, 2)}</td><td>${fmt(Math.abs(k.F), 0)}</td><td>${fmt(k.sigma, 2)}</td><td>${fmt(k.p, 1)}</td>${sc(k.S.bend)}${sc(k.S.press)}${sc(k.S.web)}</tr>`; }).join('')).join('')}
+      </table><p class="note">허용: 핀 굽힘 ${R.carrierPin.map(c => fmt(c.allow, 2)).join(' / ')} MPa · 구멍 면압 ${fmt(D.carrier.allowP, 0)} MPa · 기둥 ${fmt(D.carrier.allowB, 0)} MPa. 회전 구간은 동하중(Kv) 포함, 정지 유지·지정 피크·비상은 0 rpm 정적. 최저: ${R.carrierPin.map(c => `${c.stage}단 ${c.gov.name} ${fmt(c.gov.S, 2)} (${c.gov.case} ${fmt(c.gov.T, 1)} N·m)`).join(' · ')}. 정격 처짐 ${R.carrierPin.map(c => fmt(c.rated.defl, 2) + ' µm').join(' / ')}. 핀 지지판은 강체로 가정합니다.</p></div>`;
   },
   eff() {
     if (!R?.eff) return '';
@@ -1066,10 +1174,15 @@ function clearBearing() {
   changed();
 }
 
+// Duty table units: torque as % of rated or N·m, time as % or seconds. Values are stored as entered (l.Tnm for N·m, l.time
+// as a relative weight in either unit), so switching units or saving repeatedly never rescales them.
+const dutyUnits = () => (D.req.dutyUnits ||= { torque: 'pct', time: 'pct' });
+const setDutyUnit = (kind, v) => E.setDutyUnit(D, kind, v);
 const WB = {
+  pinLoad(m) { bindVerdictLinks(m); },
   obpick(m) { const p = m.querySelector('#obPick'); if (p) p.onclick = openObDlg; const c = m.querySelector('#obClear'); if (c) c.onclick = clearBearing; },
   shiftmap(m) {
-    const setShift = (i, xs, xp, xr) => { const st = D.stages[i], fixed = i === 1 && D.config.sharedRing && D.stages[0].r != null;
+    const setShift = (i, xs, xp, xr) => { const st = D.stages[i], fixed = i === 1 && D.config.sharedRing && D.config.stages > 1; if (fixed) st.autoPlanetShift = false;
       st.xs = +(+xs).toFixed(4); st.xp = +(+xp).toFixed(4); if (!fixed) { if (xr != null) { st.autoRingShift = false; st.xr = +(+xr).toFixed(4); } else st.autoRingShift = true; } changed(); };
     m.querySelectorAll('.smc').forEach(c => c.onclick = () => setShift(+c.dataset.st, c.dataset.sx, c.dataset.sp, null));
     m.querySelectorAll('[data-sg]').forEach(b => b.onclick = async () => {
@@ -1092,7 +1205,8 @@ const WB = {
   },
   case(m) { const b = m.querySelector('#cApply'); if (b) b.onclick = () => { E.applyCase(D, m.querySelector('#cPos').value + '-' + m.querySelector('#cAxis').value, R?.ratio); D.anim.rpm = D.req.rpm; changed(); }; },
   duty(m) {
-    const a = m.querySelector('#addDuty'); if (a) a.onclick = () => { D.req.duty.push({ torque: 50, time: 10, rpm: 0, mode: 'rated' }); changed(); };
+    const a = m.querySelector('#addDuty'); if (a) a.onclick = () => { const l = { torque: 50, time: 10, rpm: 0, mode: 'rated' }; if (dutyUnits().torque === 'Nm') l.Tnm = +(D.req.Trated * .5).toPrecision(12); D.req.duty.push(l); changed(); };
+    m.querySelectorAll('[data-dunit]').forEach(sl => sl.onchange = () => { setDutyUnit(sl.dataset.dunit, sl.value); changed(); });
     m.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { D.req.duty.splice(+b.dataset.del, 1); changed(); });
   },
   finder(m) {
@@ -1258,7 +1372,7 @@ function buildIssues() {
     if (v.k.startsWith('부하 스펙트럼')) { const s = R.spectrum.gov; if (s) id = partOf(s.stage, s.part); }
     else if (v.k.startsWith('유성 베어링')) { const value = b => v.k.includes('정적') ? b.governing.s0 : b.L10h; const b = R.bearings.reduce((m, x) => value(x) < value(m) ? x : m); id = `needle${b.stage}`; kind = 'bearing'; }
     else if (v.k.startsWith('출력 베어링')) { id = 'xroller'; kind = 'obearing'; }
-    else if (v.k.startsWith('유성 핀')) { const c = R.carrierPin.reduce((m, x) => Math.min(x.Sbend, x.Spress, x.Sweb) < Math.min(m.Sbend, m.Spress, m.Sweb) ? x : m); id = Math.min(c.Sbend, c.Spress) <= c.Sweb ? `pin${c.stage}` : `carrier${c.stage}`; kind = 'carrier'; }
+    else if ((v.id || v.k).startsWith('유성 핀')) { const c = R.carrierPin.reduce((m, x) => x.gov.S < m.gov.S ? x : m); id = c.gov.mode === 'web' ? `carrier${c.stage}` : `pin${c.stage}`; kind = 'carrier'; }
     else if (v.k.startsWith('스커핑')) { const l = R.lube.peak.reduce((m, x) => x.SB < m.SB ? x : m); id = `sun${l.stage}`; kind = 'lube'; }
     else if (v.k.endsWith('최소 백래시')) { id = 'planet' + parseInt(v.k, 10); kind = 'perf'; }
     else if (v.k.startsWith('효율') || v.k.startsWith('출력 백래시')) { id = 'planet1'; kind = 'perf'; }
@@ -1500,7 +1614,7 @@ $('#bExport').onclick = () => {
   dlg('설계 JSON', txt, '아래 내용을 복사해 보관하세요. "복사"를 누르면 클립보드에 넣습니다.', '복사', async () => { try { await navigator.clipboard.writeText(txt); return '복사했습니다.'; } catch (e) { $('#dlgText').select(); return '자동 복사가 막혀 있어 내용을 선택해 두었습니다. Ctrl+C로 복사하세요.'; } });
 };
 $('#bImport').onclick = () => dlg('JSON 불러오기', '', '이 사이트에서 복사한 설계 JSON을 붙여 넣고 확인을 누르세요.', '불러오기', () => {
-  try { const d = JSON.parse($('#dlgText').value); if (d.schema !== 'pgd/1') throw new Error('형식이 다릅니다'); d.config.floatingSun = false; D = fillMissing(E.migrateDuty(d), E.defaultDesign()); $('#dname').value = D.name || ''; changed(); $('#dlg').close(); return null; } catch (e) { return '불러오지 못했습니다: ' + e.message; }
+  try { const d = JSON.parse($('#dlgText').value); if (d.schema !== 'pgd/1') throw new Error('형식이 다릅니다'); d.config.floatingSun = false; D = migrateLoaded(d); $('#dname').value = D.name || ''; changed(); $('#dlg').close(); return null; } catch (e) { return '불러오지 못했습니다: ' + e.message; }
 });
 // 추천 제원: 외형·목표 감속비·입력축 조건 → 허용 토크 순
 let REC = null, recDesign = '', recRevision = 0;
@@ -1592,6 +1706,6 @@ $('#vchip').onclick = () => document.body.classList.toggle('vopen');
 document.addEventListener('click', e => { if (document.body.classList.contains('vopen') && !e.target.closest('#verdict,#vchip')) document.body.classList.remove('vopen'); });
 $('#bMore').onclick = e => { e.stopPropagation(); $('#moreMenu').hidden = !$('#moreMenu').hidden; };
 document.addEventListener('click', e => { if (!e.target.closest('#moreMenu')) $('#moreMenu').hidden = true; });
-window.PGDApp = { go, view: () => view, rvState: id => rvState(id), sig: id => sigOf(id, ictx()), mapSelect: id => MAPV?.select(id), mapState: () => MAPV?.state(), items: () => procEval().flatMap(g => g.items.map(i => i.id)), groups: () => window.PGDGroups?.ORDER || [], studio: () => ({ id: STUDIO.id, parts: studioParts(), dims: studioDims(STUDIO.id).length, mounted: !!PARTV }), studioPick: id => { STUDIO.id = id; STUDIO.view = null; render(true); } };
+window.PGDApp = { go, state: () => ({ D, R }), view: () => view, rvState: id => rvState(id), sig: id => sigOf(id, ictx()), mapSelect: id => MAPV?.select(id), mapState: () => MAPV?.state(), items: () => procEval().flatMap(g => g.items.map(i => i.id)), groups: () => window.PGDGroups?.ORDER || [], studio: () => ({ id: STUDIO.id, parts: studioParts(), dims: studioDims(STUDIO.id).length, mounted: !!PARTV }), studioPick: id => { STUDIO.id = id; STUDIO.view = null; render(true); } };
 compute(); renderRail(); renderVerdict(); render();
 }
