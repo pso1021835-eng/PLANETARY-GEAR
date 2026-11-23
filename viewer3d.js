@@ -103,6 +103,19 @@
       : [[0, z0], [r2 - c, z0], [r2, z0 + c], [r2, z1 - c], [r2 - c, z1], [0, z1]];
     return lathe(p);
   }
+  // annular ring with rounded insertion corners: rIn on the bore corners, rOut on the OD corners (others: small chamfer)
+  function ringRounded(r1, r2, z0, z1, rIn = 0, rOut = 0, ch = .2) {
+    const lim = Math.min((r2 - r1) / 2.2, (z1 - z0) / 2.2), c = Math.min(ch, lim), p = [];
+    // walk BL → BR → TR → TL; each corner is an arc (radius > 0) or a chamfer of c
+    const arc = (cx, cz, rad, a0) => { for (let k = 0; k <= 6; k++) { const a = a0 + k / 6 * Math.PI / 2; p.push([cx + rad * Math.cos(a), cz + rad * Math.sin(a)]); } };
+    const ri = Math.min(rIn, lim), ro = Math.min(rOut, lim);
+    if (ri > .01) arc(r1 + ri, z0 + ri, ri, Math.PI); else p.push([r1, z0 + c], [r1 + c, z0]);
+    if (ro > .01) arc(r2 - ro, z0 + ro, ro, 1.5 * Math.PI); else p.push([r2 - c, z0], [r2, z0 + c]);
+    if (ro > .01) arc(r2 - ro, z1 - ro, ro, 0); else p.push([r2, z1 - c], [r2 - c, z1]);
+    if (ri > .01) arc(r1 + ri, z1 - ri, ri, .5 * Math.PI); else p.push([r1 + c, z1], [r1, z1 - c]);
+    p.push(p[0]);
+    return lathe(p);
+  }
   function annulusMass(r1, r2, L, rho) { return Math.PI * (r2 * r2 - r1 * r1) * L * rho; }
 
   function reverseFaces(geometry) {
@@ -306,8 +319,10 @@
       z = x.z0 + x.carrier.axial[1];
     });
     const gearEnd = S[S.length - 1].z0 + S[S.length - 1].b;
-    const ob = D.outBearing || {}, dp = ob.dp || 60, Dw = ob.Dw || 4, Bw = ov('xroller', 'width', Dw * 1.5);
-    const raceIn = dp / 2 - Dw * 1.1, raceOut = dp / 2 + Dw * 1.1;
+    // 카탈로그 형번이 선택돼 있으면 내경·외경·폭을 카탈로그 치수로, 아니면 dp ± 1.1·Dw로 추정
+    const ob = D.outBearing || {}, cat = ob.d > 0 && ob.D > ob.d && ob.B > 0;
+    const dp = ob.dp || (cat ? (ob.d + ob.D) / 2 : 60), Dw = ob.Dw || 4, Bw = ov('xroller', 'width', cat ? ob.B : Dw * 1.5);
+    const raceIn = cat ? ob.d / 2 : dp / 2 - Dw * 1.1, raceOut = cat ? ob.D / 2 : dp / 2 + Dw * 1.1;
     const zBear = [z + .6, z + .6 + Bw];
     const zFlange = [zBear[1] + .2, zBear[1] + .2 + sh.flangeT];
     const ringOD = Math.max(...S.map(x => x.ringOD || 0));
@@ -332,7 +347,7 @@
     // 출력단 커버: retainer ring over the outer race on the output face
     const ocT = ov('ocover', 't', 1.5), ocIR = ov('ocover', 'id', 2 * (dp / 2 - Dw * .2)) / 2;
     const zOC = [zBear[1] + .15, zBear[1] + .15 + ocT];
-    return { S, zStart, gearEnd, zEnd: z, ob, dp, Dw, Bw, raceIn, raceOut, zBear, zFlange, ringOD, hollowR, shaftR, shaftExt, sealW, sealH, housR, flangeR, hubR, coverBoltR, flangeBoltR, zIn, sh, auto,
+    return { S, zStart, gearEnd, zEnd: z, ob, cat, dp, Dw, Bw, raceIn, raceOut, zBear, zFlange, ringOD, hollowR, shaftR, shaftExt, sealW, sealH, housR, flangeR, hubR, coverBoltR, flangeBoltR, zIn, sh, auto,
       s1on, b1w, b1h, zB1, s2on, b2h, b2w, zB2, sunBoreR, oshaftR, oshaftIR, zOS, ocT, ocIR, zOC, shared: !!(D.config.sharedRing && S.length > 1) };
   }
   // housing revolve profile (r, z) shared by 3D and drawings
@@ -380,7 +395,7 @@
     });
     const ob = R.outBearing, roll = ob.roll;
     out.push({ id: 'xroller', name: `출력베어링 (${D.outBearing.name})`, qty: 1, material: '베어링강', heat: '담금질', step: 's9',
-      mass: annulusMass(L.raceIn, L.raceOut, L.Bw, STEEL) * .8,
+      mass: L.cat && D.outBearing.mass > 0 ? D.outBearing.mass : annulusMass(L.raceIn, L.raceOut, L.Bw, STEEL) * .8,
       verdict: { ok: ob.L10h >= D.req.lifeH && ob.s0peak >= D.req.s0 && (!roll || roll.peak.s0 >= D.req.s0), text: `s0 ${fmt(roll ? roll.peak.s0 : ob.s0peak, 2)}` } });
     out.push({ id: 'oflange', name: '출력 플랜지 (C2 결합)', qty: 1, material: 'S45C', heat: '조질', step: 'shous', mass: annulusMass(L.hollowR + .6, L.raceIn + .4, L.sh.flangeT, STEEL) + annulusMass(L.hollowR + .6, L.hubR, L.zFlange[0] - L.zEnd, STEEL) });
     out.push({ id: 'housing', name: '하우징', qty: 1, material: 'AL6061-T6', heat: '흑색 아노다이징', step: 'shous',
@@ -582,7 +597,31 @@
     });
 
     // ---- housing, cover, input shaft, output bearing, flange, seals, bolts (full mode)
+    // cross roller: inner race rides the output, outer race fixed, rollers on a half-speed cage
+    const drawXroller = (outG, fixG, cageG) => {
+      const raceMat = mkMat('race');
+      // 카탈로그 형번: 단순 내륜·외륜 링 (내륜 내경·외륜 외경 삽입부 R 표현, 볼트 탭 취부는 후순위)
+      const secW = L.raceOut - L.raceIn, Dw = L.cat ? Math.min(L.Dw, secW * .3, L.Bw * .7) : L.Dw, gap = L.cat ? Math.min(Dw * .35, secW * .1) : L.Dw * .35;
+      const rC = L.cat ? (L.ob.r ?? .5) : 0;
+      add(new TH.Mesh(L.cat ? ringRounded(L.raceIn, L.dp / 2 - gap, L.zBear[0], L.zBear[1], rC, 0) : ringSolid(L.raceIn, L.dp / 2 - gap, L.zBear[0], L.zBear[1], .3), raceMat), 'xroller', outG, 3, unit * 2.6);
+      add(new TH.Mesh(L.cat ? ringRounded(L.dp / 2 + gap, L.raceOut, L.zBear[0], L.zBear[1], 0, rC) : ringSolid(L.dp / 2 + gap, L.raceOut, L.zBear[0], L.zBear[1], .3), raceMat), 'xroller', fixG, 3, unit * 2.6);
+      const Z = Math.max(8, Math.round(L.ob.Z || (L.cat ? Math.PI * L.dp / (Dw * 1.3) : 40))), Lw = L.cat ? Dw * .9 : L.ob.Lw || Dw * .9;
+      const rollers = new TH.InstancedMesh(new TH.CylinderGeometry(Dw / 2, Dw / 2, Lw, 16), mkMat('roller'), Z);
+      const m4 = new TH.Matrix4(), q = new TH.Quaternion(), e = new TH.Euler(), sc = new TH.Vector3(1, 1, 1), p = new TH.Vector3();
+      for (let j = 0; j < Z; j++) {
+        const ang = 2 * Math.PI * j / Z, s = j % 2 ? 1 : -1;
+        // roller axis in the (radial, axial) plane at ±45°
+        const axis = new TH.Vector3(Math.cos(ang) * Math.SQRT1_2, Math.sin(ang) * Math.SQRT1_2, s * Math.SQRT1_2).normalize();
+        q.setFromUnitVectors(new TH.Vector3(0, 1, 0), axis);
+        p.set(L.dp / 2 * Math.cos(ang), L.dp / 2 * Math.sin(ang), (L.zBear[0] + L.zBear[1]) / 2);
+        m4.compose(p, q, sc); rollers.setMatrixAt(j, m4);
+      }
+      rollers.frustumCulled = false;
+      add(rollers, 'xroller', cageG, 3, unit * 2.6);
+    };
     let outRot = null, cage = null, inRot = null;
+    // 3D 종합판정(가공 부품만)에서도 카탈로그에서 고른 출력 베어링은 구매 부품으로 표시
+    if (full && !extras && L.cat && partOn(D, 'xroller')) { outRot = new TH.Group(); root.add(outRot); cage = new TH.Group(); root.add(cage); drawXroller(outRot, root, cage); }
     if (extras) {
       const sh = L.sh;
       if (partOn(D, 'housing')) add(new TH.Mesh(lathe(housingProfile(L), 128), mkMat('housing')), 'housing', root, 0, 0);
@@ -607,22 +646,7 @@
       if (partOn(D, 'oshaft')) add(new TH.Mesh(ringSolid(L.oshaftIR, L.oshaftR, L.zOS[0], L.zOS[1], .3), mkMat('shaft')), 'oshaft', outRot, 4, unit * 4.2);
       if (L.s2on && L.sunBoreR - L.oshaftR > .5) ballBearing(L.oshaftR, L.sunBoreR, L.zB2[0], L.zB2[1], root, 'brgS2', unit * 1.9);
       if (partOn(D, 'ocover')) add(new TH.Mesh(ringSolid(L.ocIR, L.raceOut + .2, L.zOC[0], L.zOC[1], .3), mkMat('housing')), 'ocover', root, 3, unit * 3.0);
-      const raceMat = mkMat('race');
-      if (obOn) add(new TH.Mesh(ringSolid(L.raceIn, L.dp / 2 - L.Dw * .35, L.zBear[0], L.zBear[1], .3), raceMat), 'xroller', outRot, 3, unit * 2.6);
-      if (obOn) add(new TH.Mesh(ringSolid(L.dp / 2 + L.Dw * .35, L.raceOut, L.zBear[0], L.zBear[1], .3), raceMat), 'xroller', root, 3, unit * 2.6);
-      const Z = Math.max(8, Math.round(L.ob.Z || 40)), Dw = L.Dw, Lw = L.ob.Lw || Dw * .9;
-      const rollers = new TH.InstancedMesh(new TH.CylinderGeometry(Dw / 2, Dw / 2, Lw, 16), mkMat('roller'), Z);
-      const m4 = new TH.Matrix4(), q = new TH.Quaternion(), e = new TH.Euler(), sc = new TH.Vector3(1, 1, 1), p = new TH.Vector3();
-      for (let j = 0; j < Z; j++) {
-        const ang = 2 * Math.PI * j / Z, s = j % 2 ? 1 : -1;
-        // roller axis in the (radial, axial) plane at ±45°
-        const axis = new TH.Vector3(Math.cos(ang) * Math.SQRT1_2, Math.sin(ang) * Math.SQRT1_2, s * Math.SQRT1_2).normalize();
-        q.setFromUnitVectors(new TH.Vector3(0, 1, 0), axis);
-        p.set(L.dp / 2 * Math.cos(ang), L.dp / 2 * Math.sin(ang), (L.zBear[0] + L.zBear[1]) / 2);
-        m4.compose(p, q, sc); rollers.setMatrixAt(j, m4);
-      }
-      rollers.frustumCulled = false;
-      cage = new TH.Group(); root.add(cage); if (obOn) add(rollers, 'xroller', cage, 3, unit * 2.6);
+      cage = new TH.Group(); root.add(cage); if (obOn) drawXroller(outRot, root, cage);
       const flange = new TH.Mesh(ringSolid(L.hollowR + .6, L.raceIn + .4, L.zFlange[0], L.zFlange[1], .5), mkMat('flange'));
       const hub = new TH.Mesh(ringSolid(L.hollowR + .6, Math.max(L.hollowR + 1.2, L.hubR), L.zEnd - .2, L.zFlange[0] + .1, .4), flange.material);
       add(flange, 'oflange', outRot, 4, unit * 3.6); add(hub, 'oflange', outRot, 4, unit * 3.6);

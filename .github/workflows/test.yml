@@ -23,5 +23,7 @@ jobs:
         run: node carrier_geometry_test.js
       - name: 추천 제원
         run: node recommend_test.js
+      - name: 출력 베어링 카탈로그
+        run: node bearing_catalog_test.js
       - name: 문법 검사
         run: for f in *.js; do node --check "$f" || exit 1; done
