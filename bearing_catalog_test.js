@@ -6,6 +6,8 @@ let fails = 0;
 const ok = (c, m) => { console.log((c ? 'ok  ' : 'FAIL') + ' ' + m); if (!c) fails++; };
 const L = B.crossRoller;
 ok(L.length >= 100, `형번 ${L.length}개`);
+ok(L.filter(b => b.maker === 'IKO').every(b => b.status === 'IKO 공식 확인' && b.rSrc === '카탈로그' && b.rIn > 0 && b.rOut > 0), 'IKO 전 형번 공식 치수표 · 실제 r min');
+ok(L.find(b => b.model === 'CRBC3010').C < L.find(b => b.model === 'CRB3010').C, 'CRBC(케이지) < CRB(총롤러) 정격');
 ok(new Set(L.map(b => b.model)).size === L.length, '형번 중복 없음');
 ok(L.every(b => ['THK', 'IKO'].includes(b.maker)), '제조사 THK · IKO');
 ok(L.every(b => b.d >= 10 && b.d <= 100 && b.D > b.d && b.B > 0), '내경 10~100, D > d, B > 0');
