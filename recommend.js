@@ -207,17 +207,32 @@
 
   // 출력 베어링: 카탈로그(bearings.js)가 있으면 외경에 들어가는 크로스 롤러 중 정정격하중 C0가 가장 큰 형번
   // (같으면 폭이 얇은 것). 폭은 길이 한계의 20 % 이하. 카탈로그가 없으면 외경 비 추정값.
-  function pickOutBearing(spec, wall) {
+  // 외부 하중(D.req.ext)이 있으면 비상 토크 배율에서 정적 안전율 s0 ≥ 목표를 만족하는 형번 중 가장 얇은 것(같으면 C0 큰 것),
+  // 만족하는 형번이 없으면 C0 최대. 외경: 하우징 벽 + 1.5 mm 안쪽. 폭: 길이 한계의 30 % 이하.
+  function pickOutBearing(spec, wall, req) {
     const list = root.PGDBearings?.crossRoller; if (!list?.length) return null;
-    const Dmax = spec.OD - 2 * (wall + 1.5), Bmax = Math.max(6, .2 * spec.H);
-    const ok = list.filter(b => b.D <= Dmax + 1e-9 && b.B <= Bmax + 1e-9 && b.C0 > 0 && b.d >= .4 * spec.OD);
-    return ok.sort((x, y) => y.C0 - x.C0 || x.B - y.B)[0] || null;
+    const Dmax = spec.OD - 2 * (wall + 1.5), Bmax = Math.max(6, .3 * spec.H);
+    const fit = list.filter(b => b.D <= Dmax + 1e-9 && b.B <= Bmax + 1e-9 && b.C0 > 0);
+    const ext = req?.ext, ke = req && req.Trated ? Math.abs((req.Temerg || req.Tpeak || req.Trated) / req.Trated) : 1;
+    if (ext && [ext.Fr, ext.Fa, ext.M].every(v => Number.isFinite(v) && v >= 0) && (ext.Fr || ext.Fa || ext.M)) {
+      const P0 = b => { const dp = b.dp ?? (b.d + b.D) / 2; return (ext.Fr + 2000 * ext.M / dp + .44 * ext.Fa) * ke; };
+      // 동적: 정격 외부 하중(스펙트럼 최대 레벨 그대로, 보수)으로 L10 ≥ 목표 수명 @ 출력 회전수
+      const nOut = (req.rpm || 0) / (spec.ratio || 1), P = b => { const dp = b.dp ?? (b.d + b.D) / 2, Fre = ext.Fr + 2000 * ext.M / dp; return Fa_ = ext.Fa / Math.max(Fre, 1e-9) <= 1.5 ? Fre + .45 * ext.Fa : .67 * (Fre + ext.Fa); };
+      let Fa_ = 0;
+      const life = b => !(nOut > 0 && req.lifeH) || (b.C / P(b)) ** (10 / 3) * 1e6 / (nOut * 60) >= req.lifeH;
+      const ok = fit.filter(b => b.C0 / P0(b) >= (req.s0 || 1) && life(b));
+      if (ok.length) return ok.sort((x, y) => x.B - y.B || y.C0 - x.C0)[0];
+    }
+    return fit.sort((x, y) => y.C0 - x.C0 || x.B - y.B)[0] || null;
   }
   function catalogBearing(T, b) {
     const dp = b.dp ?? (b.d + b.D) / 2, sec = (b.D - b.d) / 2, Dw = Math.max(.5, r05(Math.min(sec * .3, b.B * .7)));
     return { ...T, name: `${b.maker} ${b.model}`, type: 'roller', maker: b.maker, series: b.series, model: b.model, d: b.d, D: b.D, B: b.B, dp, dpEst: b.dp == null,
       C: b.C, C0: b.C0, mass: b.mass, r: b.r, rIn: b.rIn ?? b.r, rOut: b.rOut ?? b.r, rSrc: b.rSrc, status: b.status, source: b.source, holes: !!b.holes, Dw, Lw: +(Dw * .9).toFixed(2), DwEst: true, Z: 0, auto: '추천 제원: 외경 안 최대 C0' };
   }
+
+  // 사이트가 설계를 불러올 때(app.js fillMissing)와 같은 기본값 보충 — 추천 결과 값이 적용·새로고침 후와 같도록
+  function fillMissing(dst, src) { for (const k in src) { if (dst[k] === undefined || dst[k] === null && src[k] !== null && typeof src[k] === 'object') dst[k] = JSON.parse(JSON.stringify(src[k])); else if (Array.isArray(src[k]) && Array.isArray(dst[k])) { dst[k].forEach((v, i) => { if (v && typeof v === 'object' && src[k][i] && typeof src[k][i] === 'object' && !Array.isArray(v)) fillMissing(v, src[k][i]); }); } else if (src[k] && typeof src[k] === 'object' && dst[k] && typeof dst[k] === 'object') fillMissing(dst[k], src[k]); } return dst; }
 
   // ---- 후보 → 전체 설계
   function build(base, spec, cand, bs, E) {
@@ -234,7 +249,7 @@
     const wall = wallOf(spec.OD);
     D.housing = { ...T.housing, wall, coverT: ax(T.housing.coverT * kz, 3), flangeT: ax(T.housing.flangeT * kz, 3) };
     const Dw = Math.max(1.5, r05(2.5 * k * (a + (1 - a) * .8)));
-    const cat = pickOutBearing(spec, wall);
+    const cat = pickOutBearing(spec, wall, D.req);
     D.outBearing = cat ? catalogBearing(T.outBearing, cat)
       : { ...T.outBearing, name: `크로스 롤러 Dw ${Dw} (외경 비 추정 · 카탈로그 확인)`, Dw, Lw: Dw, dp: spec.OD - 2 * (wall + 1.5) - 2.2 * Dw, C: Math.round(T.outBearing.C * k * k), C0: Math.round(T.outBearing.C0 * k * k) };
     D.geom = {};
@@ -263,7 +278,7 @@
           : { width: plate, outerD: null, innerD: null, bossT: 0, bossD: null, axialClearance: 0.3, material: 'S45C' }
       });
     });
-    return D;
+    return E.defaultDesign ? fillMissing(D, E.defaultDesign()) : D;
   }
 
   function envelope(D, E, layout) {
@@ -305,6 +320,8 @@
     Object.assign(row, { OD: env.OD, H: env.H });
     if (env.OD > spec.OD + 0.05) return { ...row, ok: false, why: `외경 Ø${env.OD.toFixed(1)} > Ø${spec.OD}` };
     if (env.H > spec.H + 0.05) return { ...row, ok: false, why: `높이 ${env.H.toFixed(1)} > ${spec.H} mm` };
+    // 사이트와 같은 해석 경로: 기본값 보충 + 풀니들 계산값 적용 (축척 추정 C·C0 대신)
+    if (root.PGDChecks) { root.PGDChecks.ensure(D); root.PGDChecks.applyNeedles(D); }
     const r = E.analyze(D);
     if (r.errors?.length) return { ...row, ok: false, why: r.errors[0] };
     for (const stage of r.ctx.stages) {

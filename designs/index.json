@@ -1,5 +1,22 @@
 [
-  { "id": "hds-82pi", "name": "HDS 82pi 1단 스퍼 (KISSsoft 보고서 R2)", "builtin": "defaultDesign" },
-  { "id": "rh065", "name": "RDP-RH065 9:1 2단 공용 링", "builtin": "templateDesign" },
-  { "id": "d100-l50-i24", "name": "제안안 Ø100×50 · 50 N·m · i 23.96 (2026-11-23)", "file": "d100-l50-i24-50Nm.json" }
+ {
+  "id": "hds-82pi",
+  "name": "HDS 82pi 1단 스퍼 (KISSsoft 보고서 R2)",
+  "builtin": "defaultDesign"
+ },
+ {
+  "id": "rh065",
+  "name": "RDP-RH065 9:1 2단 공용 링",
+  "builtin": "templateDesign"
+ },
+ {
+  "id": "d100-l50-i24",
+  "name": "제안안 Ø100×50 · 50 N·m · i 23.96 (2026-11-23)",
+  "file": "d100-l50-i24-50Nm.json"
+ },
+ {
+  "id": "sungoh-d70-l40-i15",
+  "name": "성오로보틱스 Ø70×40 · 30 N·m · i 15 · 중공 Ø10 (2026-11-23, 조건부)",
+  "file": "sungoh-d70-l40-i15.json"
+ }
 ]

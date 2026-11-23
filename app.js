@@ -1751,7 +1751,7 @@ async function dbOpen(key, toOverview) {
 async function dbLoadLib(list) {
   for (const x of list) {
     try {
-      if (x.file) { const j = await (await fetch('designs/' + x.file + '?v=db-2')).json(); x.D = j.schema === 'pgd-case/1' ? j.D : j; }
+      if (x.file) { const j = await (await fetch('designs/' + x.file + '?v=case2-1')).json(); x.D = j.schema === 'pgd-case/1' ? j.D : j; }
       else if (x.builtin) x.D = E[x.builtin]();
       if (x.D && !x.summary) { const d = JSON.parse(JSON.stringify(x.D)); if (window.PGDChecks) { PGDChecks.ensure(d); PGDChecks.applyNeedles(d); } const c = caseRecord(d, E.analyze(d)); x.summary = c.summary; x.request = c.request; }
     } catch (e) { console.error(e); }
@@ -1763,7 +1763,7 @@ function dbRender() {
   $('#dbList').innerHTML = DBLIB.map((x, i) => row('lib:' + i, x.name, '기본')).join('') + mine.slice(0, 5).map((x, i) => row('mine:' + i, x.name, `${x.summary?.reducerCap ? (+x.summary.reducerCap).toFixed(0) + ' N·m · ' : ''}${new Date(x.saved).toLocaleDateString('ko-KR')}`)).join('') || '<span class="note">없음</span>';
   $('#dbList').querySelectorAll('[data-db]').forEach(b => b.onclick = e => { e.stopPropagation(); dbOpen(b.dataset.db); });
 }
-fetch('designs/index.json?v=db-2').then(r => r.json()).catch(() => [{ name: 'HDS 예제', builtin: 'defaultDesign' }, { name: 'RH065 템플릿', builtin: 'templateDesign' }])
+fetch('designs/index.json?v=case2-1').then(r => r.json()).catch(() => [{ name: 'HDS 예제', builtin: 'defaultDesign' }, { name: 'RH065 템플릿', builtin: 'templateDesign' }])
   .then(l => { DBLIB = l; dbRender(); return dbLoadLib(l); }).then(() => { if (view === 'db') render(true); });
 // 케이스 레코드 (pgd-case/1): 나중에 모아서 참고·학습에 쓰도록 요구 조건 · 설계 제원 · 결과 요약을 같은 형식으로 남긴다.
 function caseRecord(D = PGDApp.state().D, R = PGDApp.state().R) {

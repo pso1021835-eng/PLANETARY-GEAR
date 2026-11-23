@@ -1,0 +1,651 @@
+{
+ "schema": "pgd-case/1",
+ "id": "sungoh-d70-l40-i15",
+ "name": "성오로보틱스 · 2단 유성감속기 Ø70×40 · 30 N·m · i 15 · 중공 Ø10",
+ "saved": "2026-11-23T09:00:00.000Z",
+ "source": "request-xlsx",
+ "meta": {
+  "client": "성오로보틱스",
+  "requester": "박성오",
+  "date": "2026-11-23",
+  "application": "로봇 관절",
+  "qty": 250,
+  "targetCost": 250000,
+  "requestForm": "PGD-REQ v1.0",
+  "review": "PGD-REV-2026-002",
+  "decision": "조건부 충족 (열평형·단가 경계)"
+ },
+ "request": {
+  "Trated": 30,
+  "Tpeak": 60,
+  "Temerg": 90,
+  "rpm": 2000,
+  "rpmMax": 4000,
+  "lifeH": 20000,
+  "ratio": 15,
+  "ratioRange": [
+   15,
+   15
+  ],
+  "Dmax": 70,
+  "Lmax": 40,
+  "hollow": 10,
+  "backlashMax": 15,
+  "effMin": 90,
+  "grade": 6,
+  "duty": [
+   {
+    "torque": 100,
+    "time": 15,
+    "mode": "rated",
+    "rpm": 0
+   },
+   {
+    "torque": 60,
+    "time": 30,
+    "mode": "rated"
+   },
+   {
+    "torque": 30,
+    "time": 35,
+    "mode": "rated"
+   },
+   {
+    "torque": 10,
+    "time": 20,
+    "mode": "rated"
+   }
+  ],
+  "ext": {
+   "Fr": 180,
+   "Fa": 90,
+   "M": 20
+  },
+  "dutyRate": 0.5,
+  "basis": "ideal",
+  "aiDecided": [
+   "부하 스펙트럼 (상체 피치 대표)",
+   "회전 방향 양방향",
+   "Fr 180 / Fa 90 N",
+   "출력 베어링 IKO CRBHV3510A",
+   "유성 베어링 풀니들",
+   "재료 침탄/질화 링 일체",
+   "윤활 EP 그리스 ν40 320",
+   "계산 기준 이론+ISO",
+   "안전율 기본값",
+   "입력·출력 방식",
+   "구성 2단 공용 링"
+  ]
+ },
+ "summary": {
+  "stages": 2,
+  "sharedRing": true,
+  "ratio": 15,
+  "gears": [
+   {
+    "s": 24,
+    "p": 30,
+    "r": 84,
+    "n": 4,
+    "m": 0.7,
+    "beta": 0,
+    "b": 2
+   },
+   {
+    "s": 36,
+    "p": 23,
+    "r": 84,
+    "n": 6,
+    "m": 0.7,
+    "beta": 0,
+    "b": 4.5
+   }
+  ],
+  "OD": 70,
+  "L": 39.7,
+  "outBearing": "IKO CRBHV3510A",
+  "gearCap": 84.16730605335916,
+  "reducerCap": 52.69782989506683,
+  "governing": "1단 유성 베어링",
+  "eff": 0.9530032630352819,
+  "backlash": 4.914401078995411,
+  "verdictFail": [],
+  "checklistFail": [
+   "10-6: 손실 10.33 W · 표면 164 cm² → 온도 77.4 °C (윤활 가정 70 °C)"
+  ],
+  "isoCap": 18.4,
+  "mcP10": 43.3,
+  "mcP50": 61.5
+ },
+ "D": {
+  "schema": "pgd/1",
+  "name": "성오로보틱스 · 2단 유성감속기 Ø70×40 · 30 N·m · i 15 · 중공 Ø10",
+  "req": {
+   "case": "upper-pitch",
+   "ext": {
+    "Fr": 180,
+    "Fa": 90,
+    "M": 20
+   },
+   "Trated": 30,
+   "Tpeak": 60,
+   "Temerg": 90,
+   "rpm": 2000,
+   "lifeH": 20000,
+   "SH": 1,
+   "SF": 1.4,
+   "SHstat": 1,
+   "SFstat": 1.2,
+   "s0": 1,
+   "SBmin": 1.5,
+   "effMin": 90,
+   "backlashMax": 15,
+   "duty": [
+    {
+     "torque": 100,
+     "time": 15,
+     "mode": "rated",
+     "rpm": 0
+    },
+    {
+     "torque": 60,
+     "time": 30,
+     "mode": "rated"
+    },
+    {
+     "torque": 30,
+     "time": 35,
+     "mode": "rated"
+    },
+    {
+     "torque": 10,
+     "time": 20,
+     "mode": "rated"
+    }
+   ],
+   "ratio": 15,
+   "Dmax": 70,
+   "Lmax": 40,
+   "stiffMin": null
+  },
+  "config": {
+   "stages": 2,
+   "sharedRing": true,
+   "floatingSun": false
+  },
+  "design": {
+   "quality": "MQ"
+  },
+  "stages": [
+   {
+    "s": 24,
+    "p": 30,
+    "n": 4,
+    "m": 0.7,
+    "beta": 0,
+    "alpha": 20,
+    "b": 2,
+    "xs": 0,
+    "xp": 0,
+    "xr": 0,
+    "autoRingShift": false,
+    "grade": 6,
+    "mod": {
+     "crown": 0,
+     "tip": 0,
+     "verified": "none"
+    },
+    "sunBore": null,
+    "planetBore": 10.5,
+    "ringOD": 66,
+    "bearing": {
+     "name": "풀니들 Ø2×1.6 × 12 (계산)",
+     "C": 1887,
+     "C0": 1292,
+     "count": 1,
+     "manual": {
+      "name": "풀니들 Ø2 × 12 (추정)",
+      "C": 931,
+      "C0": 873,
+      "planetBore": 10.5
+     },
+     "calc": {
+      "name": "풀니들 Ø2×1.6 × 12 (계산)",
+      "C": 1887,
+      "C0": 1292,
+      "planetBore": 10.5
+     },
+     "src": "needle"
+    },
+    "jt": [
+     20,
+     25
+    ],
+    "pin": {
+     "d": 6.5,
+     "type": "single",
+     "material": "SUJ2",
+     "wall": 2.5,
+     "allow": 1200,
+     "holeMode": "through",
+     "depth": null
+    },
+    "carrier": {
+     "width": 2.5,
+     "outerD": null,
+     "innerD": null,
+     "bossT": 0,
+     "bossD": null,
+     "axialClearance": 0.3,
+     "material": "S45C",
+     "groove": 5.5,
+     "pocket": null,
+     "pocketShape": "slot"
+    },
+    "r": 84,
+    "tipChamfer": [
+     0,
+     0,
+     0
+    ],
+    "asn": [
+     [
+      0,
+      0
+     ],
+     [
+      -0.054,
+      -0.084
+     ],
+     [
+      -0.054,
+      -0.084
+     ]
+    ],
+    "cutter": {
+     "z0": 32,
+     "x0": 0
+    }
+   },
+   {
+    "s": 36,
+    "p": 23,
+    "n": 6,
+    "m": 0.7,
+    "beta": 0,
+    "alpha": 20,
+    "b": 4.5,
+    "xs": 0.009593819615487609,
+    "xp": 0.4904,
+    "xr": 0,
+    "autoRingShift": false,
+    "grade": 6,
+    "mod": {
+     "crown": 0,
+     "tip": 0,
+     "verified": "none"
+    },
+    "sunBore": null,
+    "planetBore": 8,
+    "ringOD": 66,
+    "bearing": {
+     "name": "풀니들 Ø1.5×4.1 × 12 (계산)",
+     "C": 2885,
+     "C0": 2498,
+     "count": 1,
+     "manual": {
+      "name": "풀니들 Ø1.5 × 12 (추정)",
+      "C": 1309,
+      "C0": 1227,
+      "planetBore": 8
+     },
+     "calc": {
+      "name": "풀니들 Ø1.5×4.1 × 12 (계산)",
+      "C": 2885,
+      "C0": 2498,
+      "planetBore": 8
+     },
+     "src": "needle"
+    },
+    "jt": [
+     20,
+     25
+    ],
+    "pin": {
+     "d": 5,
+     "type": "double",
+     "material": "SUJ2",
+     "wall": 2.5,
+     "allow": 1200,
+     "holeMode": "through",
+     "depth": null
+    },
+    "carrier": {
+     "width": null,
+     "groove": null,
+     "pocket": null,
+     "pocketShape": "slot",
+     "outerD": null,
+     "innerD": null,
+     "bossD": null,
+     "bossT": 2,
+     "material": "S45C"
+    },
+    "r": 84,
+    "tipChamfer": [
+     0,
+     0,
+     0
+    ],
+    "asn": [
+     [
+      0,
+      0
+     ],
+     [
+      -0.054,
+      -0.084
+     ],
+     [
+      -0.054,
+      -0.084
+     ]
+    ],
+    "cutter": {
+     "z0": 32,
+     "x0": 0
+    },
+    "autoPlanetShift": true
+   }
+  ],
+  "materials": [
+   {
+    "family": "Eh",
+    "surfaceHRC": 60,
+    "coreHRC": 36,
+    "depth": 0.3
+   },
+   {
+    "family": "Eh",
+    "surfaceHRC": 60,
+    "coreHRC": 36,
+    "depth": 0.3
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 56,
+    "coreHRC": 30,
+    "depth": 0.3
+   },
+   {
+    "family": "Eh",
+    "surfaceHRC": 60,
+    "coreHRC": 36,
+    "depth": 0.3
+   },
+   {
+    "family": "Eh",
+    "surfaceHRC": 60,
+    "coreHRC": 36,
+    "depth": 0.3
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 56,
+    "coreHRC": 30,
+    "depth": 0.3
+   }
+  ],
+  "lube": {
+   "type": "grease",
+   "nu40": 320,
+   "nu100": 25,
+   "temp": 70,
+   "rho": 0.88,
+   "alphaP": 2,
+   "starvation": 0.7,
+   "XL": 1,
+   "XW": 1,
+   "fzg": 12,
+   "rzFlank": 1,
+   "rzRoot": 6,
+   "base": "mineral"
+  },
+  "loads": {
+   "basis": "ideal",
+   "KA": 1,
+   "kgMode": "model",
+   "kgFixed": 1.1,
+   "posError": 5,
+   "sunSupport": [
+    {
+     "mode": "structure",
+     "k": 20,
+     "play": 2.5,
+     "bearingK": 30,
+     "od": 25.5,
+     "id": 18,
+     "overhang": 8
+    },
+    {
+     "mode": "structure",
+     "k": 20,
+     "play": 1.5,
+     "bearingK": 30,
+     "od": 17.5,
+     "id": 15.5,
+     "overhang": 3
+    }
+   ],
+   "fmaMode": "rss",
+   "carrierParallel": 10,
+   "extraFsh": [
+    0,
+    0
+   ],
+   "reverse": true
+  },
+  "reliability": {
+   "mode": "iso",
+   "covH": 0.08,
+   "covF": 0.07
+  },
+  "perf": {
+   "muMode": "model",
+   "mu": 0.06,
+   "otherLoss": 1.5
+  },
+  "outBearing": {
+   "name": "IKO CRBHV3510A",
+   "rows": 2,
+   "type": "roller",
+   "C": 7900,
+   "C0": 9130,
+   "dp": 47.5,
+   "Km": 30,
+   "Z": 0,
+   "Dw": 4,
+   "Lw": 3.6,
+   "preload": 0,
+   "maker": "IKO",
+   "series": "CRBHV",
+   "model": "CRBHV3510A",
+   "d": 35,
+   "D": 60,
+   "B": 10,
+   "dpEst": true,
+   "mass": 0.13,
+   "r": 0.3,
+   "rIn": 0.3,
+   "rOut": 0.3,
+   "rSrc": "카탈로그",
+   "status": "IKO 공식 확인",
+   "source": "IKO 공식 CAD 카탈로그 (PARTcommunity/MISUMI)",
+   "holes": false,
+   "DwEst": true,
+   "auto": "추천 제원: 외경 안 최대 C0"
+  },
+  "carrier": {
+   "allowP": 300,
+   "allowB": 250
+  },
+  "housing": {
+   "wall": 2,
+   "coverT": 3,
+   "boltN": 10,
+   "boltD": 4,
+   "flangeT": 3
+  },
+  "geom": {
+   "inshaft": {
+    "id": 10
+   }
+  },
+  "struct": {
+   "ringHousing": "integral",
+   "c1s2": "pin",
+   "c1s2Dim": {
+    "d": 17.5,
+    "L": 4.5,
+    "p": 40,
+    "n": 6,
+    "dp": 3,
+    "pcd": 22
+   },
+   "s1motor": "flange",
+   "s1Dim": {
+    "d": 18,
+    "L": 7.5,
+    "p": 40,
+    "n": 4,
+    "bd": 1.5,
+    "pcd": 22.5
+   },
+   "c1Support": "nested",
+   "obPos": "outside",
+   "ringFit": {
+    "delta": 0.03,
+    "mu": 0.12,
+    "E": 70000,
+    "nu": 0.33,
+    "Sy": 240,
+    "boltN": 6,
+    "boltD": 3
+   }
+  },
+  "needle": [
+   {
+    "use": true,
+    "apply": true,
+    "Dw": 2,
+    "Lw": null,
+    "Z": 12,
+    "HRCpin": 60,
+    "HRCbore": 58
+   },
+   {
+    "use": true,
+    "apply": true,
+    "Dw": 1.5,
+    "Lw": null,
+    "Z": 12,
+    "HRCpin": 60,
+    "HRCbore": 58
+   }
+  ],
+  "verify": {
+   "feaKcar": [
+    null,
+    null
+   ],
+   "feaSigmaF": null,
+   "testT": 28,
+   "testNote": "시험성적서 정격 (RDP-RH065 9N)"
+  },
+  "anim": {
+   "rpm": 1000,
+   "slow": 0.02
+  },
+  "mc": {
+   "samples": 200,
+   "utilization": 0.7
+  },
+  "bolts": {
+   "grade": 12.9,
+   "mu": 0.12,
+   "util": 0.7
+  },
+  "thermal": {
+   "Tamb": 25,
+   "h": 12,
+   "duty": 0.5
+  },
+  "review": {
+   "by": "",
+   "date": "",
+   "status": "draft",
+   "note": ""
+  },
+  "dfm": {
+   "qty": 250,
+   "rate": 60000,
+   "steel": 3000,
+   "alu": 7000,
+   "ht": 8000,
+   "proc": {
+    "sun": "hob",
+    "planet": "hob",
+    "ring": "shape",
+    "carrier": "mill",
+    "housing": "turn",
+    "pin": "buy"
+   }
+  },
+  "meta": {
+   "client": "성오로보틱스",
+   "requester": "박성오",
+   "date": "2026-11-23",
+   "qty": 250,
+   "cost": 250000
+  },
+  "view": {},
+  "options": {
+   "pin": {
+    "on": true,
+    "lock": false
+   },
+   "cover": {
+    "on": true,
+    "lock": false
+   },
+   "ocover": {
+    "on": true,
+    "lock": false
+   },
+   "oshaft": {
+    "on": true,
+    "lock": false
+   },
+   "housing": {
+    "on": true,
+    "lock": false
+   },
+   "pbrg": {
+    "on": true,
+    "lock": false
+   },
+   "obrg": {
+    "on": true,
+    "lock": false
+   },
+   "s2brg": {
+    "on": true,
+    "lock": false
+   },
+   "s1brg": {
+    "on": true,
+    "lock": false
+   }
+  }
+ }
+}
