@@ -13,7 +13,7 @@
   const chk = (R, name) => st(R).map(s => s.geo.checks.find(c => c.k === name)).filter(Boolean);
   const chkVal = (R, name, d = 2) => chk(R, name).map((c, i) => `${i + 1}단 ${typeof c.v === 'number' ? f(c.v, d) : c.v}`).join(' · ');
   const chkOk = (R, ...names) => { const cs = names.flatMap(n => chk(R, n)); return cs.length ? cs.every(c => c.ok) : null; };
-  const vd = (R, k) => R?.verdict?.find(x => x.k === k);
+  const vd = (R, k) => R?.verdict?.find(x => (x.id || x.k) === k);
   const vdOk = (R, ...ks) => { const xs = ks.map(k => vd(R, k)).filter(Boolean); return xs.length ? xs.every(x => x.ok) : null; };
   const vdVal = (R, k) => { const x = vd(R, k); return x ? (x.unit === 'h' ? f(x.value, 0) + ' h' : f(x.value, x.unit === '%' ? 1 : 2) + (x.unit ? ' ' + x.unit : '')) : null; };
   const rows = R => R?.rated?.rows || [];
@@ -62,7 +62,7 @@
       ['4-4', '내접 간섭 (트로코이드)', 'calc', 's4', R => chkVal(R, '내접 인볼류트 간섭 여유', 3), R => chkOk(R, '내접 인볼류트 간섭 여유', '이끝·이뿌리 최소 간극 (mm)')],
       ['4-5', '정밀도 등급 ISO 1328', 'in', 's5', (R, D) => D.stages.map(s => `${s.grade}급`).join(' / ')],
       ['4-6', '치형·리드 수정', 'in', 's5', (R, D) => D.stages.map(s => `크라우닝 ${s.mod?.crown ?? 0} µm`).join(' / ')],
-      ['4-7', '백래시·공차', 'calc', 's5', R => `출력 ${f(R.backlash?.arcmin, 1)} arcmin`],
+      ['4-7', '백래시·공차', 'calc', 's5', R => `출력 최대 ${f(R.backlash?.range[1], 1)} arcmin`, R => R.backlash?.ok],
     ], gate: ['치형 경고 없음', R => st(R).length ? st(R).every(s => !s.geo.warns.length) : null] },
     { n: 5, name: '하중계수·기어 강도', views: ['s7', 's8'], items: [
       ['5-1', '단별 토크·상대 회전수', 'calc', 's7', R => rs(R).map((s, i) => `${i + 1}단 캐리어 기준 ${f(s.rel, 0)} rpm`).join(' · ')],
@@ -90,12 +90,12 @@
     { n: 7, name: '베어링', views: ['s9'], items: [
       ['7-1', '유성 베어링 방식', 'in', 's9', (R, D) => D.stages.map(s => s.bearing.name).join(' / ')],
       ['7-2', '니들 Dw·Lw·Z', 'none', 's9'],
-      ['7-3', '유성 L10·s0', 'calc', 's9', R => vdVal(R, '유성 베어링 L10 (스펙트럼)'), R => vdOk(R, '유성 베어링 L10 (스펙트럼)', '유성 베어링 정적 s0 (피크)')],
+      ['7-3', '유성 L10·s0', 'calc', 's9', R => vdVal(R, '유성 베어링 L10 (스펙트럼)'), R => vdOk(R, '유성 베어링 L10 (스펙트럼)', '유성 베어링 정적 s0 (최저)')],
       ['7-4', '썬 지지 베어링', 'in', 's7', (R, D) => (D.loads.sunSupport || []).map((s, i) => `S${i + 1} Ø${s.od}×${s.id}`).join(' · ')],
       ['7-5', '출력 dp·Dw·Z', 'in', 's9', (R, D) => `dp ${D.outBearing.dp} · Dw ${D.outBearing.Dw} · Z ${D.outBearing.Z}`],
-      ['7-6', '출력 L10·모멘트 강성', 'calc', 's9', R => vdVal(R, '출력 베어링 L10'), R => vdOk(R, '출력 베어링 L10', '출력 베어링 정적 s0 (피크)', '출력 베어링 롤러 접촉 s0 (피크)')],
+      ['7-6', '출력 L10·모멘트 강성', 'calc', 's9', R => vdVal(R, '출력 베어링 L10'), R => vdOk(R, '출력 베어링 L10', '출력 베어링 정적 s0 (최저)', '출력 베어링 롤러 접촉 s0 (최저)')],
       ['7-7', '축방향 유격·예압', 'in', 's9', (R, D) => `예압 ${D.outBearing.preload ?? 0} µm`],
-    ], gate: ['전 베어링 수명 통과', R => vdOk(R, '유성 베어링 L10 (스펙트럼)', '유성 베어링 정적 s0 (피크)', '출력 베어링 L10', '출력 베어링 정적 s0 (피크)', '출력 베어링 롤러 접촉 s0 (피크)')] },
+    ], gate: ['전 베어링 수명 통과', R => vdOk(R, '유성 베어링 L10 (스펙트럼)', '유성 베어링 정적 s0 (최저)', '출력 베어링 L10', '출력 베어링 정적 s0 (최저)', '출력 베어링 롤러 접촉 s0 (최저)')] },
     { n: 8, name: '하우징·체결', views: ['shous'], items: [
       ['8-1', '하우징 벽 두께', 'in', 'shous', (R, D) => `${D.housing?.wall ?? '자동'} mm`],
       ['8-2', '링 고정 (압입·볼트)', 'none', 'shous'],
@@ -117,7 +117,7 @@
       ['10-1', '정격토크 (최소값)', 'calc', 'overview', (R, D) => `${f(R.reducerCap, 2)} N·m (목표 ${D.req.Trated})`, (R, D) => R.reducerCap >= D.req.Trated],
       ['10-2', '스펙트럼 수명', 'calc', 's8', R => vdVal(R, '부하 스펙트럼 수명 (기어)'), R => vdOk(R, '부하 스펙트럼 수명 (기어)')],
       ['10-3', '비틀림 강성', 'calc', 's10', R => `${f(R.stiffness?.NmPerArcmin, 1)} N·m/arcmin`],
-      ['10-4', '백래시·로스트 모션', 'calc', 's10', R => vdVal(R, '출력 백래시 (추정)'), R => vdOk(R, '출력 백래시 (추정)')],
+      ['10-4', '백래시·로스트 모션', 'calc', 's10', R => `${f(R.backlash?.range[1], 2)} arcmin`, R => R.backlash?.ok],
       ['10-5', '효율 (치합·베어링·실)', 'calc', 's10', R => vdVal(R, '효율 (정격, 추정)'), R => vdOk(R, '효율 (정격, 추정)')],
       ['10-6', '발열·온도', 'in', 'smat', (R, D) => `운전 온도 ${D.lube.temp} °C 가정 · 열평형 계산 없음`],
       ['10-7', '중량·관성', 'calc', 'overview', (R, D, X) => X?.mass ? `약 ${f(X.mass, 0)} g` : null],

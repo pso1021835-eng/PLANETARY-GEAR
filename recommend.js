@@ -47,27 +47,54 @@
   // ring coefficient. Shared stages must use the same physical ring.
   const ringGrid = [0, .1, -.1, .2, -.2, .3, -.3, .4, -.4, .5, -.5];
   const sumGrid = [0, ...Array.from({length:20}, (_, i) => [(i+1)/20, -(i+1)/20]).flat()];
+  function geometryFailures(geo) {
+    const failures = geo.checks.filter(c => !c.ok && !c.k.includes('ε')).map(c => c.k);
+    return [...new Set([...geo.errors, ...failures])];
+  }
+  function profileAtRing(E, st, xr, reject) {
+    for (const sum of sumGrid) {
+      const xp = xr - E.ringShiftOffset(st, sum), xs = sum - xp;
+      if (!Number.isFinite(xp) || Math.max(Math.abs(xs), Math.abs(xp)) > .5000000001) {
+        if (reject) reject(['전위계수 ±0.5 범위']);
+        continue;
+      }
+      const profile = { xs, xp, xr };
+      const geo = E.geometry({ ...st, ...profile });
+      const failures = geometryFailures(geo);
+      if (!failures.length) return { profile, geo };
+      if (reject) reject(failures);
+    }
+    return null;
+  }
   function profileResolver(E, beta) {
     const cache = new Map();
     return (stage, xr) => {
       const key = [stage.s, stage.p, stage.R, stage.n, xr].join('/');
-      if (cache.has(key)) return cache.get(key);
-      const st = { s: stage.s, p: stage.p, r: stage.R, n: stage.n, m: 1, b: 6, alpha: 20, beta };
-      let profile = null;
-      for (const sum of sumGrid) {
-        const xp = xr - E.ringShiftOffset(st, sum), xs = sum - xp;
-        if (!Number.isFinite(xp) || Math.max(Math.abs(xs), Math.abs(xp)) > .5000000001) continue;
-        const geo = E.geometry({ ...st, xs, xp, xr });
-        if (geo.errors.length || geo.parts.some(p => !(p.tipThickness >= .4))) continue;
-        if (!geo.checks.find(check => check.k === '외접 언더컷')?.ok) continue;
-        const gap = 2 * geo.meshes[0].center * Math.sin(Math.PI / st.n) - geo.parts[1].da;
-        if (!(gap >= .5)) continue;
-        profile = { xs, xp, xr };
-        break;
+      if (!cache.has(key)) {
+        const st = { s: stage.s, p: stage.p, r: stage.R, n: stage.n, m: 1, b: 6, alpha: 20, beta };
+        cache.set(key, profileAtRing(E, st, xr)?.profile || null);
       }
-      cache.set(key, profile);
-      return profile;
+      return cache.get(key);
     };
+  }
+  // Fixed single-stage tooth set. Return one passing profile per ring-grid point.
+  function inspectTeeth(E, st, allowShift) {
+    const reasons = new Map(), candidates = [];
+    const reject = keys => keys.forEach(k => reasons.set(k, (reasons.get(k) || 0) + 1));
+    const zero = E.geometry({ ...st, xs: 0, xp: 0, xr: 0 });
+    const phase = (st.s + st.r) / st.n;
+    if (!zero.meshes.length || !Number.isInteger(phase)) reject(zero.errors);
+    else if (allowShift) {
+      for (const xr of ringGrid) {
+        const candidate = profileAtRing(E, st, xr, reject);
+        if (candidate) candidates.push(candidate);
+      }
+    } else {
+      const failures = geometryFailures(zero);
+      if (failures.length) reject(failures);
+      else candidates.push({ profile: { xs: 0, xp: 0, xr: 0 }, geo: zero });
+    }
+    return { ratio: 1 + st.r / st.s, phase, candidates, reasons: [...reasons], zero };
   }
 
   // ---- 간이 허용 토크 (그 단 캐리어 토크, N·m): 후보를 줄이는 데만 쓴다
@@ -253,6 +280,10 @@
     if (env.H > spec.H + 0.05) return { ...row, ok: false, why: `높이 ${env.H.toFixed(1)} > ${spec.H} mm` };
     const r = E.analyze(D);
     if (r.errors?.length) return { ...row, ok: false, why: r.errors[0] };
+    for (const stage of r.ctx.stages) {
+      const failures = geometryFailures(stage.geo);
+      if (failures.length) return { ...row, ok: false, why: `${stage.i + 1}단 ${failures.join(' · ')}` };
+    }
     // 단별 허용 토크: 그 단의 기어(치면·치근)와 유성 베어링 중 작은 값. 출력축 기준으로 구한 뒤 그 단 캐리어 토크도 함께
     const op = { rpm: D.req.rpm, cycles: E.cyclesFor(D.req.lifeH) };
     const after = i => r.ctx.stages.slice(i + 1).reduce((v, s) => v * s.geo.ratio, 1);
@@ -301,7 +332,7 @@
     return { res, total: sl.total, counts: sl.counts, checked: sl.list.length };
   }
 
-  const api = { ringRange, stageOptions, candidates, proxy, build, envelope, evaluateOne, shortlist, run, runSync };
+  const api = { inspectTeeth, ringRange, stageOptions, candidates, proxy, build, envelope, evaluateOne, shortlist, run, runSync };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PGDRecommend = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

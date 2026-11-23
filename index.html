@@ -498,6 +498,7 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
  <main id="main"></main>
 </div>
 <aside class="verdict" id="verdict" aria-label="판정"></aside>
+<dialog id="torqueTrace" class="rec" aria-labelledby="traceTitle"><h3 id="traceTitle">허용토크 · 지배 부품</h3><div id="traceBody"></div><form method="dialog"><button type="button" class="btn" id="traceSave">현재안을 비교 기준으로 저장</button> <button class="btn">닫기</button></form></dialog>
 <dialog id="dlg"><form method="dialog">
  <h3 id="dlgTitle" style="margin-top:0"></h3>
  <textarea id="dlgText" spellcheck="false"></textarea>
@@ -531,21 +532,27 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
   <div class="f">구성<span class="rec-ck" id="rModes"><label><input type="checkbox" value="one" checked>1단</label><label><input type="checkbox" value="shared" checked>2단 링 공유</label><label><input type="checkbox" value="sep" checked>2단 링 분리</label></span></div>
  </div>
  <p class="note">편차 0%는 목표 감속비에 일치하는 조합을 검색합니다. 유성 등간격 위상 조건은 모든 후보에 적용합니다. 치폭을 비우면 최대 높이에 맞춰 자동 배분합니다. 간이 강도 상위 후보를 정밀 계산해 허용 토크 순으로 표시합니다. 핀·베어링·캐리어·하우징 치수는 예제 설계에서 환산한 초안입니다.</p>
+ <details id="toothTrial"><summary>지정 잇수 조합 검토 (단독 1단)</summary>
+  <div class="grid"><label class="f">선 잇수 S<input type="number" min="1" step="1" id="trialS"></label><label class="f">유성 잇수 P<input type="number" min="1" step="1" id="trialP"></label><label class="f">링 잇수 R<input type="number" min="1" step="1" id="trialR"></label><label class="f">유성 개수<input type="number" min="2" step="1" id="trialN"></label>
+  <label class="f">치직각 모듈 mm<input type="number" step="any" id="trialM"></label><label class="f">치폭 mm<input type="number" step="any" id="trialB"></label><label class="f">치직각 압력각 °<input type="number" step="any" id="trialA"></label></div>
+  <p class="note">위 비틀림각과 전위 조합 설정을 사용합니다. 링 고정 · 선 입력 · 캐리어 출력.</p>
+  <button class="btn" type="button" id="trialGo">치합 검토</button><div id="trialOut" aria-live="polite"></div></details>
  <div id="recOut"></div>
  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn" value="cancel">닫기</button><button class="btn primary" id="recGo" type="button">계산</button></div>
 </form></dialog>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="carrier-geometry.js?v=pr28-1"></script>
 <script src="bearings.js?v=brg-1"></script>
-<script src="engine.js?v=pr49-1"></script>
-<script src="viewer3d.js?v=brg-1"></script>
-<script src="recommend.js?v=pr49-1"></script>
+<script src="engine.js?v=design-review-1"></script>
+<script src="viewer3d.js?v=design-review-1"></script>
+<script src="recommend.js?v=design-review-1"></script>
 <script src="drawings.js?v=pr19-1"></script>
-<script src="checks.js?v=shift-gear-1"></script>
-<script src="process.js?v=pr26-1"></script>
+<script src="checks.js?v=design-review-1"></script>
+<script src="process.js?v=design-review-1"></script>
 <script src="map.js?v=pr41-1"></script>
-<script src="items.js?v=brg-1"></script>
+<script src="items.js?v=design-review-1"></script>
 <script src="groups.js?v=pr34-1"></script>
-<script defer src="app.js?v=brg-1"></script>
+<script src="analysis-jobs.js?v=1"></script>
+<script defer src="app.js?v=design-review-1"></script>
 </body>
 </html>

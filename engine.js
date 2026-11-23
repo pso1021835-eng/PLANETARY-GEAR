@@ -558,8 +558,11 @@
   function evaluate(ctx, op) {
     const D = ctx.D, rows = [], stageOut = [];
     const smp = op.sample || ctx.idealSample || null;   // explicit specimen, else the ideal part (ideal basis), else tolerance limits
-    let Tin = op.Tout / ctx.ratio, nIn = op.rpm || 0;
-    const obr = D.outBearing?.Z ? rollerModel(D, Math.max(0, op.Tout / D.req.Trated)) : null;
+    // Direction (sign of torque and speed) selects the loaded flank and the rotation sense; stresses, cycles and the
+    // speed-dependent Kv use magnitudes. op.Tout < 0 → coast flank (역방향 하중 치면).
+    const flank = op.Tout < 0 ? 'coast' : 'drive';
+    let Tin = Math.abs(op.Tout) / ctx.ratio, nIn = op.rpm || 0;
+    const obr = D.outBearing?.Z ? rollerModel(D, Math.abs(op.Tout) / D.req.Trated) : null;
     for (const stg of ctx.stages) {
       const { st, geo, mats } = stg, ratio = geo.ratio, nc = nIn / ratio, rel = nIn - nc;
       const sun = geo.parts[0], planet = geo.parts[1];
@@ -584,7 +587,7 @@
         const pitch = (sample?.pitch?.[j] ?? Math.max(tl[0].pitch, tl[1].pitch)) * Math.cos(geo.at);
         const profile = sample?.profile?.[j] ?? Math.max(tl[0].profileForm, tl[1].profileForm);
         let dyn = { Kv: 1, region: '정적' };
-        if (!op.static && nIn > 0) {
+        if (!op.static && nIn !== 0) {
           const yp = (runin(ma[0], pitch, v) + runin(ma[1], pitch, v)) / 2, yf = (runin(ma[0], profile, v) + runin(ma[1], profile, v)) / 2;
           const Bp = k.cp * Math.max(0, pitch - yp) / line, Bf = k.cp * Math.max(0, profile - yf) / line;
           // ISO 6336-1 method B for planetary sets: sun–planet uses the reduced mass of sun + planets, planet–ring the planet
@@ -686,7 +689,7 @@
       stageOut.push({ i: stg.i, meshK, car, obr: lastStage ? obr : null, Tin, Tout: Tin * ratio, nIn, nc, rel, Ft, Kg, KgSrc: kg.src, KgNote: kg.note, kpath, ktan, pin, pinForce, planetRel: Math.abs(rel) * sun.z / planet.z });
       Tin *= ratio; nIn = nc;
     }
-    return { rows, stages: stageOut };
+    return { rows, stages: stageOut, flank, Tout: op.Tout, rpm: op.rpm || 0 };
   }
 
   const minSafety = (res, t, stage) => Math.min(...res.rows.filter(r => !stage || r.stage === stage).map(r => Math.min(r.SH / t.SH, r.SF / t.SF)));
@@ -716,31 +719,68 @@
   }
 
   // ------------------------------------------------------------ duty spectrum (Miner) — ISO 6336-6 style
+  // Duty level speed mode: 'rated' = 정격 rpm 사용, 'set' = 지정 rpm(부호 = 회전 방향), 'stop' = 0 rpm 정지(유지 토크).
+  // Legacy pgd/1 levels have no mode: rpm 0 meant "rated rpm", any other rpm a set speed.
+  function dutyMode(l) { return l.mode === 'rated' || l.mode === 'set' || l.mode === 'stop' ? l.mode : (l.rpm ? 'set' : 'rated'); }
+  // All levels with time > 0 (including idle and stop levels) normalised by total elapsed time. T and rpm keep their sign.
+  // extK: output-bearing external load as a fraction of D.req.ext — l.ext (%) if given, else |torque| / 100.
+  function dutyLevels(D) {
+    const all = (D.req.duty || []).filter(l => l.time > 0), totalT = all.reduce((s, l) => s + l.time, 0) || 1;
+    return all.map(l => {
+      const mode = dutyMode(l), rpm = mode === 'stop' ? 0 : mode === 'set' ? (+l.rpm || 0) : D.req.rpm;
+      const torque = +l.torque || 0, frac = l.time / totalT;
+      return { src: l, mode, rpm, torque, T: D.req.Trated * torque / 100, frac, hours: D.req.lifeH * frac,
+        extK: (l.ext != null && l.ext !== '' && isFinite(+l.ext) ? Math.abs(+l.ext) : Math.abs(torque)) / 100,
+        rotating: rpm !== 0, loaded: torque !== 0 };
+    });
+  }
+  // kinematics only (no load): input/carrier/relative speeds per stage for an input rpm (signed)
+  // pgd/1 files saved before duty modes existed: fix each level's meaning explicitly (rpm 0 → 정격 rpm 사용)
+  function migrateDuty(d) { (d?.req?.duty || []).forEach(l => { if (!l.mode) l.mode = dutyMode(l); }); return d; }
+  function stageSpeeds(ctx, rpm) {
+    let nIn = rpm || 0;
+    return ctx.stages.map(stg => { const g = stg.geo, nc = nIn / g.ratio, rel = nIn - nc, o = { nIn, nc, rel, planetRel: Math.abs(rel) * g.parts[0].z / g.parts[1].z }; nIn = nc; return o; });
+  }
   function spectrumDamage(ctx, D, sample) {
-    const levels = D.req.duty.filter(l => l.time > 0 && l.torque > 0);
-    const totalT = levels.reduce((s, l) => s + l.time, 0);
+    const levels = dutyLevels(D);
     const hours = D.req.lifeH;
     const parts = {};
     for (const l of levels) {
-      const T = D.req.Trated * l.torque / 100, h = hours * l.time / totalT, rpm = l.rpm || D.req.rpm;
-      const res = evaluate(ctx, { Tout: T, rpm, lifeOff: false, cycles: () => 1e12, sample });
+      if (!l.rotating || !l.loaded) continue;           // stop (no cycles) or idle (no stress): time only
+      const res = evaluate(ctx, { Tout: l.T, rpm: l.rpm, lifeOff: false, cycles: () => 1e12, sample });
       for (const row of res.rows) {
         const stg = ctx.stages[row.stage - 1];
         const so = res.stages[row.stage - 1];
         const per = [Math.abs(so.rel) * stg.st.n, Math.abs(so.rel) * stg.geo.parts[0].z / stg.geo.parts[1].z, Math.abs(so.nc) * stg.st.n][row.part];
-        const n = per * 60 * h;
+        const n = per * 60 * l.hours;
         const mat = stg.mats[row.part];
         const key = row.id;
-        const P = parts[key] ||= { id: key, stage: row.stage, mesh: row.mesh, part: row.part, partName: row.partName, DH: 0, DF: 0 };
+        const P = parts[key] ||= { id: key, stage: row.stage, mesh: row.mesh, part: row.part, partName: row.partName, DH: 0, DF: 0, flanks: { drive: { DH: 0, DF: 0 }, coast: { DH: 0, DF: 0 } } };
         // Find N where allowable curve × env equals stress × S_target.
         const NH = invAllow(row, mat, 'H', row.H * D.req.SH), NF = invAllow(row, mat, 'F', row.F * D.req.SF);
-        P.DH += n / NH; P.DF += n / NF;
+        // Each flank (and the root fillet on its tension side) accumulates its own damage; the governing flank sets life.
+        const fl = P.flanks[res.flank]; fl.DH += n / NH; fl.DF += n / NF;
       }
     }
+    // Planet (idler): the fillet in tension under the sun mesh in drive is the one in tension under the ring mesh in coast.
+    // Combine those per fillet so a reversing planet root is not counted as two independent half-loaded roots.
+    for (const k in parts) {
+      const p = parts[k]; if (p.part !== 1 || !k.includes('-0-')) continue;
+      const q = parts[k.replace('-0-', '-1-')]; if (!q) continue;
+      const a = p.flanks.drive.DF + q.flanks.coast.DF, b = p.flanks.coast.DF + q.flanks.drive.DF;
+      p.flanks.drive.DF = a; p.flanks.coast.DF = 0; q.flanks.drive.DF = b; q.flanks.coast.DF = 0;
+    }
     const list = Object.values(parts);
-    list.forEach(p => { p.lifeH = hours / Math.max(p.DH, p.DF); p.mode = p.DH >= p.DF ? '치면(피팅)' : '치근(굽힘)'; });
+    list.forEach(p => {
+      const f = p.flanks.coast.DH + p.flanks.coast.DF > 0 && Math.max(p.flanks.coast.DH, p.flanks.coast.DF) > Math.max(p.flanks.drive.DH, p.flanks.drive.DF) ? 'coast' : 'drive';
+      p.DH = Math.max(p.flanks.drive.DH, p.flanks.coast.DH); p.DF = Math.max(p.flanks.drive.DF, p.flanks.coast.DF);
+      p.flank = f; p.lifeH = hours / Math.max(p.DH, p.DF); p.mode = p.DH >= p.DF ? '치면(피팅)' : '치근(굽힘)';
+    });
     list.sort((a, b) => a.lifeH - b.lifeH);
-    return { list, minLife: list[0]?.lifeH ?? NaN, gov: list[0] };
+    const reversal = levels.some(l => l.rotating && l.T < 0) && levels.some(l => l.rotating && l.T > 0);
+    const stopLevels = levels.filter(l => !l.rotating), idleFrac = levels.filter(l => !l.rotating || !l.loaded).reduce((s, l) => s + l.frac, 0);
+    return { list, minLife: list[0]?.lifeH ?? (levels.length ? Infinity : NaN), gov: list[0], reversal, levels, idleFrac, holdT: Math.max(0, ...stopLevels.map(l => Math.abs(l.T))),
+      reverseNote: reversal ? `토크 반전: 정·역 하중 치면(각 치근 인장측)의 손상을 따로 누적해 큰 쪽으로 수명 판정 · 교번 굽힘 YM = 유성 0.7${D.loads.reverse ? ', 썬·링 0.7 (양방향 설정)' : ', 썬·링 1.0 (반전 횟수가 적은 준정적 반전으로 가정 — 매 회전 반전이면 하중 > 양방향 설정)'}` : '' };
   }
   // Inverse of the allowable-stress S-N curve including the interpolated environment factors.
   function invAllow(row, mat, kind, stressNeeded) {
@@ -759,17 +799,26 @@
   }
 
   // ------------------------------------------------------------ bearings, efficiency, backlash, stiffness
+  function worstBearingCase(cases, C0) {
+    const governing = cases.reduce((worst, c) => c.load > worst.load ? c : worst);
+    return { ...governing, s0: C0 / governing.load };
+  }
+  function dutyCase(level, index, load) {
+    return { label: `구간 ${index + 1} · ${level.rotating ? '회전' : '정지 유지'}`, rpm: level.rpm, torque: level.T, load };
+  }
   function bearingLife(ctx, D, sample) {
-    const levels = D.req.duty.filter(l => l.time > 0 && l.torque > 0), totalT = levels.reduce((s, l) => s + l.time, 0);
+    const levels = dutyLevels(D);
+    const forces = levels.map(l => l.loaded ? evaluate(ctx, { Tout: l.T, rpm: l.rpm, static: !l.rotating, cycles: () => 1e8, sample }).stages : null);
     return ctx.stages.map(stg => {
       const br = stg.st.bearing;
       let sumP = 0, sumRev = 0;
-      for (const l of levels) {
-        const T = D.req.Trated * l.torque / 100, rpm = l.rpm || D.req.rpm;
-        const r = evaluate(ctx, { Tout: T, rpm, cycles: () => 1e8, sample });
-        const so = r.stages[stg.i];
-        const P = so.pinForce / Math.max(1, br.count || 1);
-        const rev = so.planetRel * 60 * D.req.lifeH * l.time / totalT;
+      const count = Math.max(1, br.count || 1);
+      const dutyCases = levels.map((l, i) => dutyCase(l, D.req.duty.indexOf(l.src), forces[i] ? forces[i][stg.i].pinForce / count : 0));
+      for (const [i, l] of levels.entries()) {
+        if (!l.rotating) continue;
+        const sp = stageSpeeds(ctx, l.rpm)[stg.i];           // |planet speed| — forward and reverse revolutions add
+        const P = dutyCases[i].load;
+        const rev = sp.planetRel * 60 * l.hours;
         sumP += P ** (10 / 3) * rev; sumRev += rev;
       }
       const Peq = (sumP / Math.max(sumRev, 1e-9)) ** (3 / 10);
@@ -780,6 +829,8 @@
       const revPerH = sumRev / D.req.lifeH;
       const L10h = L10rev / revPerH;
       return { stage: stg.i + 1, name: br.name, C: br.C, C0: br.C0, Peq, L10h, L50h: L10h * (Math.log(.5) / Math.log(.9)) ** (1 / 1.5), planetRpm: rr.planetRel,
+        governing: worstBearingCase([{ label: '피크', rpm: 0, torque: D.req.Tpeak, load: pk.pinForce / count },
+          { label: '비상', rpm: 0, torque: D.req.Temerg, load: em.pinForce / count }, ...dutyCases], br.C0),
         s0peak: br.C0 / (pk.pinForce / Math.max(1, br.count || 1)), s0emerg: br.C0 / (em.pinForce / Math.max(1, br.count || 1)),
         pinSigmaPeak: pk.pin.sigma, pinSigmaEmerg: em.pin.sigma, pinAllow: stg.st.pin.allow, pinForceRated: rr.pinForce };
     });
@@ -935,24 +986,30 @@
   // ------------------------------------------------------------ output main bearing (cross-roller style equivalent load)
   function outputBearing(ctx, D) {
     const ob = D.outBearing, ext = D.req.ext || { Fr: 0, Fa: 0, M: 0 };
-    const levels = D.req.duty.filter(l => l.time > 0 && l.torque > 0), totalT = levels.reduce((s, l) => s + l.time, 0) || 1;
+    const levels = dutyLevels(D);
     const p = ob.type === 'ball' ? 3 : 10 / 3;
     const Pof = (Fr, Fa, M) => { const Fre = Fr + 2000 * M / ob.dp; const ratio = Fa / Math.max(Fre, 1e-9); const [X, Y] = ratio <= 1.5 ? [1, .45] : [.67, .67]; return X * Fre + Y * Fa; };
-    // loads assumed proportional to the torque level of each spectrum segment (link loads scale with joint effort)
+    // external load per level: l.ext % of D.req.ext if entered, else |torque| % (link loads scale with joint effort).
+    // Revolutions use |output speed| so forward and reverse running both count; stop levels add no revolutions.
     let sumP = 0, sumRev = 0;
     for (const l of levels) {
-      const k = l.torque / 100, rpmOut = (l.rpm || D.req.rpm) / ctx.ratio;
+      if (!l.rotating) continue;
+      const k = l.extK, rpmOut = Math.abs(l.rpm) / ctx.ratio;
       const P = Pof(ext.Fr * k, ext.Fa * k, ext.M * k);
-      const rev = rpmOut * 60 * D.req.lifeH * l.time / totalT;
+      const rev = rpmOut * 60 * l.hours;
       sumP += P ** p * rev; sumRev += rev;
     }
     const Peq = (sumP / Math.max(sumRev, 1e-9)) ** (1 / p);
     const L10rev = (ob.C / Peq) ** p * 1e6, revPerH = sumRev / D.req.lifeH;
-    const kp = D.req.Tpeak / D.req.Trated, ke = D.req.Temerg / D.req.Trated;
+    const kp = Math.abs(D.req.Tpeak / D.req.Trated), ke = Math.abs(D.req.Temerg / D.req.Trated);
     const P0 = k => ext.Fr * k + 2000 * ext.M * k / ob.dp + .44 * ext.Fa * k;
-    return { name: ob.name, type: ob.type, C: ob.C, C0: ob.C0, dp: ob.dp, Peq, L10h: L10rev / Math.max(revPerH, 1e-12), outRpm: D.req.rpm / ctx.ratio,
+    const cases = [{ label: '피크', rpm: 0, torque: D.req.Tpeak, scale: kp, load: P0(kp) },
+      { label: '비상', rpm: 0, torque: D.req.Temerg, scale: ke, load: P0(ke) },
+      ...levels.map(l => ({ ...dutyCase(l, D.req.duty.indexOf(l.src), P0(l.extK)), scale: l.extK }))];
+    const governing = worstBearingCase(cases, ob.C0);
+    return { governing, name: ob.name, type: ob.type, C: ob.C, C0: ob.C0, dp: ob.dp, Peq, L10h: L10rev / Math.max(revPerH, 1e-12), outRpm: D.req.rpm / ctx.ratio,
       s0peak: ob.C0 / P0(kp), s0emerg: ob.C0 / P0(ke), tiltRated: pos(ob.Km) ? ext.M / ob.Km : NaN, tiltPeak: pos(ob.Km) ? ext.M * kp / ob.Km : NaN, ext,
-      roll: ob.Z ? { rated: rollerModel(D, 1), peak: rollerModel(D, kp), emerg: rollerModel(D, ke) } : null };
+      roll: ob.Z ? { governing: rollerModel(D, governing.scale), rated: rollerModel(D, 1), peak: rollerModel(D, kp), emerg: rollerModel(D, ke) } : null };
   }
   // ------------------------------------------------------------ carrier & planet pin
   function carrierPin(ctx, D) {
@@ -1036,7 +1093,7 @@
     const k = Math.cos(g.at) / Math.cos(ms.aw) / Math.cos(g.br), da = (+((stg.st.aTol || [])[j]) || 0) / 1000, ta = 2 * da * Math.tan(ms.aw);
     const sgn = ms.internal ? -1 : 1;
     const jmin = -(A1[0] + A2[0]) * k - ta, jmax = -(A1[1] + A2[1]) * k + ta;   // centre tolerance ± (external: +Δa opens; internal: −Δa opens)
-    return [Math.max(0, jmin) * 1000, jmax * 1000, sgn];
+    return [jmin * 1000, jmax * 1000, sgn];
   }
   function backlash(ctx, D) {
     // circumferential backlash per mesh (µm) → carrier free play at pin radius, propagated to output.
@@ -1046,14 +1103,15 @@
       const a = stg.geo.meshes[0].center, fromAsn = stg.st.blMode === 'asn';
       const rng = fromAsn ? [0, 1].map(j => meshBacklashFromAsn(stg, j)) : null;
       const j = fromAsn ? rng.map(r => (r[0] + r[1]) / 2) : (stg.st.jt || [0, 0]);
-      const toRad = jj => ((jj[0] + jj[1]) / 2) / 1000 / a;
+      const toRad = jj => ((Math.max(0, jj[0]) + Math.max(0, jj[1])) / 2) / 1000 / a;
       const th = toRad(j), thMin = fromAsn ? toRad(rng.map(r => r[0])) : th, thMax = fromAsn ? toRad(rng.map(r => r[1])) : th;
       out += th / ratioAfter; outMin += thMin / ratioAfter; outMax += thMax / ratioAfter; const rA = ratioAfter; ratioAfter *= stg.geo.ratio;
       const am = v => v * 180 / Math.PI * 60;
       return { stage: stg.i + 1, mode: fromAsn ? 'asn' : 'jt', jt: j, jtRange: rng && rng.map(r => [r[0], r[1]]), arcmin: am(th), arcminOut: am(th / rA), arcminOutRange: [am(thMin / rA), am(thMax / rA)] };
     }).reverse();
     const am = v => v * 180 / Math.PI * 60;
-    return { stages: st, arcmin: am(out), range: [am(outMin), am(outMax)] };
+    const meshMargins = st.flatMap(s => s.jt.map((v, j) => ({ stage: s.stage, mesh: j ? '유성–링' : '선–유성', min: s.jtRange ? s.jtRange[j][0] : v })));
+    return { stages: st, meshMargins, ok: meshMargins.every(m => m.min >= 0) && am(outMax) <= D.req.backlashMax, arcmin: am(out), range: [am(outMin), am(outMax)] };
   }
   function stiffness(ctx, D) {
     // gear-mesh + pin compliance only (housing, carrier, bearings not included) at rated torque
@@ -1118,10 +1176,14 @@
       if (onProgress && i % 10 === 9) onProgress((i + 1) / nSamples);
     }
     const q = (a, p) => { const s = a.filter(Number.isFinite).sort((x, y) => x - y); if (!s.length) return NaN; const k = (s.length - 1) * p, lo = Math.floor(k); return s[lo] + (s[Math.min(lo + 1, s.length - 1)] - s[lo]) * (k - lo); };
-    const pass = lives.filter(l => l >= D.req.lifeH).length / lives.length;
+    const validLife = lives.filter(v => v >= 0).sort((a, b) => a === b ? 0 : a < b ? -1 : 1);
+    const invalid = lives.length - validLife.length;
+    // Empirical inverse CDF. Model no-damage specimens occupy the upper ranks.
+    const lifeRank = p => invalid || !validLife.length ? NaN : validLife[Math.ceil(validLife.length * p) - 1];
+    const pass = invalid || !lives.length ? NaN : lives.filter(l => l >= D.req.lifeH).length / lives.length;
     return {
       n: nSamples, capacity: { p10: q(caps, .1), p50: q(caps, .5), p90: q(caps, .9), mean: caps.filter(Number.isFinite).reduce((s, v) => s + v, 0) / Math.max(1, caps.filter(Number.isFinite).length), all: caps },
-      life: { p10: q(lives, .1), p50: q(lives, .5), p90: q(lives, .9), all: lives },
+      life: { p10: lifeRank(.1), p50: lifeRank(.5), p90: lifeRank(.9), noDamage: lives.filter(v => v === Infinity).length, invalid, all: lives },
       Kg: { p50: q(kgs, .5), p90: q(kgs, .9) }, KHb: { p50: q(khbs, .5), p90: q(khbs, .9) }, passLife: pass
     };
   }
@@ -1169,10 +1231,17 @@
     out.staticCap = capacity(ctx, { rpm: 0, static: true }, stTarget);
     out.peak = evaluate(ctx, { Tout: D.req.Tpeak, rpm: 0, static: true });
     out.emerg = evaluate(ctx, { Tout: D.req.Temerg, rpm: 0, static: true });
-    out.peakS = Math.min(...out.peak.rows.map(r => Math.min(r.SH, r.SF)));
-    out.emergS = Math.min(...out.emerg.rows.map(r => Math.min(r.SH, r.SF)));
+    // Each mesh's SH and SF is checked against its own target (SH vs SHstat, SF vs SFstat) — the same criterion
+    // capacity()/minSafety() uses for the static limit torque, so the peak verdict and staticCap always agree.
+    out.peakCheck = staticCheck(out.peak, stTarget);
+    out.emergCheck = staticCheck(out.emerg, { SH: 1, SF: 1 });
+    out.peakS = out.peakCheck.ratio;      // min over meshes of S / target (≥ 1 = pass)
+    out.emergS = out.emergCheck.ratio;
     out.govStatic = governing(ctx, { rpm: 0, static: true, Tout: Math.max(out.staticCap, 1e-6) }, stTarget);
     out.spectrum = spectrumDamage(ctx, D);
+    if (out.spectrum.reverseNote) out.warns.push(out.spectrum.reverseNote);
+    // stop levels (0 rpm) hold their torque without rotating: no fatigue cycles, but a static check against SHstat/SFstat
+    if (out.spectrum.holdT > 0) { out.hold = evaluate(ctx, { Tout: out.spectrum.holdT, rpm: 0, static: true }); out.holdCheck = staticCheck(out.hold, stTarget); }
     out.bearings = bearingLife(ctx, D);
     out.outBearing = outputBearing(ctx, D);
     out.carrierPin = carrierPin(ctx, D);
@@ -1204,25 +1273,44 @@
     return out;
   }
 
+  // Governing mesh of a static check: smallest S/target over all rows and both modes (H = 접촉, F = 굽힘).
+  function staticCheck(res, t) {
+    let g = null;
+    res.rows.forEach(r => [['H', r.SH, t.SH], ['F', r.SF, t.SF]].forEach(([mode, S, target]) => {
+      const ratio = S / target;
+      if (!g || ratio < g.ratio) g = { ratio, S, target, mode, row: r };
+    }));
+    if (!g) return { ratio: NaN, S: NaN, target: NaN, ok: false, label: '—' };
+    const r = g.row, what = g.mode === 'F' ? '굽힘' : '접촉';
+    return { ...g, ok: g.ratio >= 1, what, where: `${r.stage}단 ${r.mesh} ${r.partName}`, label: `${g.ratio >= 1 ? '지배' : what + ' 미달'} · ${r.stage}단 ${r.mesh} ${r.partName} S${g.mode} ${g.S.toFixed(3)} / 목표 ${g.target}` };
+  }
+
+  const fmtN = v => (+v).toFixed(Math.abs(v) < 10 ? 2 : 1);
   function verdict(D, o) {
     const items = [];
-    const add = (k, value, target, ok, unit, note) => items.push({ k, value, target, ok, unit, note });
+    // id = stable item key (lookups); k = display label (a failing static check names the failure mode: "피크 굽힘 미달")
+    const add = (k, value, target, ok, unit, note, label) => items.push({ id: k, k: label || k, value, target, ok, unit, note });
     add('정격 토크 · 목표 수명 (기어)', o.capacityLife, D.req.Trated, o.capacityLife >= D.req.Trated, 'N·m', `${D.req.lifeH} h · ${D.req.rpm} rpm 일정 운전`);
     add('부하 스펙트럼 수명 (기어)', o.spectrum.minLife, D.req.lifeH, o.spectrum.minLife >= D.req.lifeH, 'h', 'Miner 누적손상');
     const bl = Math.min(...o.bearings.map(b => b.L10h));
     add('유성 베어링 L10 (스펙트럼)', bl, D.req.lifeH, bl >= D.req.lifeH, 'h', 'ISO 281 기본 수명');
-    add('피크 토크 정적 안전율', o.peakS, Math.min(D.req.SHstat, D.req.SFstat), o.peakS >= Math.min(D.req.SHstat, D.req.SFstat), '', `${D.req.Tpeak} N·m`);
-    add('비상 토크 정적 안전율', o.emergS, 1, o.emergS >= 1, '', `${D.req.Temerg} N·m`);
-    const s0 = Math.min(...o.bearings.map(b => b.s0peak));
-    add('유성 베어링 정적 s0 (피크)', s0, D.req.s0, s0 >= D.req.s0, '', 'C0 / P0');
+    { const c = o.peakCheck; add('피크 토크 정적 안전율', c.S, c.target, c.ok, '', `${D.req.Tpeak} N·m · ${c.where} S${c.mode} (SH ≥ ${D.req.SHstat}, SF ≥ ${D.req.SFstat} 각각 판정)`, c.ok ? null : `피크 ${c.what} 미달`); }
+    if (o.holdCheck) { const c = o.holdCheck; add('정지 유지 토크 정적 안전율', c.S, c.target, c.ok, '', `${fmtN(o.spectrum.holdT)} N·m · 0 rpm 정지 구간 · ${c.where} S${c.mode}`, c.ok ? null : `정지 유지 ${c.what} 미달`); }
+    { const c = o.emergCheck; add('비상 토크 정적 안전율', c.S, c.target, c.ok, '', `${D.req.Temerg} N·m · ${c.where} S${c.mode}`, c.ok ? null : `비상 ${c.what} 미달`); }
+    const worst = o.bearings.reduce((a, b) => a.governing.s0 <= b.governing.s0 ? a : b);
+    add('유성 베어링 정적 s0 (최저)', worst.governing.s0, D.req.s0, worst.governing.s0 >= D.req.s0, '', `${worst.stage}단 · ${worst.governing.label} · ${worst.governing.load.toFixed(1)} N`);
     add('출력 베어링 L10', o.outBearing.L10h, D.req.lifeH, o.outBearing.L10h >= D.req.lifeH, 'h', '외부 하중·모멘트 포함');
-    add('출력 베어링 정적 s0 (피크)', o.outBearing.s0peak, D.req.s0, o.outBearing.s0peak >= D.req.s0, '', 'C0 / P0');
-    if (o.outBearing.roll) { const rs = o.outBearing.roll.peak.s0; add('출력 베어링 롤러 접촉 s0 (피크)', rs, D.req.s0, rs >= D.req.s0, '', '롤러 하중분포 · 4000 MPa 기준'); }
+    const ob = o.outBearing.governing;
+    add('출력 베어링 정적 s0 (최저)', ob.s0, D.req.s0, ob.s0 >= D.req.s0, '', `${ob.label} · ${ob.load.toFixed(1)} N`);
+    if (o.outBearing.roll) { const rs = o.outBearing.roll.governing.s0; add('출력 베어링 롤러 접촉 s0 (최저)', rs, D.req.s0, rs >= D.req.s0, '', '롤러 하중분포 · 4000 MPa 기준'); }
     const pinS = Math.min(...o.carrierPin.map(c => Math.min(c.Sbend, c.Spress, c.Sweb)));
     add('유성 핀·캐리어 정적 (피크)', pinS, 1, pinS >= 1, '', '핀 굽힘·구멍 면압·캐리어 기둥 굽힘');
     add('스커핑 안전율 (피크, 섬광온도)', o.lube.SBmin, D.req.SBmin || 1.5, o.lube.SBmin >= (D.req.SBmin || 1.5), '', `운전 ${D.lube.temp} °C · FZG ${D.lube.fzg}`);
 
     add('효율 (정격, 추정)', o.eff.total * 100, D.req.effMin, o.eff.total * 100 >= D.req.effMin, '%', '치합 + 기타 손실 가정');
+    for (const m of o.backlash.meshMargins) {
+      add(`${m.stage}단 ${m.mesh} 최소 백래시`, m.min, 0, m.min >= 0, 'µm', '음수이면 공차 범위에서 조립 간섭 가능');
+    }
     { const asn = o.backlash.stages.some(x => x.mode === 'asn'), bl = asn ? o.backlash.range[1] : o.backlash.arcmin; add(asn ? '출력 백래시 최대 (치두께 공차)' : '출력 백래시 (추정)', bl, D.req.backlashMax, bl <= D.req.backlashMax, 'arcmin', asn ? '치두께 하한 + 중심거리 공차' : '치합 백래시만'); }
     return items;
   }
@@ -1231,7 +1319,7 @@
     const R = [];
     const add = (group, item, value, src, basis) => R.push({ group, item, value, src, basis });
     add('요구', '정격·피크·비상 토크', `${D.req.Trated} / ${D.req.Tpeak} / ${D.req.Temerg} N·m`, '가정', '사용자 입력 · 실제 운전 조건으로 확정 필요');
-    add('요구', '부하 스펙트럼', D.req.duty.map(l => `${l.torque}%×${l.time}%`).join(', '), '가정', '로봇 관절 대표 패턴 예시');
+    add('요구', '부하 스펙트럼', D.req.duty.map(l => { const m = dutyMode(l); return `${l.torque}%×${l.time}%${m === 'stop' ? ' (정지)' : m === 'set' ? ` @${l.rpm} rpm` : ''}`; }).join(', '), '가정', '시간 비율 = 전체 경과 시간 기준 (정지·무부하 구간 포함) · 음수 토크 = 역방향 하중 치면');
     add('하중', 'KA', D.loads.KA, D.loads.KA === 1 ? '모델' : '가정', '스펙트럼에 피크를 포함하므로 1.0');
     const so = o.rated.stages;
     so.forEach(s => add('하중', `${s.i + 1}단 Kγ`, s.Kg.toFixed(3), s.KgSrc, s.KgNote));
@@ -1276,7 +1364,7 @@
     const c = CASES[key]; D.req.case = key; if (!c) return D;
     const T = D.req.Trated;
     Object.assign(D.req, { Tpeak: +(T * c.peak).toFixed(2), Temerg: +(T * c.emerg).toFixed(2), lifeH: c.life, rpm: Math.round(c.outRpm * (ratio || 9)),
-      duty: c.duty.map(([tq, tm]) => ({ torque: tq, time: tm, rpm: 0 })), ext: { Fr: +(c.ext[0] * T).toFixed(1), Fa: +(c.ext[1] * T).toFixed(1), M: +(c.ext[2] * T).toFixed(2) } });
+      duty: c.duty.map(([tq, tm]) => ({ torque: tq, time: tm, rpm: 0, mode: 'rated' })), ext: { Fr: +(c.ext[0] * T).toFixed(1), Fa: +(c.ext[1] * T).toFixed(1), M: +(c.ext[2] * T).toFixed(2) } });
     return D;
   }
   // Basic example = KISSsoft report "HDS_82pi_1stage_common_R2 · Planetary gear set (spur)", ISO 6336:2019.
@@ -1305,7 +1393,7 @@
       anim: { rpm: 3010, slow: 0.02 }
     });
     // report: carrier torque 16.2 N·m, sun 3010 rpm, 100 h, required SH 1.0 / SF 1.4, KA 1.25, Kγ 1.00
-    Object.assign(D.req, { Trated: 16.2, Tpeak: 16.2, Temerg: 16.2, rpm: 3010, lifeH: 100, SH: 1.0, SF: 1.4, ext: { Fr: 0, Fa: 0, M: 0 }, duty: [{ torque: 100, time: 100, rpm: 0 }] });
+    Object.assign(D.req, { Trated: 16.2, Tpeak: 16.2, Temerg: 16.2, rpm: 3010, lifeH: 100, SH: 1.0, SF: 1.4, ext: { Fr: 0, Fa: 0, M: 0 }, duty: [{ torque: 100, time: 100, rpm: 0, mode: 'rated' }] });
     Object.assign(D.loads, { KA: 1.25, kgMode: 'fixed', kgFixed: 1.0, sunSupport: [{ ...D.loads.sunSupport[1], od: 11, id: 0 }] });
     return D;
   }
@@ -1321,7 +1409,7 @@
     return {
       schema: 'pgd/1', name: 'RDP-RH065 (9N) · 중공 확장형 · 도면 기준',
       req: { case: 'custom', ext: { Fr: 135, Fa: 45, M: 7.2 }, Trated: 9, Tpeak: 28, Temerg: 40, rpm: 1000, lifeH: 5000, SH: 1.0, SF: 1.4, SHstat: 1.0, SFstat: 1.2, s0: 1.0, SBmin: 1.5, effMin: 85, backlashMax: 15,
-        duty: [{ torque: 100, time: 20, rpm: 0 }, { torque: 70, time: 30, rpm: 0 }, { torque: 40, time: 40, rpm: 0 }, { torque: 10, time: 10, rpm: 0 }] },
+        duty: [{ torque: 100, time: 20, rpm: 0, mode: 'rated' }, { torque: 70, time: 30, rpm: 0, mode: 'rated' }, { torque: 40, time: 40, rpm: 0, mode: 'rated' }, { torque: 10, time: 10, rpm: 0, mode: 'rated' }] },
       config: { stages: 2, sharedRing: true, floatingSun: false },
       design: { quality: 'MQ' },
       stages: [
@@ -1356,7 +1444,7 @@
     };
   }
 
-  const api = { shiftMap, shiftCandidates, shiftScore, lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, ringTeeth, ringShiftOffset, matchRingShift, sharedStage, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, templateDesign, cyclesFor, spectrumDamage, NAMES };
+  const api = { shiftMap, shiftCandidates, shiftScore, lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, ringTeeth, ringShiftOffset, matchRingShift, sharedStage, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, templateDesign, cyclesFor, spectrumDamage, bearingLife, staticCheck, dutyMode, dutyLevels, migrateDuty, NAMES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PGD = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
