@@ -504,6 +504,16 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
  <p class="note" id="dlgNote"></p>
  <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" value="cancel">닫기</button><button class="btn primary" id="dlgOk" value="ok">확인</button></div>
 </form></dialog>
+<dialog id="obDlg" class="rec"><form method="dialog">
+ <h3 style="margin-top:0">출력 베어링 선택 (크로스 롤러)</h3>
+ <div class="grid" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+  <label class="f">제조사<select id="obMk"></select></label>
+  <label class="f">시리즈<select id="obSr"></select></label>
+  <label class="f">형번<select id="obMd"></select></label>
+ </div>
+ <div id="obInfo"></div>
+ <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button class="btn" value="cancel">닫기</button><button class="btn primary" id="obApply" type="button">적용</button></div>
+</form></dialog>
 <dialog id="recDlg" class="rec"><form method="dialog">
  <h3 style="margin-top:0">추천 제원 생성</h3>
  <div class="grid rec-in">
@@ -526,15 +536,16 @@ nav.rail button.it.on{color:var(--ink);background:var(--soft)}
 </form></dialog>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="carrier-geometry.js?v=pr28-1"></script>
+<script src="bearings.js?v=brg-1"></script>
 <script src="engine.js?v=pr49-1"></script>
-<script src="viewer3d.js?v=pr48-1"></script>
+<script src="viewer3d.js?v=brg-1"></script>
 <script src="recommend.js?v=pr49-1"></script>
 <script src="drawings.js?v=pr19-1"></script>
 <script src="checks.js?v=shift-gear-1"></script>
 <script src="process.js?v=pr26-1"></script>
 <script src="map.js?v=pr41-1"></script>
-<script src="items.js?v=pr47-1"></script>
+<script src="items.js?v=brg-1"></script>
 <script src="groups.js?v=pr34-1"></script>
-<script defer src="app.js?v=pr48-1"></script>
+<script defer src="app.js?v=brg-1"></script>
 </body>
 </html>

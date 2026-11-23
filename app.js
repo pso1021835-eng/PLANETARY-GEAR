@@ -871,6 +871,15 @@ const W = {
       ${R.bearings.map((b, i) => `<tr class="${b.L10h < D.req.lifeH || b.s0peak < D.req.s0 ? 'bad' : ''}"><td>${b.stage}단</td><td>${fmt(b.Peq, 0)}</td><td>${fmtH(b.L10h)}</td><td>${fmtH(b.L50h)}</td><td>${fmt(b.s0peak, 2)}</td><td>${fmt(b.s0emerg, 2)}</td><td>${fmt(b.planetRpm, 0)}</td><td>${fmt(R.bearingCap[i], 1)} N·m</td></tr>`).join('')}</table>
       <p class="note">유성 1개당 반경 하중 = 두 치합 접선력 합 × Kγ × Kv. L50은 와이블 기울기 1.5 가정.</p></div>`;
   },
+  obpick() {
+    const o = D.outBearing || {}, cat = o.d > 0 && o.D > o.d;
+    const row = cat ? `<tr><td>${esc(o.maker || '')}</td><td>${esc(o.series || '')}</td><td><b>${esc(o.model || '')}</b></td><td>${fmt(o.d, 1)}</td><td>${fmt(o.D, 1)}</td><td>${fmt(o.B, 1)}</td><td>${fmt(o.dp, 1)}${o.dpEst ? ' <span class="note">(추정)</span>' : ''}</td><td>${fmt(o.C / 1000, 2)}</td><td>${fmt(o.C0 / 1000, 2)}</td><td>${fmt(o.mass, 3)}</td><td>${fmt(o.r, 2)} <span class="note">(${esc(o.rSrc || '추정')})</span></td><td class="l">${esc(o.status || '')}</td><td class="l note">${esc(o.source || '')}</td></tr>` : '';
+    return `<div class="card scroll"><h3>출력 베어링 형번</h3>
+      <p><button class="btn primary" type="button" id="obPick">베어링 선택</button>${cat ? ' <button class="btn" type="button" id="obClear">카탈로그 선택 해제</button>' : ''}</p>
+      ${cat ? `<table><tr><th>제조사</th><th>시리즈</th><th>형번</th><th>내경 d</th><th>외경 D</th><th>폭 B</th><th>롤러 피치원 dp</th><th>C kN</th><th>C0 kN</th><th>질량 kg</th><th>모서리 R</th><th class="l">상태</th><th class="l">출처</th></tr>${row}</table>
+      <p class="note">3D는 카탈로그 내경·외경·폭으로 내륜·외륜 링을 그리고, 내륜 내경·외륜 외경 삽입부 모서리 R을 표현합니다.${o.holes ? ' 이 형번은 내·외륜 볼트 탭 취부형이며, 취부 구멍 표현은 후순위라 단순 링으로 표시합니다.' : ''} 롤러 지름·개수는 카탈로그에 없어 단면에서 추정합니다.</p>`
+      : '<p class="note">제조사 → 시리즈 → 형번 순으로 고르면 치수·C·C0가 입력되고 3D가 카탈로그 치수로 바뀝니다. 선택 전에는 아래 dp·Dw 입력으로 추정 형상을 그립니다.</p>'}</div>`;
+  },
   ob() {
     const ob = R?.outBearing; if (!ob) return '';
     return `<div class="card scroll"><h3>출력 베어링</h3><table><tr><th>출력 rpm</th><th>Fr / Fa / M (정격)</th><th>등가 하중 Peq N</th><th>L10 h</th><th>s0 피크</th><th>s0 비상</th><th>기울기 정격</th><th>기울기 피크</th></tr>
@@ -933,7 +942,7 @@ const W = {
       <tr><td class="l">링 외경 (하우징 안지름)</td><td>Ø${fmt(L.ringOD, 2)}</td><td class="l note">3-9 링 외경 (빈칸이면 자동 림)</td></tr>
       <tr><td class="l">하우징 몸체 외경</td><td>Ø${fmt(L.housR * 2, 1)}</td><td class="l note">링 외경 + 2 × 벽</td></tr>
       <tr><td class="l">출력부 플랜지 외경</td><td>Ø${fmt(L.flangeR * 2, 1)}</td><td class="l note">크로스 롤러 외륜 + 벽 + 1.5</td></tr>
-      <tr><td class="l">크로스 롤러 내·외륜</td><td>Ø${fmt(L.raceIn * 2, 1)} / Ø${fmt(L.raceOut * 2, 1)}</td><td class="l note">dp ${L.dp} ± 1.1·Dw</td></tr>
+      <tr><td class="l">크로스 롤러 내·외륜</td><td>Ø${fmt(L.raceIn * 2, 1)} / Ø${fmt(L.raceOut * 2, 1)}</td><td class="l note">${L.cat ? `카탈로그 ${esc(D.outBearing.model || '')} (d × D × B)` : `dp ${L.dp} ± 1.1·Dw`}</td></tr>
       <tr><td class="l">중공 지름</td><td>Ø${fmt(L.hollowR * 2, 1)}</td><td class="l note">1단 썬 보어 − 3.6</td></tr>
       <tr><td class="l">전체 길이</td><td>${fmt(L.zFlange[1] - L.zIn, 1)} mm</td><td class="l note">캐리어·핀·보스 축방향 범위 반영</td></tr>
       <tr><td class="l">하우징 · 커버 · 플랜지 중량</td><td>${fmt(w('housing')?.mass * 1000, 0)} · ${fmt(w('cover')?.mass * 1000, 0)} · ${fmt(w('oflange')?.mass * 1000, 0)} g</td><td class="l note">AL6061 2.7, 강 7.85 g/cm³</td></tr></table></div>`;
@@ -969,7 +978,45 @@ ${p.ok ? `εα ${fmt(p.ea[0], 2)} / ${fmt(p.ea[1], 2)} · 미끄럼률 S–P ${f
     return `<div class="smaps">${maps.map(card).join('')}</div>`;
   },
 };
+// 출력 베어링 카탈로그 선택 (제조사 → 시리즈 → 형번)
+const BRG = () => globalThis.PGDBearings?.crossRoller || [];
+const uniq = a => [...new Set(a)];
+function obInfoHTML(b) {
+  if (!b) return '';
+  const dp = b.dp ?? (b.d + b.D) / 2;
+  return `<div class="scroll"><table><tr><th>제조사</th><th>시리즈</th><th>형번</th><th>내경 d mm</th><th>외경 D mm</th><th>폭 B mm</th><th>롤러 피치원 dp mm</th><th>동정격 C kN</th><th>정정격 C0 kN</th><th>질량 kg</th><th class="l">상태</th><th class="l">출처</th></tr>
+    <tr><td>${esc(b.maker)}</td><td>${esc(b.series)}</td><td><b>${esc(b.model)}</b></td><td>${fmt(b.d, 1)}</td><td>${fmt(b.D, 1)}</td><td>${fmt(b.B, 1)}</td><td>${fmt(dp, 1)}${b.dp == null ? ' (추정)' : ''}</td><td>${fmt(b.C / 1000, 2)}</td><td>${fmt(b.C0 / 1000, 2)}</td><td>${fmt(b.mass, 3)}</td><td class="l">${esc(b.status)}</td><td class="l note">${esc(b.source)}</td></tr></table></div>
+    <p class="note">모서리 R ${fmt(b.r, 2)} mm (${esc(b.rSrc)})${b.dp == null ? ' · dp 미공개 → (d + D) / 2' : ''}${b.holes ? ' · 볼트 탭 취부형 (3D 취부 구멍은 후순위)' : ''} · 현재 링기어 PCD 대비 dp ${(() => { try { const L = R?.ctx?.stages; const g = L?.[L.length - 1]?.geo.parts[2]; return g ? (dp / g.d * 100 - 100).toFixed(1) + ' %' : '—'; } catch (e) { return '—'; } })()}</p>`;
+}
+function openObDlg() {
+  const dl = $('#obDlg'), mk = $('#obMk'), sr = $('#obSr'), md = $('#obMd'), cur = D.outBearing || {};
+  const opts = (sel, list, v) => { sel.innerHTML = list.map(x => `<option value="${esc(x)}"${x === v ? ' selected' : ''}>${esc(x)}</option>`).join(''); };
+  const pick = () => BRG().find(b => b.maker === mk.value && b.series === sr.value && b.model === md.value);
+  const fillMd = v => { const L = BRG().filter(b => b.maker === mk.value && b.series === sr.value); md.innerHTML = L.map(b => `<option value="${esc(b.model)}"${b.model === v ? ' selected' : ''}>${esc(b.model)} — Ø${b.d} × Ø${b.D} × ${b.B}</option>`).join(''); $('#obInfo').innerHTML = obInfoHTML(pick()); };
+  const fillSr = (v, m) => { opts(sr, uniq(BRG().filter(b => b.maker === mk.value).map(b => b.series)), v); fillMd(m); };
+  opts(mk, uniq(BRG().map(b => b.maker)), cur.maker); fillSr(cur.series, cur.model);
+  mk.onchange = () => fillSr(); sr.onchange = () => fillMd(); md.onchange = () => { $('#obInfo').innerHTML = obInfoHTML(pick()); };
+  $('#obApply').onclick = () => { const b = pick(); if (!b) return; applyBearing(b); dl.close(); };
+  dl.showModal();
+}
+function applyBearing(b) {
+  const o = D.outBearing || (D.outBearing = {}), dp = b.dp ?? (b.d + b.D) / 2, sec = (b.D - b.d) / 2;
+  // 롤러 지름·개수는 카탈로그에 없음: 단면 높이·폭에서 추정 (Z > 0으로 분포 계산을 켠 경우에만 계산에 쓰임)
+  const Dw = Math.max(.5, Math.round(Math.min(sec * .3, b.B * .7) * 2) / 2);
+  Object.assign(o, { name: `${b.maker} ${b.model}`, type: 'roller', maker: b.maker, series: b.series, model: b.model, d: b.d, D: b.D, B: b.B, dp, dpEst: b.dp == null,
+    C: b.C, C0: b.C0, mass: b.mass, r: b.r, rSrc: b.rSrc, status: b.status, source: b.source, holes: !!b.holes, Dw, Lw: +(Dw * .9).toFixed(2), DwEst: true });
+  if (o.Z > 0) o.Z = Math.max(8, Math.round(Math.PI * dp / (Dw * 1.3)));
+  if (D.geom?.xroller) delete D.geom.xroller.width;     // 궤도륜 폭은 카탈로그 B
+  changed();
+}
+function clearBearing() {
+  const o = D.outBearing; if (!o) return;
+  ['maker', 'series', 'model', 'd', 'D', 'B', 'dpEst', 'mass', 'r', 'rSrc', 'status', 'source', 'holes', 'DwEst'].forEach(k => delete o[k]);
+  changed();
+}
+
 const WB = {
+  obpick(m) { const p = m.querySelector('#obPick'); if (p) p.onclick = openObDlg; const c = m.querySelector('#obClear'); if (c) c.onclick = clearBearing; },
   shiftmap(m) {
     const setShift = (i, xs, xp, xr) => { const st = D.stages[i], fixed = i === 1 && D.config.sharedRing && D.stages[0].r != null;
       st.xs = +(+xs).toFixed(4); st.xp = +(+xp).toFixed(4); if (!fixed) { if (xr != null) { st.autoRingShift = false; st.xr = +(+xr).toFixed(4); } else st.autoRingShift = true; } changed(); };
@@ -1263,7 +1310,8 @@ function overviewView() {
 }
 
 // parts the 3D overview currently draws (machined S·P·R·C + planet pins); the rest return one by one
-const IN3D = id => /^(sun|planet|ring|carrier|pin)\d?$/.test(id);
+// 3D 종합판정에 그리는 부품: 가공 부품 + 카탈로그에서 고른 출력 베어링(구매 부품)
+const IN3D = id => /^(sun|planet|ring|carrier|pin)\d?$/.test(id) || (id === 'xroller' && D?.outBearing?.d > 0 && D.outBearing.D > D.outBearing.d);
 function bomHTML(sel, only3d = false) {
   const L = bomList().filter(p => !only3d || IN3D(p.id)), tot = L.reduce((s, p) => s + p.mass * p.qty, 0);
   return `<div class="bom-h"><b>BOM</b><span class="note">${L.length}종 · ${L.reduce((s, p) => s + p.qty, 0)}개 · 약 ${fmt(tot * 1000, 0)} g</span></div>
@@ -1370,7 +1418,7 @@ function mountOverview(m) {
   grid.onclick = () => { const on = D.view.grid === false; VIEW3D?.setGrid(on); grid.textContent = '격자 ' + (on?'ON':'OFF'); };
   const partBox = m.querySelector('#ovParts');
   // 부품 종류(행) × 단(열) 격자: 왼쪽 열 1단, 오른쪽 열 2단. 공유 링은 두 열에 걸친 버튼 하나(1·2단이 함께 투명)
-  const TYPES = [['sun', '썬기어'], ['planet', '유성기어'], ['pin', '유성핀'], ['carrier', '캐리어'], ['ring', '링기어']];
+  const TYPES = [['sun', '썬기어'], ['planet', '유성기어'], ['pin', '유성핀'], ['carrier', '캐리어'], ['ring', '링기어'], ['xroller', '출력 베어링']];
   const parts3d = bomList().filter(p => IN3D(p.id)), nSt = Math.max(1, ...parts3d.map(p => +(p.id.match(/\d$/)?.[0] || 1)));
   partBox.style.setProperty('--ov-cols', nSt);
   partBox.innerHTML = `<span class="ovp-corner"></span>${Array.from({ length: nSt }, (_, i) => `<span class="ovp-stage st${i + 1}" style="grid-column:${i + 2}">${i + 1}단</span>`).join('')}`

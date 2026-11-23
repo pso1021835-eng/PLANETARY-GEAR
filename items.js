@@ -427,12 +427,12 @@
       ['P', '지지 강성', c => S(c).map((s, i) => { try { const k = globalThis.PGD.sunSupportK(c.D, i); return `S${i + 1} ${f(k.k, 1)}${k.kShaft ? ` (축 ${f(k.kShaft, 0)})` : ''} N/µm`; } catch (e) { return ''; } }).join(' · '), '직렬 강성 1/k = 1/k_brg + 1/k_shaft']],
     up: ['2-7', '1-7'], k: '판정은 5-6에서' };
   I['7-5'] = { what: '출력 메인 베어링(크로스 롤러)의 형식·크기·정격을 정한다.',
-    how: '롤러 피치원 dp, 롤러 지름 Dw·길이 Lw·수 Z로 하중분포 모델을 풀고, 카탈로그 C·C0로 수명을 본다.',
+    how: '베어링 선택(제조사 → 시리즈 → 형번)으로 카탈로그 치수·C·C0를 넣는다. 롤러 피치원 dp, 롤러 지름 Dw·길이 Lw·수 Z로 하중분포 모델을 풀고, 카탈로그 C·C0로 수명을 본다.',
     why: 'dp가 외경(1-6)·하우징(8-1)·중공(1-7)을 정하고, 모멘트 강성이 출력 기울기(7-6)를 정한다.',
     rows: [['D', 'str', 'outBearing.name', '이름'], ['D', 'sel', 'outBearing.type', '형식', { o: [['roller', '크로스 롤러 (p = 10/3)'], ['ball', '4점 접촉 볼 (p = 3)']] }],
       ['D', 'num', 'outBearing.dp', '롤러 피치원 dp mm'], ['D', 'num', 'outBearing.Z', '롤러 수 Z (0 = 분포 계산 끔)'], ['D', 'num', 'outBearing.Dw', '롤러 지름 Dw mm'], ['D', 'num', 'outBearing.Lw', '롤러 유효 길이 Lw mm'],
       ['M', 'num', 'outBearing.C', '동정격 C N (카탈로그)'], ['M', 'num', 'outBearing.C0', '정정격 C0 N (카탈로그)']],
-    up: ['8-1', '1-6'], k: '판정은 7-6에서' };
+    w: ['obpick'], up: ['8-1', '1-6'], k: '판정은 7-6에서' };
   I['7-6'] = { what: '출력 베어링 수명·정적 안전율·모멘트 강성·기울기를 확인한다.',
     how: 'P = X(Fr + 2000M/dp) + Y·Fa (카탈로그 식) → L10. 롤러 하중분포는 반경·축·기울기 3자유도와 Palmgren 선접촉 강성으로 풀어 최대 접촉응력·기울기를 구한다.',
     why: '관절의 외부 모멘트를 받는 유일한 부품이다. 기울기가 2단 KHβ(5-4)로 들어간다.',
