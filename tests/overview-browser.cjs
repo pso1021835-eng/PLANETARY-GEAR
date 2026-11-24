@@ -32,6 +32,9 @@ async function run() {
       await topic.selectOption(key);
       assert.ok((await page.locator('#ovInputs').innerText()).trim(), key);
     }
+    await topic.selectOption('other');
+    await page.locator('#ovOtherItem').selectOption('8-1');
+    assert.ok(await page.locator('#ovInputs [data-p]').count() > 0);
     await topic.selectOption('duty');
     const dutyCount = () => page.evaluate(() => PGDApp.state().D.req.duty.length);
     const originalCount = await dutyCount();
@@ -40,9 +43,7 @@ async function run() {
 
     async function edit(locator, value) {
       await locator.fill(String(value));
-      await locator.press('Enter');
-      // Some browsers commit on blur; changed() can replace the field on Enter.
-      await locator.evaluate(el => el.blur());
+      await locator.press('Tab');
     }
     await topic.selectOption('run');
     await edit(page.locator('#ovInputs [data-p="req.rpm"]'), 1234);
@@ -50,7 +51,8 @@ async function run() {
 
     await page.locator('#ovPickPart').selectOption('planet1');
     const width = page.locator('#pcard [data-p="stages.0.b"]');
-    await edit(width, Number(await width.inputValue()) + 1);
+    const initialWidth = Number(await width.inputValue());
+    await edit(width, initialWidth - 0.2);
     assert.equal(await page.locator('#ovPickPart').inputValue(), 'planet1');
     assert.match(await page.locator('#ovCompare').innerText(), /변경한 입력/);
     await page.locator('#pcRelated').click();
@@ -72,7 +74,7 @@ async function run() {
     await page.locator('[data-ov-baseline]').click();
     assert.deepEqual(await page.locator('#ovCompare tbody tr td:last-child').allTextContents(), Array(4).fill('변화 없음'));
 
-    await edit(page.locator('.ov-spec [data-p="stages.0.s"]'), 0);
+    await edit(page.locator('.ov-spec [data-p="stages.0.b"]'), initialWidth + 1);
     assert.equal(await page.locator('#ovCompare tbody').count(), 0);
     await page.locator('[data-ov-recover]').click();
     await page.locator('#viewer canvas').waitFor();

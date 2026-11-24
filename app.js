@@ -1478,7 +1478,7 @@ const ovTopics = [
   ['duty', '언제 움직이고 멈추나요?'], ['external', '출력축에 어떤 힘이 걸리나요?'],
   ['share', '유성마다 힘이 얼마나 걸리나요?'], ['fit', '기어 사이 틈은 얼마인가요?'],
   ['space', '얼마나 작은 공간에 들어가야 하나요?'], ['material', '기어 재료와 열처리는 무엇인가요?'], ['pin', '핀과 캐리어는 어떻게 지지하나요?'],
-  ['bearing', '어떤 베어링을 쓰나요?'], ['lube', '어떤 윤활 조건인가요?']
+  ['bearing', '어떤 베어링을 쓰나요?'], ['lube', '어떤 윤활 조건인가요?'], ['other', '다른 설계 입력 찾기']
 ];
 function ovSnapshot() {
   if (!R?.rated || R.errors?.length) return null;
@@ -1487,7 +1487,7 @@ function ovSnapshot() {
 }
 function ovComparison() {
   const now = ovSnapshot();
-  if (ovCompare.owner !== D) Object.assign(ovCompare, { owner: D, base: null, topic: '', inputs: null, last: null });
+  if (ovCompare.owner !== D) Object.assign(ovCompare, { owner: D, base: null, topic: '', item: '', inputs: null, last: null });
   if (!ovCompare.base && now) {
     ovCompare.base = now;
     ovCompare.inputs = JSON.parse(JSON.stringify(D));
@@ -1524,11 +1524,24 @@ function ovLoadReport() {
     return '<p><b>'+(s.i+1)+'단</b> · 평균 '+fmt(s.Ft,1)+' N · 최대 '+fmt(peak,1)+' N · Kγ '+fmt(s.Kg,2)+' ('+esc(s.KgSrc)+')</p>'+list;
   }).join('');
 }
+function ovOtherInputs() {
+  const groups = [...PGDProc.STAGES, PGDProc.DFM];
+  const options = groups.map(group => {
+    const items = group.items.filter(([id]) => expRows(id).some(r => r.kind === 'in' && r.path));
+    if (!items.length) return '';
+    return '<optgroup label="'+esc(group.name)+'">'+items.map(([id,label]) => '<option value="'+esc(id)+'" '+
+      (id === ovCompare.item ? 'selected' : '')+'>'+esc(label)+'</option>').join('')+'</optgroup>';
+  }).join('');
+  const rows = expRows(ovCompare.item || '').filter(r => r.kind === 'in' && r.path);
+  return '<label class="f">설계 항목<select id="ovOtherItem"><option value="">항목 선택</option>'+options+
+    '</select></label><div class="grid">'+rows.map(inHTML).join('')+'</div>';
+}
 function ovInputs() {
   const ids = { space: ['1-6','1-7','3-5'], pin: ['6-1','6-2','6-4'], bearing: ['7-1','7-5','7-7'], external: ['1-5'],
     fit: ['4-7'], lube: ['5-10'], run: ['1-2','1-3'], duty: ['1-4'] };
   const topic = ovCompare.topic;
   if (!topic) return '';
+  if (topic === 'other') return ovOtherInputs();
   if (topic === 'material') return (!R?.errors?.length && W.mat()) || '<p class="note">기어 제원을 확인하면 재료표를 표시합니다.</p>';
   if (topic === 'share') {
     const basis = [['iso','가공 오차 고려 (ISO)'],['ideal','오차 없는 이상 조립']];
@@ -1561,6 +1574,14 @@ function bindOverviewEditor(m) {
   const topic = m.querySelector('#ovTopic');
   const inputs = m.querySelector('#ovInputs');
   const bindWidgets = () => {
+    const item = inputs.querySelector('#ovOtherItem');
+    if (item) item.onchange = () => {
+      ovCompare.item = item.value;
+      inputs.innerHTML = ovOtherInputs();
+      bindInputs(inputs);
+      bindWidgets();
+      inputs.querySelector('#ovOtherItem').focus();
+    };
     if (ovCompare.topic === 'duty') WB.duty(inputs);
     if (ovCompare.topic === 'bearing') WB.obpick(inputs);
   };
