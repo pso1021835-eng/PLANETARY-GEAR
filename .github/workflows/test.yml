@@ -41,6 +41,8 @@ jobs:
         run: node ob_fit_test.js
       - name: 설계의뢰서 읽기 · 검증 · 요구 정격 산출
         run: node request_test.js
+      - name: 자동 설계 1차분 · 시험 사례 11건 (30 % 여유 충족률 보고)
+        run: node autodesign_test.js
       - name: 문법 검사
         run: for f in *.js; do node --check "$f" || exit 1; done
 
