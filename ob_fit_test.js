@@ -22,4 +22,12 @@ const fx = F.outer.checks.find(x => x.key === 'wall').fix; assert(fx.locked && f
 ck = run(D => { D.stages[1].carrier.bossD = 48; }); F = ck.fit; assert.strictEqual(st(F.inner, 'seatD'), 'fail'); assert(F.inner.checks[0].fix.locked && F.inner.checks[0].fix.delta === 2);
 // 5) 외경 한계: Dmax 66 < 하우징 Ø68 → 미달, 미입력이면 해당 없음
 assert.strictEqual(st(run(D => { D.req.Dmax = 66; }).fit.outer, 'od'), 'fail'); assert.strictEqual(st(run().fit.outer, 'od'), 'na');
+// 6) 회전·고정 관계 (#73 GPT 제안): 안착·고정·끼워맞춤에 입력 필요가 남으면 확정 문구 대신 '장착 조건 확인 필요'
+F = run().fit; assert.strictEqual(F.rotationState, 'ok'); assert.deepStrictEqual(F.rotationPending, []);
+F = run(D => { D.struct.obFit = { inner: 'k5', outer: 'H7' }; }).fit;
+assert.strictEqual(F.rotationState, 'input'); assert.match(F.rotation, /장착 조건 확인 필요 \(내륜 끼워맞춤\)/); assert.doesNotMatch(F.rotation, /함께 회전/);
+F = run(D => { D.struct.c2out = 'shaft'; }).fit;
+assert.strictEqual(F.rotationState, 'input'); assert.deepStrictEqual(F.rotationPending, ['내륜 축방향 위치']);
+F = run(D => { D.stages[1].carrier.bossD = 48; }).fit; assert.strictEqual(F.rotationState, 'fail'); assert.match(F.rotation, /결합 미성립/);
+F = run(D => { D.geom.housing = { flangeD: 62 }; }).fit; assert.strictEqual(F.rotationState, 'fail');
 console.log('output bearing fit (inner–C2 boss · outer–housing · status · locked dims): passed');
