@@ -1,0 +1,666 @@
+{
+ "schema": "pgd-case/1",
+ "id": "sera-d70-l30-i15",
+ "name": "세라로보틱스 Ø70×30 · 40 N·m · i 15 — 원 조건 불성립 · 대안 Ø100×50",
+ "saved": "2026-11-24T00:40:00.000Z",
+ "source": "request-xlsx v2.1",
+ "meta": {
+  "client": "세라로보틱스",
+  "requester": "세라로보틱스",
+  "date": "2026-11-24",
+  "application": "로봇관절",
+  "requestForm": "PGD-REQ v2.1",
+  "rules": "v2.1 (유성 ≤3 · 단별 용량 치폭 · SCM440 이온질화 · KISSsoft 방식 · 전위 0)",
+  "decision": "원 의뢰(Ø70×30) 불성립 — 대안 Ø100×50 제시",
+  "feasibility": [
+   {
+    "OD": 70,
+    "L": 30,
+    "result": "구조 최소 길이 34.8 mm → 불가"
+   },
+   {
+    "OD": 70,
+    "L": 40,
+    "isoCap": 5.2
+   },
+   {
+    "OD": 70,
+    "L": 50,
+    "isoCap": 15.8
+   },
+   {
+    "OD": 70,
+    "L": 60,
+    "isoCap": 17.6
+   },
+   {
+    "OD": 80,
+    "L": 50,
+    "isoCap": 26.6
+   },
+   {
+    "OD": 90,
+    "L": 50,
+    "isoCap": 36
+   },
+   {
+    "OD": 100,
+    "L": 40,
+    "isoCap": 20.2
+   },
+   {
+    "OD": 100,
+    "L": 45,
+    "isoCap": 30.9
+   },
+   {
+    "OD": 100,
+    "L": 50,
+    "isoCap": 48.2,
+    "chosen": true
+   },
+   {
+    "OD": 110,
+    "L": 50,
+    "isoCap": 68.6
+   }
+  ]
+ },
+ "request": {
+  "Trated": 40,
+  "Tpeak": 80,
+  "Temerg": 120,
+  "rpm": 3000,
+  "rpmMax": 4500,
+  "lifeH": 20000,
+  "ratio": 15,
+  "Dmax": 70,
+  "Lmax": 30,
+  "backlashMax": 10,
+  "ext": {
+   "Fr": 240,
+   "Fa": 120,
+   "M": 20
+  },
+  "duty": [
+   {
+    "torque": 100,
+    "time": 15,
+    "mode": "rated",
+    "rpm": 0
+   },
+   {
+    "torque": 60,
+    "time": 30,
+    "mode": "rated"
+   },
+   {
+    "torque": 30,
+    "time": 35,
+    "mode": "rated"
+   },
+   {
+    "torque": 10,
+    "time": 20,
+    "mode": "rated"
+   }
+  ],
+  "dutyRate": 0.5,
+  "basis": "iso",
+  "aiDecided": [
+   "피크 80 (정격×2)",
+   "비상 120 (피크×1.5)",
+   "상체 피치 스펙트럼",
+   "Fr 240 / Fa 120 N",
+   "양방향",
+   "유성 3개",
+   "치폭 단별 용량 균형 6/12.5",
+   "전위 0",
+   "SCM440 이온질화",
+   "IKO CRBS708V",
+   "풀니들",
+   "EP 그리스",
+   "KISSsoft 방식 판정"
+  ]
+ },
+ "summary": {
+  "stages": 2,
+  "sharedRing": true,
+  "ratio": 15,
+  "gears": [
+   {
+    "s": 30,
+    "p": 45,
+    "r": 120,
+    "n": 3,
+    "m": 0.7,
+    "beta": 0,
+    "b": 6,
+    "x": [
+     0,
+     0,
+     0
+    ]
+   },
+   {
+    "s": 60,
+    "p": 30,
+    "r": 120,
+    "n": 3,
+    "m": 0.7,
+    "beta": 0,
+    "b": 12.5,
+    "x": [
+     0,
+     0,
+     0
+    ]
+   }
+  ],
+  "OD": 100,
+  "L": 49.7,
+  "outBearing": "IKO CRBS708V",
+  "gearCap": 48.17691564263473,
+  "reducerCap": 48.17691564263473,
+  "governing": "기어 · 2단 썬–유성 유성 치면(피팅)",
+  "stageCaps": [
+   49.5,
+   48.2
+  ],
+  "idealCap": 109.08704812351885,
+  "mcP10": 64.65871414705164,
+  "eff": 0.9610362166155719,
+  "backlash": 3.437746770784939,
+  "verdictFail": [],
+  "checklistFail": [
+   "1-6: 외경 Ø100 · 길이 49.7 mm (한계 Ø70) (한계 30)"
+  ]
+ },
+ "D": {
+  "schema": "pgd/1",
+  "name": "세라로보틱스 · 대안 Ø100×50 · 40 N·m · i 15 (원 의뢰 Ø70×30 불성립)",
+  "req": {
+   "case": "upper-pitch",
+   "ext": {
+    "Fr": 240,
+    "Fa": 120,
+    "M": 20
+   },
+   "Trated": 40,
+   "Tpeak": 80,
+   "Temerg": 120,
+   "rpm": 3000,
+   "lifeH": 20000,
+   "SH": 1,
+   "SF": 1.4,
+   "SHstat": 1,
+   "SFstat": 1.2,
+   "s0": 1,
+   "SBmin": 1.5,
+   "effMin": 90,
+   "backlashMax": 10,
+   "duty": [
+    {
+     "torque": 100,
+     "time": 15,
+     "mode": "rated",
+     "rpm": 0
+    },
+    {
+     "torque": 60,
+     "time": 30,
+     "mode": "rated"
+    },
+    {
+     "torque": 30,
+     "time": 35,
+     "mode": "rated"
+    },
+    {
+     "torque": 10,
+     "time": 20,
+     "mode": "rated"
+    }
+   ],
+   "ratio": 15,
+   "Dmax": 70,
+   "Lmax": 30,
+   "stiffMin": null
+  },
+  "config": {
+   "stages": 2,
+   "sharedRing": true,
+   "floatingSun": false
+  },
+  "design": {
+   "quality": "MQ"
+  },
+  "stages": [
+   {
+    "s": 30,
+    "p": 45,
+    "n": 3,
+    "m": 0.7,
+    "beta": 0,
+    "alpha": 20,
+    "b": 6,
+    "xs": 0,
+    "xp": 0,
+    "xr": 0,
+    "autoRingShift": true,
+    "grade": 7,
+    "mod": {
+     "crown": 0,
+     "tip": 0,
+     "verified": "none"
+    },
+    "sunBore": null,
+    "planetBore": 16,
+    "ringOD": 94,
+    "bearing": {
+     "name": "풀니들 Ø3.5×5.6 × 10 (계산)",
+     "C": 7729,
+     "C0": 6209,
+     "count": 1,
+     "manual": {
+      "name": "풀니들 Ø3.5 × 10 (추정)",
+      "C": 4412,
+      "C0": 4136,
+      "planetBore": 16
+     },
+     "calc": {
+      "name": "풀니들 Ø3.5×5.6 × 10 (계산)",
+      "C": 7729,
+      "C0": 6209,
+      "planetBore": 16
+     },
+     "src": "needle"
+    },
+    "jt": [
+     20,
+     25
+    ],
+    "pin": {
+     "d": 9,
+     "type": "single",
+     "material": "SUJ2",
+     "wall": 2.5,
+     "allow": 1200,
+     "holeMode": "through",
+     "depth": null
+    },
+    "carrier": {
+     "width": 2.5,
+     "outerD": null,
+     "innerD": null,
+     "bossT": 0,
+     "bossD": null,
+     "axialClearance": 0.3,
+     "material": "S45C",
+     "groove": 5.5,
+     "pocket": null,
+     "pocketShape": "slot"
+    },
+    "r": null,
+    "tipChamfer": [
+     0,
+     0,
+     0
+    ],
+    "asn": [
+     [
+      0,
+      0
+     ],
+     [
+      -0.054,
+      -0.084
+     ],
+     [
+      -0.054,
+      -0.084
+     ]
+    ],
+    "cutter": {
+     "z0": 32,
+     "x0": 0
+    }
+   },
+   {
+    "s": 60,
+    "p": 30,
+    "n": 3,
+    "m": 0.7,
+    "beta": 0,
+    "alpha": 20,
+    "b": 12.5,
+    "xs": 0,
+    "xp": 0,
+    "xr": 0,
+    "autoRingShift": true,
+    "grade": 7,
+    "mod": {
+     "crown": 0,
+     "tip": 0,
+     "verified": "none"
+    },
+    "sunBore": null,
+    "planetBore": 10.5,
+    "ringOD": 94,
+    "bearing": {
+     "name": "풀니들 Ø2×12.1 × 12 (계산)",
+     "C": 9101,
+     "C0": 9771,
+     "count": 1,
+     "manual": {
+      "name": "풀니들 Ø2 × 12 (추정)",
+      "C": 4655,
+      "C0": 4364,
+      "planetBore": 10.5
+     },
+     "calc": {
+      "name": "풀니들 Ø2×12.1 × 12 (계산)",
+      "C": 9101,
+      "C0": 9771,
+      "planetBore": 10.5
+     },
+     "src": "needle"
+    },
+    "jt": [
+     20,
+     25
+    ],
+    "pin": {
+     "d": 6.5,
+     "type": "double",
+     "material": "SUJ2",
+     "wall": 2.5,
+     "allow": 1200,
+     "holeMode": "through",
+     "depth": null
+    },
+    "carrier": {
+     "width": null,
+     "groove": null,
+     "pocket": null,
+     "pocketShape": "slot",
+     "outerD": null,
+     "innerD": null,
+     "bossD": null,
+     "bossT": 2,
+     "material": "S45C"
+    },
+    "r": null,
+    "tipChamfer": [
+     0,
+     0,
+     0
+    ],
+    "asn": [
+     [
+      0,
+      0
+     ],
+     [
+      -0.054,
+      -0.084
+     ],
+     [
+      -0.054,
+      -0.084
+     ]
+    ],
+    "cutter": {
+     "z0": 32,
+     "x0": 0
+    },
+    "autoPlanetShift": true
+   }
+  ],
+  "materials": [
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 27,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 27,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 27,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 27,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 27,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 27,
+    "depth": 0.1
+   }
+  ],
+  "lube": {
+   "type": "grease",
+   "nu40": 320,
+   "nu100": 25,
+   "temp": 70,
+   "rho": 0.88,
+   "alphaP": 2,
+   "starvation": 0.7,
+   "XL": 1,
+   "XW": 1,
+   "fzg": 12,
+   "rzFlank": 1,
+   "rzRoot": 6,
+   "base": "mineral"
+  },
+  "loads": {
+   "basis": "iso",
+   "KA": 1,
+   "kgMode": "model",
+   "kgFixed": 1.1,
+   "posError": 5,
+   "sunSupport": [
+    {
+     "mode": "structure",
+     "k": 20,
+     "play": 2.5,
+     "bearingK": 30,
+     "od": 37,
+     "id": 25.5,
+     "overhang": 11.5
+    },
+    {
+     "mode": "structure",
+     "k": 20,
+     "play": 1.5,
+     "bearingK": 30,
+     "od": 25,
+     "id": 22,
+     "overhang": 4.5
+    }
+   ],
+   "fmaMode": "rss",
+   "carrierParallel": 10,
+   "extraFsh": [
+    0,
+    0
+   ],
+   "reverse": true
+  },
+  "reliability": {
+   "mode": "iso",
+   "covH": 0.08,
+   "covF": 0.07
+  },
+  "perf": {
+   "muMode": "model",
+   "mu": 0.06,
+   "otherLoss": 1.5
+  },
+  "outBearing": {
+   "name": "IKO CRBS708V",
+   "rows": 2,
+   "type": "roller",
+   "C": 8190,
+   "C0": 13600,
+   "dp": 78,
+   "Km": 30,
+   "Z": 0,
+   "Dw": 2.5,
+   "Lw": 2.25,
+   "preload": 0,
+   "maker": "IKO",
+   "series": "CRBS…V",
+   "model": "CRBS708V",
+   "d": 70,
+   "D": 86,
+   "B": 8,
+   "dpEst": true,
+   "mass": 0.108,
+   "r": 0.4,
+   "rIn": 0.4,
+   "rOut": 0.4,
+   "rSrc": "카탈로그",
+   "status": "IKO 공식 확인",
+   "source": "IKO 공식 CAD 카탈로그 (PARTcommunity/MISUMI)",
+   "holes": false,
+   "DwEst": true,
+   "auto": "추천 제원: 외경 안 최대 C0"
+  },
+  "carrier": {
+   "allowP": 300,
+   "allowB": 250
+  },
+  "housing": {
+   "wall": 3,
+   "coverT": 3,
+   "flangeT": 3,
+   "boltN": 8,
+   "boltD": 5
+  },
+  "geom": {},
+  "struct": {
+   "ringHousing": "integral",
+   "c1s2": "pin",
+   "c1s2Dim": {
+    "d": 25,
+    "L": 6.5,
+    "p": 40,
+    "n": 6,
+    "dp": 4.5,
+    "pcd": 31.5
+   },
+   "s1motor": "flange",
+   "s1Dim": {
+    "d": 25.5,
+    "L": 11,
+    "p": 40,
+    "n": 4,
+    "bd": 2.5,
+    "pcd": 32.5
+   },
+   "c1Support": "nested",
+   "obPos": "outside",
+   "ringFit": {
+    "delta": 0.03,
+    "mu": 0.12,
+    "E": 70000,
+    "nu": 0.33,
+    "Sy": 240,
+    "boltN": 6,
+    "boltD": 3
+   }
+  },
+  "needle": [
+   {
+    "use": true,
+    "apply": true,
+    "Dw": 3.5,
+    "Lw": null,
+    "Z": 10,
+    "HRCpin": 60,
+    "HRCbore": 58
+   },
+   {
+    "use": true,
+    "apply": true,
+    "Dw": 2,
+    "Lw": null,
+    "Z": 12,
+    "HRCpin": 60,
+    "HRCbore": 58
+   }
+  ],
+  "verify": {
+   "feaKcar": [
+    null,
+    null
+   ],
+   "feaSigmaF": null,
+   "testT": 28,
+   "testNote": "시험성적서 정격 (RDP-RH065 9N)"
+  },
+  "anim": {
+   "rpm": 1000,
+   "slow": 0.02
+  },
+  "mc": {
+   "samples": 200,
+   "utilization": 0.7
+  },
+  "bolts": {
+   "grade": 12.9,
+   "mu": 0.12,
+   "util": 0.7
+  },
+  "thermal": {
+   "Tamb": 25,
+   "h": 12,
+   "duty": 0.5
+  },
+  "review": {
+   "by": "",
+   "date": "",
+   "status": "draft",
+   "note": ""
+  },
+  "dfm": {
+   "qty": 100,
+   "rate": 60000,
+   "steel": 3000,
+   "alu": 7000,
+   "ht": 8000,
+   "proc": {
+    "sun": "hob",
+    "planet": "hob",
+    "ring": "shape",
+    "carrier": "mill",
+    "housing": "turn",
+    "pin": "buy"
+   }
+  },
+  "meta": {
+   "client": "세라로보틱스",
+   "requester": "세라로보틱스",
+   "date": "2026-11-24",
+   "application": "로봇관절"
+  }
+ }
+}
