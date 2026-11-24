@@ -27,6 +27,31 @@ async function run() {
       route => route.fulfill({ path: require.resolve('three/build/three.min.js'), contentType: 'text/javascript' }));
     await page.goto('http://127.0.0.1:' + server.address().port + '/#overview');
     await page.locator('#viewer canvas').waitFor();
+    const tool = name => page.locator('[data-cad-open="'+name+'"]');
+    const viewport = page.viewportSize();
+    const canvas = page.locator('#viewer canvas');
+    await page.locator('#main').evaluate(el => Promise.all(el.getAnimations().map(a => a.finished)));
+    const bounds = await canvas.boundingBox();
+    assert.ok(bounds.width >= viewport.width * .75 && bounds.height >= viewport.height * .65, JSON.stringify(bounds));
+    assert.ok(bounds.y + bounds.height <= viewport.height + 1);
+    assert.equal(await page.locator('#cadDrawer').isVisible(), false);
+    await page.locator('[data-cad-part="planet1"]').click();
+    assert.ok(await page.locator('#pcard').isVisible());
+    await page.locator('#pcX').click();
+    for (const key of ['drawing','spec','results','display']) {
+      await tool(key).click();
+      assert.ok(await page.locator('[data-cad-panel="'+key+'"]').isVisible());
+      assert.ok(await page.locator('#cadClose').isVisible());
+    }
+    await page.locator('#tExpR').press('End');
+    assert.equal(await page.locator('#tExpR').inputValue(),'100');
+    await page.locator('#ovCarrier').click();
+    await page.locator('#cadClose').click();
+    await page.locator('#tHome').click();
+    await page.locator('#tBom').click();
+    assert.ok(await page.locator('#bom').isVisible());
+    await page.locator('#tBom').click();
+    await tool('edit').click();
     const topic = page.locator('#ovTopic');
     for (const key of await topic.locator('option').evaluateAll(opts => opts.map(o => o.value).filter(Boolean))) {
       await topic.selectOption(key);
@@ -76,15 +101,27 @@ async function run() {
     await page.locator('[data-ov-baseline]').click();
     assert.deepEqual(await page.locator('#ovCompare tbody tr td:last-child').allTextContents(), Array(4).fill('변화 없음'));
 
+    await tool('spec').click();
     await edit(page.locator('.ov-spec [data-p="stages.0.b"]'), initialWidth + 1);
     assert.equal(await page.locator('#ovCompare tbody').count(), 0);
     await page.locator('[data-ov-recover]').click();
     await page.locator('#viewer canvas').waitFor();
     await page.reload();
+    await tool('edit').click();
     await topic.waitFor();
     assert.equal(await page.evaluate(() => PGDApp.state().D.req.rpm), 1234);
     await page.setViewportSize({ width: 390, height: 844 });
     assert.ok((await page.locator('#ovEditor').boundingBox()).width <= 390);
+    await page.locator('#cadClose').click();
+    assert.equal(await page.locator('#cadTree').isVisible(), false);
+    const mobileCanvas = await canvas.boundingBox();
+    assert.ok(mobileCanvas.width >= 380 && mobileCanvas.y + mobileCanvas.height <= 845);
+    await page.locator('[data-cad-tree]').click();
+    await page.locator('[data-cad-part="planet1"]').click();
+    assert.ok(await page.locator('#pcard').isVisible());
+    assert.equal(await page.locator('#cadTree').isVisible(), false);
+    await page.evaluate(() => PGDApp.go('map'));
+    assert.equal(await page.locator('body.cad-mode').count(), 0);
     assert.deepEqual(errors, []);
     console.log('3D 종합판정 브라우저 회귀 통과');
   } finally {

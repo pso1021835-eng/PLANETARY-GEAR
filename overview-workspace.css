@@ -1,0 +1,40 @@
+/* The overview occupies the space left by the site's own header. Other pages keep their document flow. */
+body.cad-mode { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.cad-mode > header { flex: none; }
+.cad-mode > .layout { flex: 1 1 0; min-height: 0; display: flex; overflow: hidden; }
+.cad-mode #main { flex: 1; width: 100%; min-width: 0; max-width: none; margin: 0; padding: 0 !important; }
+.cad-workspace { height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(0,1fr) auto; }
+.cad-workspace [hidden] { display: none !important; }
+.cad-ribbon, .cad-viewbar, .cad-status, .cad-drawer-head { display: flex; align-items: center; gap: 6px; }
+.cad-ribbon { padding: 6px 12px; border-bottom: 1px solid var(--rule); background: var(--panel); overflow-x: auto; }
+.cad-ribbon .btn, .cad-viewbar .btn { white-space: nowrap; flex: none; }
+.cad-ribbon [aria-expanded=true], .cad-tree [aria-pressed=true] { border-color: var(--brick); color: var(--ink); background: var(--soft); }
+.cad-body { display: grid; grid-template-columns: minmax(0,1fr); min-height: 0; position: relative; }
+.cad-workspace.has-tree .cad-body { grid-template-columns: clamp(156px,15vw,230px) minmax(0,1fr); }
+.cad-tree { background: var(--panel); border-right: 1px solid var(--rule); padding: 12px; overflow: auto; }
+.cad-tree > strong { display: block; margin: 0 0 10px; }
+.cad-tree details { border-top: 1px solid var(--rule); padding: 6px 0; }
+.cad-tree summary { cursor: pointer; color: var(--mute); }
+.cad-tree details div { display: grid; margin: 4px 0 0 7px; border-left: 1px solid var(--rule); }
+.cad-tree details .btn { margin-left: 5px; text-align: left; padding: 5px 7px; border-color: transparent; background: transparent; }
+.cad-tree details [aria-pressed=true] { color: var(--brick); border-color: var(--rule); background: var(--soft); }
+.cad-scene { min-width: 0; min-height: 0; position: relative; }
+.cad-scene #viewer.full { position: absolute; inset: 0; height: 100%; width: 100%; min-height: 0; border: 0; border-radius: 0; }
+.cad-viewbar { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 16px); padding: 3px; overflow-x: auto; z-index: 2; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; }
+.cad-scene #bom, .cad-scene #ipop { top: 56px; }
+.cad-drawer { position: absolute; z-index: 6; inset: 0 0 0 auto; width: min(520px,100%); min-height: 0; display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--rule); }
+.cad-drawer-head { flex: none; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--rule); }
+.cad-drawer-scroll { flex: 1; min-height: 0; overflow: auto; padding: 10px; overscroll-behavior: contain; }
+.cad-drawer .ov-sum, .cad-drawer .ov-spec { display: block; }
+.cad-drawer .card { min-width: 0; max-width: 100%; }
+.cad-drawer .ov-sum .card, .cad-drawer .ov-spec .card { margin: 0 0 8px; }
+.cad-status { padding: 3px 12px; border-top: 1px solid var(--rule); background: var(--panel); font-size: 13px; gap: 16px; overflow-x: auto; white-space: nowrap; }
+.cad-status .note { margin-left: auto; }
+@media (max-width:760px) {
+  .cad-workspace.has-tree .cad-body { grid-template-columns: minmax(0,1fr); }
+  .cad-tree { position: absolute; z-index: 7; inset: 0 auto 0 0; width: min(65vw,240px); }
+  .cad-ribbon { padding: 4px 6px; }
+  .cad-viewbar { left: 4px; right: 4px; max-width: none; transform: none; width: max-content; max-width: calc(100% - 8px); }
+  .cad-status { padding-inline: 6px; gap: 10px; }
+  .cad-scene #pcard { max-width: calc(100% - 16px); bottom: 8px; right: 8px; }
+}
