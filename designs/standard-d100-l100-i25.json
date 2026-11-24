@@ -1,0 +1,712 @@
+{
+ "schema": "pgd-case/1",
+ "id": "mwu6powk",
+ "name": "표준 DB",
+ "saved": "2026-11-24T04:18:26.516Z",
+ "source": "site",
+ "request": {
+  "Trated": 25,
+  "Tpeak": 62.5,
+  "Temerg": 87.5,
+  "rpm": 3000,
+  "lifeH": 20000,
+  "ratio": 25,
+  "Dmax": 100,
+  "Lmax": 100,
+  "ext": {
+   "Fr": 0,
+   "Fa": 0,
+   "M": 15
+  },
+  "duty": [
+   {
+    "torque": 100,
+    "time": 15,
+    "rpm": 0,
+    "mode": "rated"
+   },
+   {
+    "torque": 60,
+    "time": 30,
+    "rpm": 0,
+    "mode": "rated"
+   },
+   {
+    "torque": 30,
+    "time": 35,
+    "rpm": 0,
+    "mode": "rated"
+   },
+   {
+    "torque": 10,
+    "time": 20,
+    "rpm": 0,
+    "mode": "rated"
+   }
+  ],
+  "basis": "iso"
+ },
+ "summary": {
+  "stages": 2,
+  "sharedRing": true,
+  "ratio": 25,
+  "gears": [
+   {
+    "s": 24,
+    "p": 51,
+    "r": 126,
+    "n": 3,
+    "m": 0.6,
+    "beta": 12,
+    "b": 10
+   },
+   {
+    "s": 42,
+    "p": 42,
+    "r": 126,
+    "n": 3,
+    "m": 0.6,
+    "beta": 12,
+    "b": 12
+   }
+  ],
+  "OD": 106,
+  "L": 68.80000000000001,
+  "outBearing": "IKO CRBS708V",
+  "gearCap": 19.40783957695091,
+  "reducerCap": 19.40783957695091,
+  "governing": "기어 · 2단 썬–유성 썬 치면(피팅)",
+  "eff": 0.9613117425061807,
+  "backlash": 3.8429985780270597,
+  "verdictFail": [
+   "정격 토크 · 목표 수명 (기어)",
+   "부하 스펙트럼 수명 (기어)"
+  ],
+  "band": {
+   "ideal": 99.00988969727682,
+   "iso": 19.40783957695091,
+   "ratio": 0.19601920208466514,
+   "wm": 6.5784633586871415,
+   "lowLoad": true,
+   "kg": "model"
+  }
+ },
+ "D": {
+  "schema": "pgd/1",
+  "name": "표준 DB",
+  "req": {
+   "case": "upper-pitch",
+   "ext": {
+    "Fr": 0,
+    "Fa": 0,
+    "M": 15
+   },
+   "Trated": 25,
+   "Tpeak": 62.5,
+   "Temerg": 87.5,
+   "rpm": 3000,
+   "lifeH": 20000,
+   "SH": 1,
+   "SF": 1.4,
+   "SHstat": 1,
+   "SFstat": 1.2,
+   "s0": 1,
+   "SBmin": 1.5,
+   "effMin": 90,
+   "backlashMax": 10,
+   "duty": [
+    {
+     "torque": 100,
+     "time": 15,
+     "rpm": 0,
+     "mode": "rated"
+    },
+    {
+     "torque": 60,
+     "time": 30,
+     "rpm": 0,
+     "mode": "rated"
+    },
+    {
+     "torque": 30,
+     "time": 35,
+     "rpm": 0,
+     "mode": "rated"
+    },
+    {
+     "torque": 10,
+     "time": 20,
+     "rpm": 0,
+     "mode": "rated"
+    }
+   ],
+   "ratio": 25,
+   "Dmax": 100,
+   "Lmax": 100,
+   "stiffMin": null,
+   "dutyUnits": {
+    "torque": "pct",
+    "time": "pct"
+   }
+  },
+  "config": {
+   "stages": 2,
+   "sharedRing": true,
+   "floatingSun": false
+  },
+  "design": {
+   "quality": "MQ"
+  },
+  "stages": [
+   {
+    "s": 24,
+    "p": 51,
+    "n": 3,
+    "m": 0.6,
+    "beta": 12,
+    "alpha": 20,
+    "b": 10,
+    "xs": 0,
+    "xp": 0,
+    "xr": 0,
+    "autoRingShift": true,
+    "grade": 6,
+    "mod": {
+     "crown": 0,
+     "tip": 0,
+     "verified": "none"
+    },
+    "sunBore": null,
+    "planetBore": 14,
+    "ringOD": 100,
+    "bearing": {
+     "name": "풀니들 Ø2×9.6 × 18 (계산)",
+     "C": 10414,
+     "C0": 12672,
+     "count": 1,
+     "manual": {
+      "name": "풀니들 Ø3.5 × 10 (추정)",
+      "C": 4412,
+      "C0": 4136,
+      "planetBore": 16
+     },
+     "calc": {
+      "name": "풀니들 Ø2×9.6 × 18 (계산)",
+      "C": 10414,
+      "C0": 12672,
+      "planetBore": 14
+     },
+     "src": "needle"
+    },
+    "jt": [
+     20,
+     25
+    ],
+    "pin": {
+     "d": 10,
+     "type": "double",
+     "material": "SUJ2",
+     "wall": 2.5,
+     "allow": 1200,
+     "holeMode": "through",
+     "depth": null
+    },
+    "carrier": {
+     "width": 16,
+     "outerD": 74,
+     "innerD": 30,
+     "bossT": 0,
+     "bossD": 0,
+     "axialClearance": 0.3,
+     "material": "S45C",
+     "groove": 10.2,
+     "pocket": 40,
+     "pocketShape": "slot",
+     "pocketR": 3
+    },
+    "r": null,
+    "tipChamfer": [
+     0,
+     0,
+     0
+    ],
+    "asn": [
+     [
+      0,
+      0
+     ],
+     [
+      -0.054,
+      -0.084
+     ],
+     [
+      -0.054,
+      -0.084
+     ]
+    ],
+    "cutter": {
+     "z0": 32,
+     "x0": 0
+    }
+   },
+   {
+    "s": 42,
+    "p": 42,
+    "n": 3,
+    "m": 0.6,
+    "beta": 12,
+    "alpha": 20,
+    "b": 12,
+    "xs": 0,
+    "xp": 0,
+    "xr": 0,
+    "autoRingShift": true,
+    "grade": 6,
+    "mod": {
+     "crown": 0,
+     "tip": 0,
+     "verified": "none"
+    },
+    "sunBore": null,
+    "planetBore": 14,
+    "ringOD": 94,
+    "bearing": {
+     "name": "풀니들 Ø2×11.6 × 18 (계산)",
+     "C": 12065,
+     "C0": 15312,
+     "count": 1,
+     "manual": {
+      "name": "풀니들 Ø2 × 12 (추정)",
+      "C": 4655,
+      "C0": 4364,
+      "planetBore": 10.5
+     },
+     "calc": {
+      "name": "풀니들 Ø2×11.6 × 18 (계산)",
+      "C": 12065,
+      "C0": 15312,
+      "planetBore": 14
+     },
+     "src": "needle"
+    },
+    "jt": [
+     20,
+     25
+    ],
+    "pin": {
+     "d": 10,
+     "type": "double",
+     "material": "SUJ2",
+     "wall": 2.5,
+     "allow": 1200,
+     "holeMode": "blind",
+     "depth": 20
+    },
+    "carrier": {
+     "width": 18,
+     "groove": null,
+     "pocket": 40,
+     "pocketShape": "slot",
+     "outerD": 74,
+     "innerD": 28,
+     "bossD": 70,
+     "bossT": 14,
+     "material": "S45C",
+     "pocketR": 3
+    },
+    "r": null,
+    "tipChamfer": [
+     0,
+     0,
+     0
+    ],
+    "asn": [
+     [
+      0,
+      0
+     ],
+     [
+      -0.054,
+      -0.084
+     ],
+     [
+      -0.054,
+      -0.084
+     ]
+    ],
+    "cutter": {
+     "z0": 32,
+     "x0": 0
+    },
+    "autoPlanetShift": true
+   }
+  ],
+  "materials": [
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 30,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 30,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 30,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 30,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 30,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 30,
+    "depth": 0.1
+   }
+  ],
+  "lube": {
+   "type": "grease",
+   "nu40": 320,
+   "nu100": 25,
+   "temp": 70,
+   "rho": 0.88,
+   "alphaP": 2,
+   "starvation": 0.7,
+   "XL": 1,
+   "XW": 1,
+   "fzg": 12,
+   "rzFlank": 1,
+   "rzRoot": 6,
+   "base": "mineral"
+  },
+  "loads": {
+   "basis": "iso",
+   "KA": 1,
+   "kgMode": "model",
+   "kgFixed": 1.1,
+   "posError": 5,
+   "sunSupport": [
+    {
+     "mode": "structure",
+     "k": 20,
+     "play": 2.5,
+     "bearingK": 30,
+     "od": 37,
+     "id": 25.5,
+     "overhang": 11.5
+    },
+    {
+     "mode": "structure",
+     "k": 20,
+     "play": 1.5,
+     "bearingK": 30,
+     "od": 25,
+     "id": 22,
+     "overhang": 4.5
+    }
+   ],
+   "fmaMode": "rss",
+   "carrierParallel": 5,
+   "extraFsh": [
+    0,
+    0
+   ],
+   "reverse": true
+  },
+  "reliability": {
+   "mode": "iso",
+   "covH": 0.08,
+   "covF": 0.07
+  },
+  "perf": {
+   "muMode": "model",
+   "mu": 0.06,
+   "otherLoss": 1.5
+  },
+  "outBearing": {
+   "name": "IKO CRBS708V",
+   "rows": 2,
+   "type": "roller",
+   "C": 8190,
+   "C0": 13600,
+   "dp": 78,
+   "Km": 30,
+   "Z": 0,
+   "Dw": 2.5,
+   "Lw": 2.25,
+   "preload": 0,
+   "maker": "IKO",
+   "series": "CRBS…V",
+   "model": "CRBS708V",
+   "d": 70,
+   "D": 86,
+   "B": 8,
+   "dpEst": true,
+   "mass": 0.108,
+   "r": 0.4,
+   "rIn": 0.4,
+   "rOut": 0.4,
+   "rSrc": "카탈로그",
+   "status": "IKO 공식 확인",
+   "source": "IKO 공식 CAD 카탈로그 (PARTcommunity/MISUMI)",
+   "holes": false,
+   "DwEst": true,
+   "auto": "추천 제원: 외경 안 최대 C0",
+   "da": 74,
+   "Da": 81
+  },
+  "carrier": {
+   "allowP": 300,
+   "allowB": 250
+  },
+  "housing": {
+   "wall": 3,
+   "coverT": 3,
+   "boltN": 8,
+   "boltD": 5,
+   "flangeT": 3
+  },
+  "geom": {
+   "inshaft": {
+    "id": 0
+   }
+  },
+  "struct": {
+   "ringHousing": "integral",
+   "c1s2": "pin",
+   "c1s2Dim": {
+    "d": 25,
+    "L": 6.5,
+    "p": 40,
+    "n": 6,
+    "dp": 4.5,
+    "pcd": 31.5
+   },
+   "s1motor": "flange",
+   "s1Dim": {
+    "d": 25.5,
+    "L": 11,
+    "p": 40,
+    "n": 4,
+    "bd": 2.5,
+    "pcd": 32.5
+   },
+   "c1Support": "nested",
+   "obPos": "outside",
+   "ringFit": {
+    "delta": 0.03,
+    "mu": 0.12,
+    "E": 70000,
+    "nu": 0.33,
+    "Sy": 240,
+    "boltN": 6,
+    "boltD": 3
+   },
+   "c2out": "flange",
+   "c2outDim": {
+    "n": 6,
+    "bd": 3,
+    "dp": 3,
+    "pcd": null,
+    "d": null,
+    "L": null,
+    "p": 40
+   },
+   "obFit": {
+    "inner": null,
+    "outer": null
+   }
+  },
+  "needle": [
+   {
+    "use": true,
+    "apply": true,
+    "Dw": 2,
+    "Lw": null,
+    "Z": null,
+    "HRCpin": 60,
+    "HRCbore": 58
+   },
+   {
+    "use": true,
+    "apply": true,
+    "Dw": 2,
+    "Lw": null,
+    "Z": null,
+    "HRCpin": 60,
+    "HRCbore": 58
+   }
+  ],
+  "verify": {
+   "feaKcar": [
+    null,
+    null
+   ],
+   "feaSigmaF": null,
+   "testT": 28,
+   "testNote": "시험성적서 정격 (RDP-RH065 9N)"
+  },
+  "anim": {
+   "rpm": 625,
+   "slow": 0.02
+  },
+  "mc": {
+   "samples": 200,
+   "utilization": 0.7
+  },
+  "bolts": {
+   "grade": 12.9,
+   "mu": 0.12,
+   "util": 0.7
+  },
+  "thermal": {
+   "Tamb": 25,
+   "h": 12,
+   "duty": 0.5
+  },
+  "review": {
+   "by": "",
+   "date": "",
+   "status": "draft",
+   "note": ""
+  },
+  "dfm": {
+   "qty": 100,
+   "rate": 60000,
+   "steel": 3000,
+   "alu": 7000,
+   "ht": 8000,
+   "proc": {
+    "sun": "hob",
+    "planet": "hob",
+    "ring": "shape",
+    "carrier": "mill",
+    "housing": "turn",
+    "pin": "buy"
+   }
+  },
+  "meta": {
+   "client": "세라로보틱스",
+   "requester": "세라로보틱스",
+   "date": "2026-11-24",
+   "application": "로봇관절"
+  },
+  "view": {
+   "bg": "#1a130e",
+   "shade": "pbr",
+   "light": 1,
+   "lightAz": 35,
+   "opacity": {
+    "xroller": 1,
+    "carrier2": 0.28
+   },
+   "grid": false
+  },
+  "options": {
+   "pin": {
+    "on": true,
+    "lock": false
+   },
+   "cover": {
+    "on": true,
+    "lock": false
+   },
+   "ocover": {
+    "on": true,
+    "lock": false
+   },
+   "oshaft": {
+    "on": true,
+    "lock": false
+   },
+   "housing": {
+    "on": true,
+    "lock": false
+   },
+   "pbrg": {
+    "on": true,
+    "lock": false
+   },
+   "obrg": {
+    "on": true,
+    "lock": false
+   },
+   "s2brg": {
+    "on": true,
+    "lock": false
+   },
+   "s1brg": {
+    "on": true,
+    "lock": false
+   }
+  },
+  "itemReview": {
+   "1-1": {},
+   "7-5": {},
+   "7-3": {},
+   "7-1": {},
+   "7-2": {},
+   "1-2": {},
+   "1-3": {},
+   "1-4": {},
+   "1-5": {},
+   "1-6": {},
+   "1-7": {},
+   "1-8": {},
+   "1-9": {},
+   "3-1": {},
+   "3-3": {},
+   "3-4": {},
+   "3-5": {},
+   "3-6": {},
+   "3-7": {},
+   "9-1": {},
+   "9-2": {},
+   "9-4": {},
+   "9-3": {},
+   "9-6": {},
+   "9-5": {},
+   "10-1": {},
+   "10-3": {},
+   "10-2": {},
+   "10-4": {},
+   "10-5": {},
+   "10-6": {},
+   "10-7": {},
+   "11-3": {},
+   "11-4": {},
+   "11-5": {},
+   "11-6": {},
+   "12-2": {},
+   "12-4": {},
+   "G16": {},
+   "G18": {},
+   "G19": {},
+   "G15": {},
+   "G14": {},
+   "G13": {},
+   "G12": {},
+   "G11": {},
+   "G17": {},
+   "G07": {},
+   "G08": {},
+   "G09": {},
+   "2-8": {}
+  }
+ }
+}
