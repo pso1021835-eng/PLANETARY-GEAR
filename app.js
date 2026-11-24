@@ -693,6 +693,8 @@ function fmtV(x) { if (x.na) return '계산 불가'; return x.unit === 'h' ? fmt
 // ------------------------------------------------------------------ views
 function render(keepScroll) {
   const m = $('#main');
+  OVSTATE.resizeController?.abort();
+  document.body.classList.toggle('cad-mode', view === 'overview' && !!R && !R.errors?.length);
   const y = window.scrollY;
   if (VIEW3D) { if (VIEW3D.full) OVSTATE.view = VIEW3D.getView(); VIEW3D.dispose(); VIEW3D = null; }
   if (MAPV) { MAPSTATE = MAPV.state(); MAPV.dispose(); MAPV = null; }
@@ -1608,37 +1610,48 @@ function bindOverviewEditor(m) {
   };
 }
 
+function cadTree() {
+  const parts = bomList().filter(p => IN3D(p.id));
+  const groups = Array.from({length: nst().length}, (_,i) => [(i+1)+'단', parts.filter(p => p.id.endsWith(String(i+1)))]);
+  groups.push(['공용 · 출력', parts.filter(p => !/\d$/.test(p.id))]);
+  return groups.filter(([,items]) => items.length).map(([label,items]) =>
+    `<details open><summary>${label}</summary><div>${items.map(p=>`<button type="button" class="btn" data-cad-part="${esc(p.id)}" aria-pressed="${OVSTATE.sel===p.id}">${esc(p.name)}</button>`).join('')}</div></details>`).join('');
+}
 function overviewView() {
   if (!R || R.errors?.length) return head('3D · 종합판정', '기어 제원을 수정하면 3D 모델과 판정을 다시 계산합니다.') + '<div class="ov-workbench">' + overviewStagePanel() + '<div>' + errBox() + overviewEditor() + '</div></div>';
   const issues = buildIssues();
-  return `<div class="ov-head"><h2>1. 종합판정</h2><button type="button" class="btn" data-torque-trace>허용토크 근거 · 기준안 비교</button><p class="lead">실측값 없이 규격식·물리 모델·명시된 가정으로 계산한 감속기입니다. 붉은 번호는 기준 미달 부위, 노란 번호는 주의 부위입니다. 부품을 누르면 상세가, 번호를 누르면 원인과 대책이 열립니다. 드래그 회전 · Shift+드래그 이동 · 휠 확대 · 더블클릭 기본 시점 · 우클릭 메뉴(배경: 보기 설정 / 부품: 투명·분해·단면·숨기기).</p></div>
-    <div class="ov-workbench">${overviewStagePanel()}<section class="card ov-live"><h3>단별 유성 배치 3D</h3><div id="viewer" class="full">
-      <div class="v3-bom closed" id="bom"></div>
-      <div class="v3-card" id="pcard" hidden></div>
-      <div class="v3-pop" id="ipop" hidden></div>
-    </div>
-      ${overviewEditor()}
-      <div class="ov-console">
-        <div class="ov-line" role="group" aria-label="모델 보기"><b>모델 보기</b><div class="ov-actions">
-          <button class="btn" data-axial="1">상면</button><button class="btn" data-axial="-1">하면</button><button class="btn" id="tHome">기본 시점</button>
-          <button class="btn" id="ovCarrier">캐리어·핀 숨기기</button><button class="btn" id="ovGrid">격자 ${D.view.grid === false ? 'OFF' : 'ON'}</button>
-          <button class="btn" id="tBom" aria-expanded="false">BOM</button></div></div>
-        <div class="ov-line" role="group" aria-label="조립 보기"><b>조립 보기</b><div class="ov-tools">
-          <div class="ov-range"><button class="btn" id="tExp">분해</button><input aria-label="분해 정도" title="분해 정도" type="range" id="tExpR" min="0" max="100" value="0"></div>
-          <div class="ov-range"><button class="btn" id="tSec">단면</button><input aria-label="단면 각도" title="단면 각도" type="range" id="tSecA" min="0" max="180" value="0"></div>
-          ${nst().length>1 ? `<label class="f">단간 캐리어 간격 (mm)<input type="number" step="0.1" min="0" data-p="geom.stageGap" data-t="num" value="${D.geom?.stageGap ?? .6}"></label>` : ''}</div></div>
+  const panels = [['spec','기어 제원'],['edit','조건·결과 비교'],['display','표시·구동 설정'],['drawing','도면'],['results','상세 판정']];
+  const buttons = panels.map(([key,label])=>`<button class="btn" type="button" data-cad-open="${key}" aria-controls="cadDrawer" aria-expanded="false">${label}</button>`).join('');
+  return `<section class="cad-workspace" aria-label="3D 종합판정">
+    <div class="cad-ribbon" aria-label="설계 명령"><button type="button" class="btn" data-cad-tree aria-controls="cadTree">부품 목록</button>${buttons}<button class="btn" type="button" data-torque-trace>허용토크 근거</button></div>
+    <div class="cad-body">
+      <aside class="cad-tree" id="cadTree" aria-label="조립 부품"><strong>조립 부품</strong>${cadTree()}</aside>
+      <section class="cad-scene" aria-label="조립 모델">
+        <div id="viewer" class="full"><div class="v3-bom closed" id="bom"></div><div class="v3-card" id="pcard" hidden></div><div class="v3-pop" id="ipop" hidden></div></div>
+        <div class="cad-viewbar" role="group" aria-label="모델 조작"><button class="btn" data-axial="1">상면</button><button class="btn" data-axial="-1">하면</button><button class="btn" id="tHome">기본 시점</button><button class="btn" id="tExp">분해</button><button class="btn" id="tSec">단면</button><button class="btn" id="tPlay">회전 정지</button><button class="btn" id="tBom" aria-expanded="false">BOM</button></div>
+        <aside class="cad-drawer" id="cadDrawer" aria-label="상세 도구" hidden><div class="cad-drawer-head"><strong id="cadPanelTitle"></strong><button type="button" class="btn" id="cadClose">닫기</button></div>
+          <div class="cad-drawer-scroll">
+            <div data-cad-panel="spec">${overviewStagePanel()}</div>
+            <div data-cad-panel="edit">${overviewEditor()}</div>
+            <div data-cad-panel="display"><div class="ov-live"><div class="ov-console">
+             <div class="ov-line"><b>모델 표시</b><div class="ov-tools"><button class="btn" id="ovCarrier">캐리어·핀 숨기기</button><button class="btn" id="ovGrid">격자 ${D.view.grid===false?'OFF':'ON'}</button></div></div>
+             <div class="ov-line"><b>조립 보기</b><div class="ov-tools"><label class="f">분해 정도<input type="range" id="tExpR" min="0" max="100" value="0"></label><label class="f">단면 각도<input type="range" id="tSecA" min="0" max="180" value="0"></label>
+             ${nst().length>1 ? `<label class="f">단간 캐리어 간격 (mm)<input type="number" step="0.1" min="0" data-p="geom.stageGap" data-t="num" value="${D.geom?.stageGap ?? .6}"></label>` : ''}</div></div>
         <div class="ov-line" role="group" aria-label="구동 설정"><b>구동 설정</b><div>
           <div class="ov-tools"><label class="f">입력 속도 (rpm)<input type="number" id="tRpm" min="0" step="any" value="${D.anim.rpm}"></label>
           <label class="f">재생 배속<select id="tSlow">${[[1, '1× 실속도'], [.2, '0.2×'], [.05, '0.05×'], [.02, '0.02×'], [.005, '0.005×']].map(([v, l]) => `<option value="${v}" ${+D.anim.slow === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label><label class="f">프레임 제한<select id="ovFrame">${[[0,"최대"],[60,"60 FPS"],[30,"30 FPS"]].map(([v,t])=>`<option value="${v}" ${v===(D.view.frameCap||0)?"selected":""}>${t}</option>`).join("")}</select></label></div>
-          <div class="ov-transport"><input aria-label="입력 속도 조절" type="range" id="ovSpeed" min="0" max="${Math.max(6000,D.anim.rpm)}" value="${D.anim.rpm}"><button class="btn" id="tPlay">회전 정지</button></div>
+          <div class="ov-transport"><input aria-label="입력 속도 조절" type="range" id="ovSpeed" min="0" max="${Math.max(6000,D.anim.rpm)}" value="${D.anim.rpm}"></div>
           <div class="ov-status note"><span id="tSpd"></span><span id="ovFps"></span></div></div></div>
       </div>
 <details open><summary>부품별 투명도</summary><div class="ov-controls" id="ovParts"></div></details>
 <details open><summary>기어·캐리어 절대 회전수</summary><p class="note">하우징 기준 · 입력 방향이 (+) · 유성기어의 공전 속도는 같은 단 캐리어와 같습니다.</p><table class="ov-rpm"><thead><tr><th>부품</th><th>운동·역할</th><th>절대 회전수 (rpm)</th><th>방향</th></tr></thead><tbody id="ovSpeedRows">${overviewSpeedRows()}</tbody></table></details>
-</section></div>
-    ${drawingHTML(OVSTATE.sel)}
-    <div class="ov-sum">${issues.length ? `<div class="card"><h3>기준 미달·주의 ${issues.length}곳</h3><ol class="iss">${issues.map((g, k) => `<li class="${g.sev}"><button data-iss="${k}">${esc(g.title)}</button></li>`).join('')}</ol></div>` : '<div class="card"><h3 class="good">모든 항목이 기준을 만족합니다</h3></div>'}
-    ${VIEWS.overviewOld().replace(/^<h2>.*?<\/h2><p class="lead">.*?<\/p>/s, '')}${componentsHTML()}</div>`;
+</div></div>
+            <div data-cad-panel="drawing">${drawingHTML(OVSTATE.sel)}</div>
+            <div data-cad-panel="results"><div class="ov-sum">${issues.length ? `<div class="card"><h3>기준 미달·주의 ${issues.length}곳</h3><ol class="iss">${issues.map((g, k) => `<li class="${g.sev}"><button data-iss="${k}">${esc(g.title)}</button></li>`).join('')}</ol></div>` : '<div class="card"><h3 class="good">모든 항목이 기준을 만족합니다</h3></div>'}
+    ${VIEWS.overviewOld().replace(/^<h2>.*?<\/h2><p class="lead">.*?<\/p>/s, '')}${componentsHTML()}</div></div>
+          </div></aside></section></div>
+    <footer class="cad-status"><span>감속비 <b>${fmt(R.ratio,2)} : 1</b></span><span>기어·유성 베어링 한계 <b>${fmt(R.reducerCap,2)} N·m</b></span><span class="note">드래그 회전 · Shift+드래그 이동 · 휠 확대 · 우클릭 보기 설정</span></footer>
+  </section>`;
 }
 
 // parts the 3D overview currently draws (machined S·P·R·C + planet pins); the rest return one by one
@@ -1688,14 +1701,49 @@ function issueHTML(g) {
     <table>${g.items.map(v => `<tr class="${g.sev}"><td>${esc(v.k)}</td><td>${fmtV(v)}${v.target != null ? ` / ${v.unit === 'h' ? fmtH(v.target) + ' h' : fmt(v.target, 2)}` : ''}</td></tr>`).join('')}</table>
     ${cause}<h4>바로 해볼 대책</h4>${sens}`;
 }
+function bindCadWorkspace(m) {
+  const workspace = m.querySelector('.cad-workspace');
+  const drawer = m.querySelector('#cadDrawer'), close = m.querySelector('#cadClose');
+  const buttons = [...m.querySelectorAll('[data-cad-open]')];
+  function show(key, focus = false) {
+    const previous = OVSTATE.panel;
+    const trigger = buttons.find(b => b.dataset.cadOpen === key);
+    OVSTATE.panel = trigger ? key : '';
+    drawer.hidden = !trigger;
+    buttons.forEach(b => b.setAttribute('aria-expanded', String(b === trigger)));
+    m.querySelectorAll('[data-cad-panel]').forEach(p => p.hidden = p.dataset.cadPanel !== key);
+    if (trigger) {
+      m.querySelector('#cadPanelTitle').textContent = trigger.textContent;
+      if (focus) { drawer.querySelector('.cad-drawer-scroll').scrollTop = 0; close.focus(); }
+    } else if (focus) buttons.find(b=>b.dataset.cadOpen===previous)?.focus();
+  }
+  buttons.forEach(b => b.onclick = () => show(OVSTATE.panel===b.dataset.cadOpen ? '' : b.dataset.cadOpen, true));
+  close.onclick = () => show('', true);
+  workspace.onkeydown = e => { if(e.key === 'Escape' && !drawer.hidden) { e.stopPropagation(); show('',true); } };
+  const tree = m.querySelector('#cadTree'), toggle = m.querySelector('[data-cad-tree]');
+  const narrow = window.matchMedia('(max-width: 760px)');
+  OVSTATE.resizeController = new AbortController();
+  narrow.addEventListener('change', () => { OVSTATE.treeOpen = null; treeOpen(!narrow.matches); }, { signal: OVSTATE.resizeController.signal });
+  function treeOpen(open) {
+    tree.hidden = !open;
+    toggle.setAttribute('aria-expanded',String(open));
+    workspace.classList.toggle('has-tree',open);
+  }
+  treeOpen(OVSTATE.treeOpen ?? !narrow.matches);
+  toggle.onclick = () => { OVSTATE.treeOpen = tree.hidden; treeOpen(OVSTATE.treeOpen); if(narrow.matches && OVSTATE.treeOpen) show(''); };
+  show(OVSTATE.panel || '');
+  return { show, hideMobileTree() { if(narrow.matches) { OVSTATE.treeOpen = false; treeOpen(false); } } };
+}
 function mountOverview(m) {
   bindOverviewSpecs(m);
   bindOverviewEditor(m);
   const host = m.querySelector('#viewer'); if (!host) return;
+  const cad = bindCadWorkspace(m);
   const issues = buildIssues();
   const card = m.querySelector('#pcard'), pop = m.querySelector('#ipop'), bom = m.querySelector('#bom');
   let sel = null;
   const showCard = id => {
+    m.querySelectorAll('[data-cad-part]').forEach(b => b.setAttribute('aria-pressed',String(b.dataset.cadPart === id)));
     sel = id; const picker = m.querySelector('#ovPickPart'); if (picker) picker.value = id || '';
     bom.innerHTML = bomHTML(id, true); bindBom();
     OVSTATE.sel = id;
@@ -1704,6 +1752,7 @@ function mountOverview(m) {
     card.innerHTML = partCardHTML(id); card.hidden = false; bindInputs(card);
     card.querySelector('#pcX').onclick = () => { showCard(null); VIEW3D?.select(null); };
     card.querySelector('#pcRelated').onclick = () => {
+      cad.show('edit');
       const selector = m.querySelector('#ovTopic');
       selector.value = /^(sun|planet|ring)/.test(id) ? 'material' : id === 'xroller' ? 'external' : 'pin';
       selector.dispatchEvent(new Event('change')); selector.focus();
@@ -1720,14 +1769,18 @@ function mountOverview(m) {
   const bindBom = () => bom.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { VIEW3D?.select(tr.dataset.id, true); showCard(tr.dataset.id); });
   bom.innerHTML = bomHTML(null, true); bindBom();
   const picker = m.querySelector('#ovPickPart');
-  if (picker) picker.onchange = () => { const id = picker.value || null; VIEW3D?.select(id, !!id); showCard(id); if (id) { card.querySelector('#pcX')?.focus({ preventScroll: true }); host.scrollIntoView({ block: 'nearest' }); } };
+  m.querySelectorAll('[data-cad-part]').forEach(b => b.onclick = () => {
+    const id = b.dataset.cadPart; cad.show(''); cad.hideMobileTree();
+    VIEW3D?.select(id, true); showCard(id);
+  });
+  if (picker) picker.onchange = () => { cad.show(''); const id = picker.value || null; VIEW3D?.select(id, !!id); showCard(id); if (id) { card.querySelector('#pcX')?.focus({ preventScroll: true }); host.scrollIntoView({ block: 'nearest' }); } };
   const refreshOpacity = [];
-  mountViewer(host, 'full', { only: 'sprc', onOpacity: () => refreshOpacity.forEach(fn => fn()), onFrameRate: fps => { m.querySelector("#ovFps").textContent = fps + " FPS"; }, onPick: id => showCard(id), onIssue: g => showIssue(g) });
+  mountViewer(host, 'full', { only: 'sprc', onOpacity: () => refreshOpacity.forEach(fn => fn()), onFrameRate: fps => { m.querySelector("#ovFps").textContent = fps + " FPS"; }, onPick: id => { if (id) cad.show(''); showCard(id); }, onIssue: g => { cad.show(''); showIssue(g); } });
   VIEW3D?.setIssues(issues);
   if (OVSTATE.sel && bomList().some(p => p.id === OVSTATE.sel)) { VIEW3D?.select(OVSTATE.sel, false); showCard(OVSTATE.sel); }
   const iv = OVSTATE.view;
   if (iv) { m.querySelector('#tExpR').value = Math.round((iv.explode || 0) * 100); m.querySelector('#tExp').textContent = iv.explode > .5 ? '조립' : '분해'; m.querySelector('#tSecA').value = iv.secAngle || 0; m.querySelector('#tSec').classList.toggle('on', !!iv.section); m.querySelector('#tPlay').textContent = iv.playing === false ? '회전 재생' : '회전 정지'; }
-  m.querySelectorAll('[data-iss]').forEach(b => b.onclick = () => { const g = issues[+b.dataset.iss]; VIEW3D?.select(g.partId, true); showIssue(g); host.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  m.querySelectorAll('[data-iss]').forEach(b => b.onclick = () => { const g = issues[+b.dataset.iss]; cad.show(''); VIEW3D?.select(g.partId, true); showIssue(g); host.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
   const er = m.querySelector('#tExpR'), eb = m.querySelector('#tExp');
   eb.onclick = () => { const on = !(VIEW3D?.state.explodeTarget > .5); VIEW3D?.setExplode(on ? 1 : 0); er.value = on ? 100 : 0; eb.textContent = on ? '조립' : '분해'; };
   er.oninput = () => { VIEW3D?.setExplode(er.value / 100); eb.textContent = er.value > 50 ? '조립' : '분해'; };
