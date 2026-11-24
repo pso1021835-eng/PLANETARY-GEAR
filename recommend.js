@@ -269,7 +269,7 @@
       const plate = ax((out ? 2.9 : 4) * kz, 2.5);
       return Object.assign(clone(tpl), {
         s: c.s, p: c.p, r: c.profile ? c.R : null, n: c.n, m, beta, b,
-        ...(c.profile || { xs: 0, xp: 0, xr: 0 }), autoRingShift: !c.profile, sunBore: null, planetBore: bore, ringOD,
+        ...(c.profile || { xs: 0, xp: 0, xr: 0 }), autoRingShift: !c.profile, sunBore: spec.hollow > 0 ? +(spec.hollow + 5).toFixed(1) : null, planetBore: bore, ringOD,   // 중공: 축(두께 2.2) + 틈새가 썬 안을 지나감
         tipChamfer: [0, 0, 0],
         bearing: { name: `풀니들 Ø${nDw} × ${Z} (추정)`, C: Math.round(1600 * bscale), C0: Math.round(1500 * bscale), count: 1 },
         pin: out ? { d: pin, type: 'double', material: 'SUJ2', wall: plate, allow: 1200, holeMode: a < 1 ? 'through' : 'blind', depth: null }   // 얇은 판: 막힌 홀 드릴 끝(118°)이 판을 다 먹으므로 관통
@@ -278,6 +278,7 @@
           : { width: plate, outerD: null, innerD: null, bossT: 0, bossD: null, axialClearance: 0.3, material: 'S45C' }
       });
     });
+    if (spec.hollow > 0) D.geom = { ...(D.geom || {}), inshaft: { id: spec.hollow } };
     return E.defaultDesign ? fillMissing(D, E.defaultDesign()) : D;
   }
 
