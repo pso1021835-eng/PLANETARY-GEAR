@@ -163,11 +163,16 @@
     outer.push(lip >= CHK ? chk('axial', '축방향 위치', 'ok', lip, CHK, `하우징 어깨 + 출력 커버 걸림 ${f(lip, 2)} mm`) : chk('axial', '축방향 위치', 'fail', lip, CHK, `출력 커버 걸림 ${f(lip, 2)} mm < ${CHK} mm`, { path: 'geom.ocover.id', value: +(2 * (L.raceOut - CHK)).toFixed(2), locked: G.ocover?.id != null }));
     outer.push(fitCheck('outer', Do, '외륜–하우징', '하우징 보어'));
     const si = worst(inner.map(x => x.status)), so = worst(outer.map(x => x.status));
-    const seated = !inner.concat(outer).some(x => x.status === 'fail' && ['seatD', 'seatL', 'wall', 'axial'].includes(x.key));
+    // 회전·고정 관계: 안착·고정 항목(+ 끼워맞춤)에 미달이 있으면 미성립, 입력 필요가 남으면 확인 필요, 모두 충족일 때만 확정
+    const MOUNT = ['seatD', 'seatL', 'wall', 'axial', 'bore', 'fit'], mount = inner.concat(outer).filter(x => MOUNT.includes(x.key));
+    const pend = mount.filter(x => x.status === 'input').map(x => (inner.includes(x) ? '내륜 ' : '외륜 ') + x.label);
+    const rotationState = mount.some(x => x.status === 'fail' && x.key !== 'fit') ? 'fail' : pend.length ? 'input' : 'ok';
     return { bearing: { name: ob.name || '', d, D: Do, B, src: dimSrc },
       inner: { part: seatName, status: si, checks: inner }, outer: { part: '하우징', status: so, checks: outer },
-      rotation: seated ? '내륜은 캐리어와 함께 회전 / 외륜은 하우징에 고정' : '결합 미성립 — 회전·고정 관계를 확정할 수 없음',
-      status: worst([si, so]) };
+      rotation: rotationState === 'fail' ? '결합 미성립 — 회전·고정 관계를 확정할 수 없음'
+        : rotationState === 'input' ? `장착 조건 확인 필요 (${pend.join(', ')}) — 회전·고정 관계 미확정`
+        : '내륜은 캐리어와 함께 회전 / 외륜은 하우징에 고정',
+      rotationState, rotationPending: pend, status: worst([si, so]) };
   }
   // Ring reaction torque per stage (signed, same sign as the output torque T): ring holds T_carrier − T_sun of its stage.
   const RING_SF = 1.5;
