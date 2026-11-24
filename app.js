@@ -1775,7 +1775,7 @@ function ovInputs() {
       (model ? num('loads.posError','핀 구멍 위치 공차 (± µm)',{min:0}) : '')+'</div>'+
       '<p class="note">정격 운전에서 유성 하나가 받는 접선력입니다. 개별 막대는 핀 위치오차를 가정한 모델 결과입니다.</p>'+ovLoadReport();
   }
-  const rows = (ids[topic] || []).flatMap(expRows).filter(r=>r.kind==='in' && r.type!=='duty');
+  const rows = (ids[topic] || []).flatMap(id => expRows(id)).filter(r=>r.kind==='in' && r.type!=='duty');
   const fields = '<div class="grid">'+rows.map(inHTML).join('')+'</div>';
   if (topic === 'duty') return fields+W.duty();
   if (topic === 'fit') return fields;
