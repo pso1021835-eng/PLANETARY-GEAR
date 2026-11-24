@@ -381,8 +381,8 @@
       out.push({ id: `sun${st}`, name: compName(R, D, `sun${st}`), qty: 1, ...fam(mi), mass: gm(g.parts[0], x.sunBore, g.parts[0].width), step: 's3', verdict: gearVerdict(st, 0) });
       out.push({ id: `planet${st}`, name: compName(R, D, `planet${st}`), qty: n, ...fam(mi + 1), mass: gm(g.parts[1], x.planetBore, g.parts[1].width), step: 's3', verdict: gearVerdict(st, 1) });
       if (!L.shared || i === 0) out.push({ id: L.shared ? 'ring' : `ring${st}`, name: compName(R, D, L.shared ? 'ring' : `ring${st}`), qty: 1, ...fam(mi + 2),
-        mass: annulusMass((g.parts[2].da + g.parts[2].df) / 4, L.ringOD / 2, L.shared ? L.gearEnd : g.parts[2].width, STEEL), step: 's3',
-        verdict: (() => { const v = [gearVerdict(1, 2), L.shared ? gearVerdict(2, 2) : null].filter(Boolean); return v.length ? { ok: v.every(q => q.ok), text: v.map(q => q.text).join(' / ') } : null; })() });
+        mass: annulusMass((g.parts[2].da + g.parts[2].df) / 4, x.ringOD / 2, L.shared ? L.gearEnd : g.parts[2].width, STEEL), step: 's3',
+        verdict: (() => { const v = [gearVerdict(st, 2), L.shared ? gearVerdict(2, 2) : null].filter(Boolean); return v.length ? { ok: v.every(q => q.ok), text: v.map(q => q.text).join(' / ') } : null; })() });
       const cp = R.carrierPin[i];
       out.push({ id: `pin${st}`, name: `${st}단 유성핀`, qty: n, material: x.st.pin.material, heat: '담금질', mass: Math.PI / 4 * x.carrier.diameter ** 2 * x.carrier.pinLength * STEEL, step: 'scar',
         verdict: cp ? (() => { const g = cp.Sbend <= cp.Spress ? cp.modes.bend : cp.modes.press, ok = g.S >= 1; return { ok, text: `${g.name} ${fmt(g.S, 2)}${ok ? '' : ' · 미달'} · ${g.kind} ${fmt(g.T, 1)} N·m` }; })() : null });
@@ -397,7 +397,7 @@
     out.push({ id: 'xroller', name: `출력베어링 (${D.outBearing.name})`, qty: 1, material: '베어링강', heat: '담금질', step: 's9',
       mass: L.cat && D.outBearing.mass > 0 ? D.outBearing.mass : annulusMass(L.raceIn, L.raceOut, L.Bw, STEEL) * .8,
       verdict: { ok: ob.L10h >= D.req.lifeH && ob.governing.s0 >= D.req.s0 && (!roll || roll.governing.s0 >= D.req.s0), text: `s0 ${fmt(roll ? roll.governing.s0 : ob.governing.s0, 2)}` } });
-    out.push({ id: 'oflange', name: '출력 플랜지 (C2 결합)', qty: 1, material: 'S45C', heat: '조질', step: 'shous', mass: annulusMass(L.hollowR + .6, L.raceIn + .4, L.sh.flangeT, STEEL) + annulusMass(L.hollowR + .6, L.hubR, L.zFlange[0] - L.zEnd, STEEL) });
+    out.push({ id: 'oflange', name: `출력 플랜지 (C${L.S.length} 결합)`, qty: 1, material: 'S45C', heat: '조질', step: 'shous', mass: annulusMass(L.hollowR + .6, L.raceIn + .4, L.sh.flangeT, STEEL) + annulusMass(L.hollowR + .6, L.hubR, L.zFlange[0] - L.zEnd, STEEL) });
     out.push({ id: 'housing', name: '하우징', qty: 1, material: 'AL6061-T6', heat: '흑색 아노다이징', step: 'shous',
       mass: annulusMass(L.ringOD / 2, L.housR, L.zBear[0] - L.zIn, ALU) + annulusMass(L.raceOut, L.flangeR, L.zFlange[1] - L.zBear[0], ALU) });
     out.push({ id: 'cover', name: '입력단 커버', qty: 1, material: 'AL6061-T6', heat: '흑색 아노다이징', step: 'shous', mass: annulusMass(L.shaftR + L.sealH, L.housR, L.sh.coverT, ALU) });
@@ -438,7 +438,7 @@
     const TH = T(); if (!TH) return null;
     const { R, D, mode = 'full' } = opt;
     const full = mode === 'full';
-    // only: 'sprc' → machined parts only (sun, planet, ring, carrier + its pins); bearings, housing, covers, shafts, seals, bolts left out for now
+    // The assembly view also draws the optional housings, bearings, shafts and fasteners.
     const extras = full && opt.only !== 'sprc';
     const W0 = host.clientWidth, H0 = host.clientHeight;
     const mobile = Math.min(W0, window.innerWidth) < 760;
@@ -514,7 +514,7 @@
 
     // ---- gears + carriers per stage
     const kin = [];
-    const separatePlanets = full && opt.only === 'sprc';
+    const separatePlanets = full;
     const rings = L.shared ? L.S.slice(0, 1) : L.S;
     const ringRadius = Math.max(...rings.map(x => ringOuterRadius(x.g.parts[2], x.ringOD)));
     let ringBody = null, ringBodyPhase = 0;
@@ -564,9 +564,12 @@
       // needle rollers (instanced) between pin and planet bore
       let needles = null;
       if (extras && partOn(D, `needle${sid}`) && x.planetBore > st.pin.d + .6) {
-        const rIn = st.pin.d / 2, rOut = x.planetBore / 2, nd = (rOut - rIn) * .92, rc = (rIn + rOut) / 2;
-        const cnt = Math.max(6, Math.floor(2 * Math.PI * rc / (nd * 1.08)));
-        needles = new TH.InstancedMesh(new TH.CylinderGeometry(nd / 2, nd / 2, b * .9, 10).rotateX(Math.PI / 2), mkMat('roller'), cnt * st.n);
+        const rIn = st.pin.d / 2, rOut = x.planetBore / 2, rc = (rIn + rOut) / 2;
+        const calc = st.bearing.src === 'needle' ? globalThis.PGDChecks?.needleCalc(x.s, D.needle?.[i]) : null;
+        const model = calc && Number.isFinite(calc.Z) && calc.Z > 0 && calc.Dw > 0 && calc.Lw > 0 && Math.abs(calc.bore - x.planetBore) < .001 ? calc : null;
+        const nd = model?.Dw ?? (rOut - rIn) * .92, width = model?.Lw ?? b * .9;
+        const cnt = model?.Z ?? Math.max(6, Math.floor(2 * Math.PI * rc / (nd * 1.08)));
+        needles = new TH.InstancedMesh(new TH.CylinderGeometry(nd / 2, nd / 2, width, 10).rotateX(Math.PI / 2), mkMat('roller'), cnt * st.n);
         const m4 = new TH.Matrix4(); let k = 0;
         for (const pin of shape.pins) {
           for (let q = 0; q < cnt; q++) { const t = 2 * Math.PI * q / cnt; m4.makeTranslation(pin.x + rc * Math.cos(t), pin.y + rc * Math.sin(t), zb + b / 2); needles.setMatrixAt(k++, m4); }
@@ -900,6 +903,41 @@
       labels.innerHTML = st.issues.map((x, k) => `<button class="v3-lab ${x.sev || 'bad'}" data-k="${k}"><b>${k + 1}</b><span>${x.title}</span></button>`).join('');
       labels.querySelectorAll('.v3-lab').forEach(b => b.onclick = () => { const it = st.issues[+b.dataset.k]; select(it.partId, true); opt.onIssue?.(it); });
     }
+    const change = opt.dimensionChange;
+    const gauge = new TH.Group();
+    let dimensionLabel;
+    if (change) {
+      const r = maxR * 1.06;
+      const edge = (z, color, dashed) => {
+        const points = Array.from({ length: 65 }, (_, i) => {
+          const a = 2 * Math.PI * i / 64;
+          return new TH.Vector3(r * Math.cos(a), r * Math.sin(a), z);
+        });
+        const base = { color, depthTest: false, toneMapped: false };
+        const material = dashed ? new TH.LineDashedMaterial({ ...base, dashSize: 1.7, gapSize: 1.3 }) : new TH.LineBasicMaterial(base);
+        const line = new TH.Line(new TH.BufferGeometry().setFromPoints(points), material);
+        line.computeLineDistances();
+        line.renderOrder = 3;
+        gauge.add(line);
+      };
+      edge(change.from, 0xc1c6cd, true);
+      edge(change.to, 0x7cdaff, false);
+      const delta = change.to - change.from, distance = Math.abs(delta);
+      const arrow = new TH.ArrowHelper(new TH.Vector3(0, 0, Math.sign(delta)), new TH.Vector3(0, r, change.from), distance, 0x7cdaff, Math.min(2, distance * .55), Math.min(1.2, distance * .45));
+      for (const o of arrow.children) {
+        o.geometry = o.geometry.clone();
+        o.material.depthTest = false;
+        o.material.toneMapped = false;
+        o.renderOrder = 3;
+      }
+      gauge.add(arrow);
+      root.add(gauge);
+      dimensionLabel = document.createElement('p');
+      dimensionLabel.className = 'v3-structure-delta';
+      dimensionLabel.textContent = `${change.label} ${delta > 0 ? '+' : ''}${fmt(delta, 3)} mm · 점선 이전 / 실선 현재`;
+      ui.appendChild(dimensionLabel);
+    }
+
     const v3 = new TH.Vector3();
     function layoutLeaders() {
       const W = host.clientWidth, H = host.clientHeight; svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -982,6 +1020,7 @@
       const active = moving || st.playing;   // gear spin barely moves the shadow: refresh every 6th frame, once more on stop
       if (renderer.shadowMap.enabled && (active ? ++shadowTick % 6 === 1 : wasActive)) renderer.shadowMap.needsUpdate = true;
       wasActive = active;
+      if (dimensionLabel) dimensionLabel.hidden = !(gauge.visible = st.explode < .01 && st.explodeTarget < .01);
       renderer.render(scene, camera);
       layoutLeaders();
     }
@@ -991,7 +1030,7 @@
     function dispose() {
       cancelAnimationFrame(raf); ro.disconnect(); io.disconnect(); document.removeEventListener('pointerdown', onDocDown);
       scene.traverse(o => { o.geometry?.dispose?.(); if (o.material) [].concat(o.material).forEach(m => m.dispose?.()); });
-      scene.environment?.dispose?.(); renderer.dispose(); renderer.domElement.remove(); ui.remove();
+      finish.turned.dispose(); finish.grain.dispose(); scene.environment?.dispose?.(); renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); ui.remove();
     }
     return {
       axialView(side) { resetView(); vel.az = vel.el = 0; goal.el = 0; goal.az = side > 0 ? 0 : Math.PI; },
@@ -1058,6 +1097,9 @@
     else if (id === 'oshaft') { Gm('oshaft', 'od', '외경'); Gm('oshaft', 'id', '내경 (중공)'); }
     else if (id === 'brgS1') { Gm('brgS1', 'h', '반경 단면 높이'); Gm('brgS1', 'w', '폭'); }
     else if (id === 'brgS2') { Gm('brgS2', 'h', '반경 단면 높이'); Gm('brgS2', 'w', '폭'); }
+    if (/^needle[12]$/.test(id) && D.stages[Number(id.at(-1)) - 1].bearing.src === 'needle') {
+      for (const row of out) if (/\.C0?$/.test(row.path)) row.lock = true;
+    }
     if (partLocked(D, id)) out.forEach(r => r.lock = true);
     return out;
   }

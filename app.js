@@ -23,8 +23,8 @@ function migrateLoaded(d) {
 }
 function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.schema === 'pgd/1') { s.config.floatingSun = false; return migrateLoaded(s); } } catch (e) { } return E.defaultDesign(); }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(D)); } catch (e) { } }
-const get = p => p.split('.').reduce((o, k) => o?.[k], D);
-const set = (p, v) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((o, k) => (o[k] ??= {}), D)[last] = v; };
+const get = (p, design = D) => p.split('.').reduce((o, k) => o?.[k], design);
+const set = (p, v, design = D) => { const ks = p.split('.'), last = ks.pop(); ks.reduce((o, k) => (o[k] ??= {}), design)[last] = v; };
 
 function compute() {
   analysisJobs.cancel();
@@ -47,34 +47,34 @@ function compute() {
 
 // ------------------------------------------------------------------ inputs
 function num(path, label, opt = {}) {
-  const v = get(path), fi = fieldInfo(path);
-  return `<label class="f${fi.err ? ' ferr' : ''}">${label}<input type="number" step="${opt.step ?? 'any'}" ${opt.min != null ? `min="${opt.min}"` : ''} data-p="${path}" data-t="num" value="${v ?? ''}" ${opt.placeholder != null ? `placeholder="${esc(opt.placeholder)}"` : ''} ${opt.disabled || fi.lock ? 'disabled' : ''}>${fieldNote(fi)}</label>`;
+  const v = get(path, opt.design), fi = fieldInfo(path, opt.design);
+  return `<label class="f${fi.err ? ' ferr' : ''}">${label}<input type="number" step="${opt.step ?? 'any'}" ${opt.min != null ? `min="${opt.min}"` : ''} data-p="${path}" data-t="num" value="${esc(v ?? '')}" ${opt.placeholder != null ? `placeholder="${esc(opt.placeholder)}"` : ''} ${opt.disabled || fi.lock ? 'disabled' : ''}>${fieldNote(fi)}</label>`;
 }
 function sel(path, label, options, opt = {}) {
-  const v = String(get(path));
+  const v = String(get(path, opt.design));
   return `<label class="f">${label}<select data-p="${path}" data-t="${opt.type || 'str'}" ${opt.disabled ? 'disabled' : ''}>${options.map(([k, t]) => `<option value="${esc(k)}" ${String(k) === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
 }
-function chk(path, label, opt = {}) { const fi = fieldInfo(path); return `<label class="c"><input type="checkbox" data-p="${path}" data-t="bool" ${get(path) ? 'checked' : ''} ${opt.disabled || fi.lock ? 'disabled' : ''}> ${label}${fieldNote(fi)}</label>`; }
+function chk(path, label, opt = {}) { const fi = fieldInfo(path, opt.design); return `<label class="c"><input type="checkbox" data-p="${path}" data-t="bool" ${get(path, opt.design) ? 'checked' : ''} ${opt.disabled || fi.lock ? 'disabled' : ''}> ${label}${fieldNote(fi)}</label>`; }
 // Per-field annotation shared by every place a field is drawn: where a linked value comes from (공용 링), which value the
 // analysis actually uses (베어링 C·C0 출처), or why an entry cannot be used (출력 베어링 외력).
 const fieldNote = fi => fi.err ? `<small class="fnote bad">${esc(fi.err)}</small>` : fi.note ? `<small class="fnote">${esc(fi.note)}</small>` : '';
-function fieldInfo(path) {
+function fieldInfo(path, design = D) {
   const m = /^stages\.1\.(r|xr|autoRingShift|m|beta|alpha|p|xp|tipChamfer\.2|asn\.2\.\d)$/.exec(path);
-  if (m && D.config.sharedRing && D.config.stages > 1) {
-    const sh = R?.ctx?.stages?.[1]?.st?.sharedRing, k = m[1];
+  if (m && design.config.sharedRing && design.config.stages > 1) {
+    const sh = design === D ? R?.ctx?.stages?.[1]?.st?.sharedRing : null, k = m[1];
     if (k === 'xp') {
       if (!sh) return {};
       if (sh.auto) return { note: `자동 조정 ${fmt(sh.xpUsed, 4)} (공용 링 고정 · 중심거리 ${fmt(sh.centreExt, 4)} mm 일치)${sh.adjusted ? ` · 입력 ${fmt(sh.xpIn, 4)}에서 조정` : ''}` };
       return Math.abs(sh.gap) >= 1e-4 ? { err: `입력 보존 · 중심거리 썬–유성 ${fmt(sh.centreExt, 4)} / 유성–링 ${fmt(sh.centreInt, 4)} mm (차 ${fmt(sh.gap, 4)} mm) — 성립하지 않음` } : { note: '입력값 사용 · 중심거리 일치' };
     }
-    if (k === 'p') return D.stages[0].r == null ? { note: '공용 링 잇수(1단)에서 계산: (zr − zs) / 2' } : {};
+    if (k === 'p') return design.stages[0].r == null ? { note: '공용 링 잇수(1단)에서 계산: (zr − zs) / 2' } : {};
     const src = { r: '링 잇수', xr: '링 전위', autoRingShift: '링 전위 자동', m: '모듈', beta: '비틀림각', alpha: '압력각', 'tipChamfer.2': '링 이끝 모따기' }[k] || '링 치두께 공차';
     const val = k === 'xr' && sh ? ` = ${fmt(sh.xr, 4)}` : k === 'r' && sh ? ` = ${sh.r}${sh.rAuto ? ' (자동)' : ''}` : '';
     return { lock: true, note: `공용 링 · 1단 ${src}${val} 값과 연동 (1단 입력에서 변경)` };
   }
   const b = /^stages\.(\d)\.bearing\.(C0?|name)$/.exec(path);
   if (b) {
-    const br = D.stages[+b[1]]?.bearing, src = br?.src === 'needle';
+    const br = design.stages[+b[1]]?.bearing, src = br?.src === 'needle';
     if (!br) return {};
     if (b[2] === 'name') return src ? { lock: true, note: `풀니들 계산 적용 중 · 직접 입력 "${br.manual?.name ?? '—'}" 보관` } : {};
     const lost = br.manualLost && !src;
@@ -83,27 +83,34 @@ function fieldInfo(path) {
       : { note: `현재 적용 ${b[2]} ${fmtN0(br[b[2]])} N · 직접 입력` };
   }
   const pb = /^stages\.(\d)\.planetBore$/.exec(path);
-  if (pb) { const br = D.stages[+pb[1]]?.bearing; if (br?.src === 'needle') return { lock: true, note: `풀니들 계산 보어 Ø${fmt(br.calc?.planetBore, 3)} 적용 중 (직접 입력 ${br.manual?.planetBore ?? '빈칸'} 보관)` }; }
+  if (pb) { const br = design.stages[+pb[1]]?.bearing; if (br?.src === 'needle') return { lock: true, note: `풀니들 계산 보어 Ø${fmt(br.calc?.planetBore, 3)} 적용 중 (직접 입력 ${br.manual?.planetBore ?? '빈칸'} 보관)` }; }
   const na = /^needle\.(\d)\.apply$/.exec(path);
-  if (na) { const br = D.stages[+na[1]]?.bearing; if (!br) return {}; return { note: br.src === 'needle' ? `현재 적용: 풀니들 계산 C ${fmtN0(br.C)} / C0 ${fmtN0(br.C0)} N · 직접 입력 ${br.manual ? `C ${fmtN0(br.manual.C)} / C0 ${fmtN0(br.manual.C0)} N 보관` : '값 없음 (해제 시 복원 불가)'}` : `현재 적용: 직접 입력 C ${fmtN0(br.C)} / C0 ${fmtN0(br.C0)} N${br.calc ? ` · 풀니들 계산값 C ${fmtN0(br.calc.C)} N 보관` : ''}` }; }
+  if (na) { const br = design.stages[+na[1]]?.bearing; if (!br) return {}; return { note: br.src === 'needle' ? `현재 적용: 풀니들 계산 C ${fmtN0(br.C)} / C0 ${fmtN0(br.C0)} N · 직접 입력 ${br.manual ? `C ${fmtN0(br.manual.C)} / C0 ${fmtN0(br.manual.C0)} N 보관` : '값 없음 (해제 시 복원 불가)'}` : `현재 적용: 직접 입력 C ${fmtN0(br.C)} / C0 ${fmtN0(br.C0)} N${br.calc ? ` · 풀니들 계산값 C ${fmtN0(br.calc.C)} N 보관` : ''}` }; }
   const x = /^req\.ext\.(Fr|Fa|M)$/.exec(path);
-  if (x) { const v = E.validateExt(D.req.ext)[x[1]]; return v.ok ? { note: v.note } : { err: v.err }; }
+  if (x) { const v = E.validateExt(design.req.ext)[x[1]]; return v.ok ? { note: v.note } : { err: v.err }; }
   return {};
 }
+function inputValue(elm) {
+  const t = elm.dataset.t;
+  if (t === 'num') return elm.value === '' ? null : Number(elm.value);
+  if (t === 'int') return parseInt(elm.value, 10);
+  if (t === 'bool') return elm.checked;
+  if (t === 'numsel') return Number(elm.value);
+  return elm.value;
+}
+function inputLabel(elm) {
+  return elm.closest('label')?.firstChild?.textContent?.trim() || elm.closest('tr')?.cells[0]?.textContent?.trim() || '선택한 입력';
+}
 function bindInputs(root) {
-  root.querySelectorAll('[data-p]').forEach(elm => elm.addEventListener('change', () => {
-    const t = elm.dataset.t; let v = elm.value;
-    if (t === 'num') { v = elm.value === '' ? null : Number(elm.value); }
-    else if (t === 'int') v = parseInt(v, 10);
-    else if (t === 'bool') v = elm.checked;
-    else if (t === 'numsel') v = Number(v);
-    if (view === 'overview' && ovCompare.owner === D) {
-      const label = elm.closest('label')?.firstChild?.textContent?.trim() || elm.closest('tr')?.cells[0]?.textContent?.trim();
-      ovCompare.last = { path: elm.dataset.p, label: label || '선택한 입력' };
-    }
-    set(elm.dataset.p, v);
-    changed();
-  }));
+  root.querySelectorAll('[data-p]').forEach(elm => {
+    if (elm.closest('[data-structure-form]')) return;
+    elm.addEventListener('change', () => {
+      if (view === 'overview' && ovCompare.owner === D) ovCompare.last = { path: elm.dataset.p, label: inputLabel(elm) };
+      recordStructureChange([{ path: elm.dataset.p, label: inputLabel(elm), before: get(elm.dataset.p), value: inputValue(elm) }]);
+      set(elm.dataset.p, inputValue(elm));
+      changed();
+    });
+  });
 }
 function changed() { save(); compute(); renderRail(); renderVerdict(); render(true); }
 
@@ -164,15 +171,15 @@ function evalMap() {
   EMC = { X, m }; return m;
 }
 function ictx() { const X = procExtra(), EM = evalMap(); return { R, D, X, CK: X.CK || {}, it: id => EM[id], EM }; }
-function expRows(id) {
+function expRows(id, design = D) {
   const sp = IT()[id] || (typeof gspec === 'function' ? gspec(id) : null); if (!sp) return [];
-  const n = D.config.stages, out = [];
+  const n = design.config.stages, out = [];
   for (const r of sp.rows || []) {
     if (r[0] === 'D' || r[0] === 'M' || r[0] === 'A') {
       const [g, type, path, label, o = {}] = r;
       for (const i of (o.st ? Array.from({ length: n }, (_, k) => k) : [0])) {
-        if (o.if && !o.if(D, i)) continue;
-        out.push({ g, kind: 'in', type, path: path && path.replace('{i}', i), label: label.replace('{s}', i + 1), o, dis: !!(o.lk && i === 1 && D.config.sharedRing && n > 1 && (typeof o.lk !== 'function' || o.lk(D))) });
+        if (o.if && !o.if(design, i)) continue;
+        out.push({ g, kind: 'in', type, path: path && path.replace('{i}', i), label: label.replace('{s}', i + 1), o, dis: !!(o.lk && i === 1 && design.config.sharedRing && n > 1 && (typeof o.lk !== 'function' || o.lk(design))) });
       }
     } else if (r[0] === 'J') out.push({ g: 'D', kind: 'chk', key: r[1], label: r[2] });
     else out.push({ g: r[0] === 'P' ? 'A' : 'C', kind: r[0] === 'P' ? 'pred' : 'calc', label: r[1], fn: r[2], basis: r[3] });
@@ -200,12 +207,13 @@ function rels(id) {
 }
 function srcCounts(id) { const rs = expRows(id), c = { D: 0, C: 0, M: 0, A: 0 }; rs.forEach(r => c[r.g]++); return c; }
 const srcChips = id => { const c = srcCounts(id), S = SRCD(); return ['D', 'C', 'M', 'A'].filter(g => c[g]).map(g => `<span class="srcchip ${S[g].c}" title="${S[g].t}">${S[g].t.split('·')[0].split(' ')[0]} ${c[g]}</span>`).join(''); };
-function inHTML(r) {
+function inHTML(r) { return designInputHTML(r, D); }
+function designInputHTML(r, design) {
   if (r.type === 'duty') return `<div class="f note wide">${esc(r.label)}</div>`;
-  if (r.type === 'num') return num(r.path, r.label, { step: r.o.step, disabled: r.dis });
-  if (r.type === 'sel') return sel(r.path, r.label, r.o.o, { type: r.o.t, disabled: r.dis });
-  if (r.type === 'chk') return chk(r.path, r.label, { disabled: r.dis });
-  if (r.type === 'str') return `<label class="f">${r.label}<input type="text" data-p="${r.path}" data-t="str" value="${esc(get(r.path) ?? '')}"></label>`;
+  if (r.type === 'num') return num(r.path, r.label, { step: r.o.step, min: r.o.min, placeholder: r.o.placeholder, disabled: r.dis, design });
+  if (r.type === 'sel') return sel(r.path, r.label, r.o.o, { type: r.o.t, disabled: r.dis, design });
+  if (r.type === 'chk') return chk(r.path, r.label, { disabled: r.dis, design });
+  if (r.type === 'str') return `<label class="f">${r.label}<input type="text" data-p="${r.path}" data-t="str" ${r.dis || fieldInfo(r.path, design).lock ? 'disabled' : ''} value="${esc(get(r.path, design) ?? '')}"></label>`;
   return '';
 }
 function itemSections(id, c) {
@@ -250,9 +258,11 @@ function itemPage(id) {
       <div class="ibadge">${rvBadge(st)}<span>${RV[st][1]}</span></div></div>
     ${errBox()}${alerts}
     ${window.PGDStructure?.render(id, c) || ''}
+    ${k === '2' ? `<div class="sc-links"><button type="button" class="btn" data-v="st-2">구조 상세 구성</button><button type="button" class="btn" data-structure-open="${id}">3D에서 구조 편집</button></div>` : ''}
     ${wwwHTML(sp)}
     ${judgeHTML(id, c)}
     <div class="isecs">${itemSections(id, c)}</div>
+    ${k === '2' ? relatedStructureInputs(id) + structureChanges() : ''}
     ${ext || wid ? `<h3 class="cardsh">상세 계산·표</h3>${ext ? `<div class="card pcx">${ext}</div>` : ''}${wid}` : ''}
     <div class="irel"><div><h4>선행 — 먼저 확인할 항목</h4>${rl.up.map(([u, t]) => relChip(u, t, c, fb(u))).join('') || '<p class="note">없음</p>'}</div>
       <div><h4>영향 — 이 값을 바꾸면 다시 볼 항목</h4>${rl.down.map(([u, t]) => relChip(u, t, c, O.indexOf(u) < idx)).join('') || '<p class="note">없음</p>'}</div></div>
@@ -278,6 +288,7 @@ function bindItemCommon(m, id) {
 function bindItemPage(m, id) {
   bindItemCommon(m, id);
   m.querySelectorAll('[data-v]').forEach(b => b.onclick = () => go(b.dataset.v));
+  bindStructurePage(m);
   m.querySelectorAll('[data-rv]').forEach(b => b.onclick = () => { setReview(id, b.dataset.rv); renderRail(); render(true); });
   const note = m.querySelector('[data-rvnote]'); if (note) note.onchange = e => { e.stopPropagation(); rv(id).note = note.value; save(); };
   const nx = m.querySelector('[data-rvnext]'); if (nx) nx.onclick = () => { if (note) rv(id).note = note.value; setReview(id, 'done'); const n = nextUnreviewed(id, ictx()); go('it-' + (n || id)); };
@@ -294,11 +305,16 @@ function stagePage(k) {
   const first = g.items.find((i, n) => sts[n] !== 'done')?.id || g.items[0].id;
   return `<div class="shead"><span class="snum">${k}</span><div><h2>${esc(k === 'D' ? '가공·원가 (병행 트랙)' : g.name)}</h2><p class="lead">항목 ${g.total}개 · 검토 완료 ${done}${stale ? ` · <b class="bad">재검토 ${stale}</b>` : ''} · 항목을 누르면 전용 페이지로 갑니다.</p></div><button class="btn primary" data-goit="${first}">${first}부터 검토 →</button></div>
     <div class="pgate ${gateCls(g.gate.ok)}">단계 게이트 · ${esc(g.gate.t)} — ${g.gate.ok === true ? '통과' : g.gate.ok === false ? '미달' : '판정 기준 없음 (설계자 확인)'}</div>
-    ${k === '2' ? window.PGDStructure?.render('overview', c) || '' : ''}
+    ${k === '2' ? (window.PGDStructure?.render('overview', c) || '') +
+      '<div class="sc-links"><button type="button" class="btn" data-structure-open>3D에서 구조 편집</button></div>' + structureBatchHTML() : ''}
     <ol class="slist">${g.items.map((i, n) => { const sp = IT()[i.id] || {}, ok = itemOk(i.id, c); return `<li><button data-goit="${i.id}"><span class="pid">${i.id}</span><span class="st"><b>${esc(i.t)}</b><small>${esc(sp.what || '')}</small></span><span class="srcs">${srcChips(i.id)}</span><span class="pval">${esc(String(i.val ?? ''))}</span>${okMark(ok)}${rvBadge(sts[n])}</button></li>`; }).join('')}</ol>
     <div class="pager">${prev ? `<button class="btn" data-v="st-${prev}">← ${prev} ${esc(nameOf(prev))}</button>` : '<span></span>'}${next ? `<button class="btn primary" data-v="st-${next}">${next} ${esc(nameOf(next))} →</button>` : ''}</div>`;
 }
-function bindStagePage(m) { bindItemCommon(m, null); m.querySelectorAll('[data-v]').forEach(b => b.onclick = () => go(b.dataset.v)); }
+function bindStructurePage(root) {
+  root.querySelectorAll('[data-structure-open]').forEach(button => button.onclick = () => openStructureInOverview(button.dataset.structureOpen));
+  bindStructureEditor(root);
+}
+function bindStagePage(m) { bindItemCommon(m, null); m.querySelectorAll('[data-v]').forEach(b => b.onclick = () => go(b.dataset.v)); bindStructurePage(m); }
 // ------------------------------------------------------------------ core review (groups.js): 99 items folded into ~20 linked groups
 const GR = () => window.PGDGroups;
 let GSPEC = {}, GRELC = null;
@@ -1318,7 +1334,7 @@ function runJob(type, done) {
 
 // ------------------------------------------------------------------ 3D (viewer3d.js) glue
 let VIEW3D = null;
-const OVSTATE = { view: null, sel: null };
+const OVSTATE = { view: null, sel: null, assembly: false };
 const HOUS_DEF = { wall: 3, coverT: 4, boltN: 8, boltD: 3, flangeT: 5 };
 function ensureD() {
   D.housing = Object.assign({}, HOUS_DEF, D.housing || {});
@@ -1336,7 +1352,7 @@ function componentsHTML() {
     <td><label class="sw"><input type="checkbox" data-p="options.${o.key}.lock" data-t="bool" ${D.options?.[o.key]?.lock ? 'checked' : ''}> 잠금</label></td></tr>`).join('');
   return `<div class="card"><h3>기본 구성요소</h3><p class="note" style="margin-top:0">링기어 고정 · 썬 입력 · 캐리어 출력. S·P·R은 4단계 기어 제원에서, C는 10단계 캐리어–핀에서 형상이 정해집니다.</p>
     <table class="comp"><tr><th>단</th><th>썬</th><th>유성</th><th>링</th><th>캐리어</th></tr>${rows}</table></div>
-    <div class="card"><h3>옵션 부품</h3><p class="note" style="margin-top:0"><b>3D 종합판정 모델은 지금 부품 편집에서 고칠 수 있는 가공 부품(S·P·R·C, 유성 핀)만 표시합니다. 아래 옵션 부품은 하나씩 다시 추가할 예정입니다.</b> 표시를 끄면 BOM·도면에서 빠집니다. 잠금은 치수 입력을 고정합니다. 강도 계산(유성 베어링·출력 베어링·핀 판정)은 표시 여부와 관계없이 그대로 수행합니다.</p>
+    <div class="card"><h3>옵션 부품</h3><p class="note" style="margin-top:0"><b>3D 종합판정의 ‘표시·구동 설정’에서 전체 조립 보기를 열 수 있습니다.</b> 베어링·하우징 등 일부 부품은 개념 형상입니다. 표시를 끄면 BOM·도면에서 빠집니다. 잠금은 치수 입력을 고정합니다. 강도 계산(유성 베어링·출력 베어링·핀 판정)은 표시 여부와 관계없이 그대로 수행합니다.</p>
     <table class="comp opt"><tr><th class="l">부품</th><th>표시</th><th>잠금</th></tr>${opts}</table></div>`;
 }
 // ------------------------------------------------------------------ part drawings
@@ -1367,6 +1383,7 @@ function bindDrawing(root, onSel) {
       if (!ok || inp.value === g.dataset.v) return;
       const v = inp.value === '' ? null : Number(inp.value);
       if (v != null && !(Number.isFinite(v) && v >= 0)) return;
+      recordStructureChange([{ path: g.dataset.p, label: g.dataset.l, before: get(g.dataset.p), value: v }]);
       set(g.dataset.p, v); changed();
     };
     inp.onkeydown = e => { if (e.key === 'Enter') apply(true); else if (e.key === 'Escape') apply(false); };
@@ -1473,6 +1490,210 @@ function overviewSpeedRows() {
   return rows.join('');
 }
 
+const structureGroups = [
+  ['2-1', '단수·링 배치', ['2-1', '2-3']],
+  ['2-2', '단별 기어 제원·감속비', ['3-2', '3-6', '3-7', '3-8', '3-9']],
+  ['2-4', '링 결합·하우징·커버', ['2-4', '8-1', '8-2', '8-3', '8-4', '8-5']],
+  ['2-5', '1단 캐리어–2단 썬 결합', ['2-5']],
+  ['2-6', '입력축–썬 결합', ['2-6']],
+  ['2-7', '썬 지지·반경 유격', ['2-7', '7-4', '11-1']],
+  ['2-8', '출력부 결합·베어링', ['2-8', '7-5', '7-7']],
+  ['2-9', '유성 배치·캐리어·핀·풀니들', ['2-9', '6-1', '6-2', '6-3', '6-4', '7-1', '7-2']],
+  ['2-10', '하중 경로·출력축 외력', ['1-5']]
+];
+const structureEdit = { owner: null, draft: new Map(), last: null, open: new Set(['2-1']) };
+function structureState() {
+  if (structureEdit.owner !== D) Object.assign(structureEdit, { owner: D, draft: new Map(), last: null, open: new Set(['2-1']) });
+  return structureEdit;
+}
+function structuralRows(ids, design) {
+  const two = design.config.stages > 1;
+  const rows = ids.flatMap(id => !two && (id === '2-5' || id === '2-3')
+    ? [] : expRows(id, design).filter(r => r.kind === 'in' && r.path &&
+      (id !== '11-1' || /\.play$/.test(r.path)) && (id !== '7-7' || !/carrier\./.test(r.path)) &&
+      (id !== '2-7' || two || r.path !== 'struct.c1Support')));
+  const numeric = (path, label, o) => ({ kind: 'in', type: 'num', path, label, o });
+  if (ids.includes('2-1') && two) rows.push(numeric('geom.stageGap', '단간 캐리어 간격 mm (3D 배치)', { min: 0, placeholder: '자동 0.6' }));
+  if (ids.includes('3-2')) for (let i = 0; i < (two && !design.config.sharedRing ? 2 : 1); i++) {
+    rows.push(numeric(`stages.${i}.r`, `${i + 1}단 링 잇수 (빈칸 자동)`, { min: 1, step: 1 }));
+  }
+  const seen = new Set();
+  return rows.filter(r => !seen.has(r.path) && seen.add(r.path));
+}
+function relatedStructureInputs(id) {
+  const group = structureGroups.find(([key]) => key === id);
+  if (!group) return '';
+  const own = new Set(expRows(id).map(r => r.path));
+  const rows = structuralRows(group[2], D).filter(r => !own.has(r.path));
+  return rows.length ? `<section class="sc card"><h3>${group[1]}</h3><div class="grid">${rows.map(inHTML).join('')}</div></section>` : '';
+}
+function structureLayout() {
+  if (!window.PGD3D || !R?.ctx || R.errors?.length) return null;
+  const L = PGD3D.layout(R, D);
+  return {
+    length: L.zFlange[1] - L.zIn,
+    stages: L.S.map(x => ({ start: x.z0, end: x.z0 + x.b })),
+    bearing: { start: L.zBear[0], end: L.zBear[1] }
+  };
+}
+function recordStructureChange(edits, batch = false) {
+  const state = structureState();
+  const paths = new Set(structureGroups.flatMap(([, , ids]) => structuralRows(ids, D)).map(r => r.path));
+  const relevant = edits.filter(e => !Object.is(e.before, e.value) && (batch || paths.has(e.path) || /^geom\./.test(e.path)));
+  if (relevant.length) state.last = { edits: relevant, before: structureLayout(), performance: ovSnapshot() };
+  else if (edits.some(e => !Object.is(e.before, e.value))) state.last = null;
+}
+function structureChanges() {
+  const last = structureState().last;
+  if (!last) return '';
+  const value = v => typeof v === 'boolean' ? (v ? '사용' : '해제') : esc(v ?? '자동/미입력');
+  const now = structureLayout(), before = last.before;
+  const sign = n => (n > 0 ? '+' : '') + fmt(n, 3);
+  const compare = (name, a, b) => Math.abs(a - b) > .0005 ? `<li>${name} <b>${fmt(a, 3)} → ${fmt(b, 3)} mm (${sign(b - a)})</b></li>` : '';
+  const shape = before && now ? [
+    compare('조립 외형 길이', before.length, now.length),
+    ...now.stages.map((s, i) => before.stages[i] ? compare(`${i + 1}단 치폭`, before.stages[i].end - before.stages[i].start, s.end - s.start) : ''),
+    ...now.stages.map((s, i) => before.stages[i] ? compare(`${i + 1}단 기어 시작면 위치`, before.stages[i].start, s.start) : ''),
+    compare('출력 베어링 중심 위치', (before.bearing.start + before.bearing.end) / 2, (now.bearing.start + now.bearing.end) / 2)
+  ].join('') : '';
+  const performance = ovSnapshot();
+  const outputs = last.performance && performance ? [
+    ['기어 수명 기준 토크', 'gear', 'N·m'], ['기어·유성 베어링 한계', 'limit', 'N·m'], ['치합 백래시 상한', 'backlash', 'arcmin'],
+    ['비틀림 강성', 'stiffness', 'N·m/arcmin'], ['출력 베어링 기울기 (정격)', 'tilt', 'arcmin']
+  ].map(([name, key, unit]) => {
+    const a = last.performance[key], b = performance[key];
+    return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) > .0005
+      ? `<li>${name} <b>${fmt(a, 3)} → ${fmt(b, 3)} ${unit} (${sign(b - a)})</b></li>` : '';
+  }).join('') : '';
+  return `<section class="sc-changes" aria-label="최근 구조 변경"><b>최근 적용한 입력</b>
+    <ul>${last.edits.map(e => `<li>${esc(e.label)} <b>${value(e.before ?? (e.path === 'geom.stageGap' ? .6 : null))} → ${value(get(e.path))}</b></li>`).join('')}</ul>
+    ${shape ? '<b>3D 배치 변화 (1단 기어 시작면 기준)</b><ul>' + shape + '</ul>' : ''}
+    ${outputs ? '<b>성능예측 변화</b><ul>' + outputs + '</ul>' : ''}
+    ${!now ? '<p class="bad">계산 오류를 수정하면 배치와 성능을 다시 표시합니다.</p>' : ''}</section>`;
+}
+function structureMarker() {
+  const before = structureState().last?.before, now = structureLayout();
+  if (!before || !now) return null;
+  const i = now.stages.length - 1;
+  if (before.stages.length === now.stages.length && i > 0 && Math.abs(now.stages[i].start - before.stages[i].start) > .0005) {
+    return { from: before.stages[i].start, to: now.stages[i].start, label: `${i + 1}단 기어 시작면` };
+  }
+  const a = before.stages[0].end, b = now.stages[0].end;
+  return Math.abs(a - b) > .0005 ? { from: a, to: b, label: '1단 기어 끝면' } : null;
+}
+function structureBatchHTML() {
+  const state = structureState();
+  const design = structuredClone(D);
+  for (const [path, edit] of state.draft) set(path, edit.value, design);
+  return `<section class="sc card sc-editor" data-structure-editor>
+    <h3>구조 상세 구성 · 일괄 편집</h3>
+    <p class="note">여러 값을 수정한 뒤 한 번에 적용하세요. 개별 페이지와 3D 종합판정이 같은 설계값을 사용합니다.</p>
+    <form data-structure-form novalidate>
+      ${structureGroups.map(([key, title, ids]) => {
+        const rows = structuralRows(ids, design);
+        if (!rows.length) return '';
+        return `<details data-structure-group="${key}" ${state.open.has(key) ? 'open' : ''}>
+          <summary>${title}</summary>
+          <div class="grid">${rows.map(r => designInputHTML(r, state.draft.size ? design : D)).join('')}</div>
+          ${key === '2-8' ? '<p class="note">위치 유형은 구조 개념도와 결합 검토에 사용됩니다. 출력 베어링의 3D 위치는 현재 조립 모델의 축방향 배치에서 산출됩니다.</p>' : ''}
+          <button type="button" class="btn" data-structure-detail="${key}">개별 항목 보기</button>
+        </details>`;
+      }).join('')}
+      <div class="sc-editor-actions"><button type="submit" class="btn primary">구조 변경 적용</button>
+        <button type="button" class="btn" data-structure-reset>입력 취소</button><span data-structure-status role="status"></span></div>
+    </form>
+    ${structureChanges()}
+  </section>`;
+}
+function bindStructureEditor(root) {
+  const box = root.querySelector('[data-structure-editor]');
+  if (!box) return;
+  const form = box.querySelector('[data-structure-form]');
+  const pending = form.querySelector('[data-structure-status]');
+  const state = structureState();
+  const fields = () => [...form.querySelectorAll('[data-p]:enabled')];
+  const count = () => { pending.textContent = state.draft.size ? `적용 대기 ${state.draft.size}개` : '적용 대기 없음'; };
+  count();
+  const refresh = (path, group) => {
+    form.querySelectorAll('[data-structure-group]').forEach(section => {
+      if (section.open) state.open.add(section.dataset.structureGroup);
+      else state.open.delete(section.dataset.structureGroup);
+    });
+    box.outerHTML = structureBatchHTML();
+    bindStructureEditor(root);
+    const next = root.querySelector('[data-structure-editor]');
+    const input = [...next.querySelectorAll('[data-p]')].find(el => el.dataset.p === path && !el.disabled);
+    (input || next.querySelector(group ? `[data-structure-group="${group}"] summary` : "[data-structure-reset]"))?.focus({ preventScroll: true });
+  };
+  const remember = input => {
+    const path = input.dataset.p, value = inputValue(input);
+    const before = state.draft.has(path) ? state.draft.get(path).before : get(path);
+    if (!input.validity.badInput && (Object.is(before, value) || before == null && (value == null || value === ''))) state.draft.delete(path);
+    else state.draft.set(path, { path, value, before, label: inputLabel(input), badInput: input.validity.badInput });
+    count();
+  };
+  form.querySelectorAll('[data-structure-group]').forEach(section => section.addEventListener('toggle', () => {
+    if (section.open) state.open.add(section.dataset.structureGroup);
+    else state.open.delete(section.dataset.structureGroup);
+  }));
+  form.querySelectorAll('[data-structure-detail]').forEach(button => button.onclick = () => go('it-' + button.dataset.structureDetail));
+  form.addEventListener('input', e => {
+    if (e.target.matches('input[data-p]:enabled')) remember(e.target);
+  });
+  form.addEventListener('change', e => {
+    const input = e.target;
+    if (!input.matches('[data-p]:enabled')) return;
+    remember(input);
+    if (!input.validity.badInput && (input.matches('select, input[type=checkbox]') || input.dataset.p === 'stages.0.r')) {
+      refresh(input.dataset.p, input.closest('[data-structure-group]').dataset.structureGroup);
+    }
+  });
+  form.querySelector('[data-structure-reset]').onclick = () => {
+    state.draft.clear();
+    refresh();
+  };
+  form.onsubmit = e => {
+    e.preventDefault();
+    if (!state.draft.size) return;
+    const design = structuredClone(D);
+    for (const { path, value } of state.draft.values()) set(path, value, design);
+    const allowed = new Map(structureGroups.flatMap(([, , ids]) => structuralRows(ids, design)).filter(r => !r.dis && !fieldInfo(r.path, design).lock).map(r => [r.path, r]));
+    const edits = [...state.draft.values()].filter(edit => allowed.has(edit.path));
+    for (const edit of edits) {
+      const current = get(edit.path);
+      const rule = allowed.get(edit.path).o;
+      if (!Object.is(current, edit.before) && !Object.is(current, edit.value)) {
+        pending.textContent = `${edit.label} 값이 개별 입력에서 변경됐습니다. 입력 취소 후 다시 지정하세요.`;
+        return;
+      }
+      if (edit.badInput || typeof edit.value === 'number' && (!Number.isFinite(edit.value) || rule.step === 1 && !Number.isInteger(edit.value) || rule.min != null && edit.value < rule.min)) {
+        const input = fields().find(el => el.dataset.p === edit.path);
+        if (input) { input.closest('details').open = true; input.focus(); }
+        pending.textContent = `${edit.label} 값을 확인하세요.`;
+        return;
+      }
+    }
+    if (edits.length < state.draft.size) {
+      for (const path of state.draft.keys()) if (!allowed.has(path)) state.draft.delete(path);
+      pending.textContent = '현재 구조에서 자동 연동되거나 해당하지 않는 입력은 제외했습니다. 적용할 항목을 확인하세요.';
+      return;
+    }
+    recordStructureChange(edits, true);
+    edits.forEach(edit => set(edit.path, edit.value));
+    state.draft.clear();
+    changed();
+  };
+}
+function openStructureInOverview(id) {
+  const state = structureState();
+  const key = id === '2-3' ? '2-1' : id;
+  if (key) state.open.add(key);
+  OVSTATE.panel = 'structure';
+  go('overview');
+  const summary = document.querySelector(`[data-structure-group="${key}"] summary`);
+  summary?.focus();
+}
+
 // Keep the comparison in this tab. An imported or newly opened design has its own baseline.
 const ovCompare = { owner: null, base: null, topic: '' };
 const ovTopics = [
@@ -1485,6 +1706,7 @@ const ovTopics = [
 function ovSnapshot() {
   if (!R?.rated || R.errors?.length) return null;
   return { gear: R.capacityLife, limit: R.reducerCap, ratio: R.ratio, backlash: R.backlash?.range?.[1],
+    stiffness: R.stiffness?.NmPerArcmin, tilt: R.outBearing?.tiltRated,
     gov: R.reducerGov, basis: BASIS(), failures: R.verdict.filter(v => !v.ok).length };
 }
 function ovComparison() {
@@ -1612,15 +1834,15 @@ function bindOverviewEditor(m) {
 
 function cadTree() {
   const parts = bomList().filter(p => IN3D(p.id));
-  const groups = Array.from({length: nst().length}, (_,i) => [(i+1)+'단', parts.filter(p => p.id.endsWith(String(i+1)))]);
-  groups.push(['공용 · 출력', parts.filter(p => !/\d$/.test(p.id))]);
+  const groups = Array.from({length: nst().length}, (_,i) => [(i+1)+'단', parts.filter(p => +(PART_STAGE.exec(p.id)?.[1] || 0) === i + 1)]);
+  groups.push(['공용 · 출력', parts.filter(p => !PART_STAGE.test(p.id))]);
   return groups.filter(([,items]) => items.length).map(([label,items]) =>
     `<details open><summary>${label}</summary><div>${items.map(p=>`<button type="button" class="btn" data-cad-part="${esc(p.id)}" aria-pressed="${OVSTATE.sel===p.id}">${esc(p.name)}</button>`).join('')}</div></details>`).join('');
 }
 function overviewView() {
-  if (!R || R.errors?.length) return head('3D · 종합판정', '기어 제원을 수정하면 3D 모델과 판정을 다시 계산합니다.') + '<div class="ov-workbench">' + overviewStagePanel() + '<div>' + errBox() + overviewEditor() + '</div></div>';
+  if (!R || R.errors?.length) return head('3D · 종합판정', '기어 제원을 수정하면 3D 모델과 판정을 다시 계산합니다.') + '<div class="ov-workbench">' + overviewStagePanel() + '<div>' + errBox() + overviewEditor() + structureBatchHTML() + '</div></div>';
   const issues = buildIssues();
-  const panels = [['spec','기어 제원'],['edit','조건·결과 비교'],['display','표시·구동 설정'],['drawing','도면'],['results','상세 판정']];
+  const panels = [['spec','기어 제원'],['structure','구조 일괄 편집'],['edit','조건·결과 비교'],['display','표시·구동 설정'],['drawing','도면'],['results','상세 판정']];
   const buttons = panels.map(([key,label])=>`<button class="btn" type="button" data-cad-open="${key}" aria-controls="cadDrawer" aria-expanded="false">${label}</button>`).join('');
   return `<section class="cad-workspace" aria-label="3D 종합판정">
     <div class="cad-ribbon" aria-label="설계 명령"><button type="button" class="btn" data-cad-tree aria-controls="cadTree">부품 목록</button>${buttons}<button class="btn" type="button" data-torque-trace>허용토크 근거</button></div>
@@ -1633,9 +1855,10 @@ function overviewView() {
           <div class="cad-drawer-scroll">
             <div data-cad-panel="spec">${overviewStagePanel()}</div>
             <div data-cad-panel="edit">${overviewEditor()}</div>
+            <div data-cad-panel="structure">${structureBatchHTML()}<button type="button" class="btn" data-structure-home>구조 개념 상세 보기</button></div>
             <div data-cad-panel="display"><div class="ov-live"><div class="ov-console">
              <details><summary>모델 조작 방법</summary><p class="note">드래그로 회전하고 Shift+드래그로 이동합니다. 휠로 확대하고 더블클릭으로 기본 시점으로 돌아갑니다. 부품을 누르면 치수를 확인할 수 있습니다. 빨간 번호는 기준 미달, 노란 번호는 주의 항목입니다. 번호를 누르면 원인과 대책이 열립니다. 배경이나 부품을 우클릭하면 보기 메뉴가 열립니다.</p></details>
-             <div class="ov-line"><b>모델 표시</b><div class="ov-tools"><button class="btn" id="ovCarrier">캐리어·핀 숨기기</button><button class="btn" id="ovGrid">격자 ${D.view.grid===false?'OFF':'ON'}</button></div></div>
+             <div class="ov-line"><b>모델 표시</b><div class="ov-tools"><button type="button" class="btn" id="ovAssembly" aria-pressed="${OVSTATE.assembly}">${OVSTATE.assembly ? '기어·캐리어 보기' : '전체 조립 보기'}</button><button class="btn" id="ovCarrier">캐리어·핀 숨기기</button><button class="btn" id="ovGrid">격자 ${D.view.grid===false?'OFF':'ON'}</button></div></div>
              <div class="ov-line"><b>조립 보기</b><div class="ov-tools"><label class="f">분해 정도<input type="range" id="tExpR" min="0" max="100" value="0"></label><label class="f">단면 각도<input type="range" id="tSecA" min="0" max="180" value="0"></label>
              ${nst().length>1 ? `<label class="f">단간 캐리어 간격 (mm)<input type="number" step="0.1" min="0" data-p="geom.stageGap" data-t="num" value="${D.geom?.stageGap ?? .6}"></label>` : ''}</div></div>
         <div class="ov-line" role="group" aria-label="구동 설정"><b>구동 설정</b><div>
@@ -1657,7 +1880,17 @@ function overviewView() {
 
 // parts the 3D overview currently draws (machined S·P·R·C + planet pins); the rest return one by one
 // 3D 종합판정에 그리는 부품: 가공 부품 + 카탈로그에서 고른 출력 베어링(구매 부품)
-const IN3D = id => /^(sun|planet|ring|carrier|pin)\d?$/.test(id) || (id === 'xroller' && D?.outBearing?.d > 0 && D.outBearing.D > D.outBearing.d);
+const PART_STAGE = /^(?:sun|planet|ring|carrier|pin|needle|brgS)([12])$/;
+const IN3D = id => {
+  if (/^(sun|planet|ring|carrier|pin)\d?$/.test(id)) return true;
+  if (!OVSTATE.assembly) return id === 'xroller' && D.outBearing.d > 0 && D.outBearing.D > D.outBearing.d && D.outBearing.B > 0;
+  if (/^needle[12]$/.test(id)) {
+    const s = R?.ctx?.stages[Number(id.at(-1)) - 1];
+    return s?.geo.rims[1].diameter > s?.st.pin.d + .6;
+  }
+  if (id === 'brgS2') { const L = PGD3D.layout(R, D); return L.s2on && L.sunBoreR - L.oshaftR > .5; }
+  return true;
+};
 function bomHTML(sel, only3d = false) {
   const L = bomList().filter(p => !only3d || IN3D(p.id)), tot = L.reduce((s, p) => s + p.mass * p.qty, 0);
   return `<div class="bom-h"><b>BOM</b><span class="note">${L.length}종 · ${L.reduce((s, p) => s + p.qty, 0)}개 · 약 ${fmt(tot * 1000, 0)} g</span></div>
@@ -1680,12 +1913,13 @@ function dimsHTML(id, S) {
 }
 function partCardHTML(id) {
   const p = bomList().find(x => x.id === id); if (!p) return '';
+  const group = /^(sun|planet|ring)/.test(id) ? '2-2' : /^(carrier|pin|needle)/.test(id) ? '2-9' : /^(brgS)/.test(id) ? '2-7' : id === 'xroller' || id === 'oflange' || id === 'oshaft' || id === 'ocover' ? '2-8' : id === 'inshaft' ? '2-6' : '2-4';
   return `<div class="pc-h"><b>${esc(p.name)}</b><button class="x" id="pcX" aria-label="닫기">×</button></div>
     <table><tr><td>수량</td><td>${p.qty}</td></tr><tr><td>재료 · 열처리</td><td>${esc(p.material)} · ${esc(p.heat)}</td></tr><tr><td>중량 (추정)</td><td>${fmt(p.mass * 1000, 1)} g</td></tr>
     ${p.verdict ? `<tr><td>판정</td><td class="${p.verdict.ok ? 'good' : 'bad'}">${p.verdict.ok ? '통과' : '미달'} · ${esc(p.verdict.text)}</td></tr>` : ''}</table>
     <h4>부품 입력</h4>${dimsHTML(id)}
     <button class="btn" id="pcRelated" type="button">${/^(sun|planet|ring)/.test(id) ? '관련 입력 · 재료와 열처리' : id === 'xroller' ? '관련 입력 · 출력축 하중' : '관련 입력 · 핀과 캐리어'}</button>
-    <button class="btn primary" id="pcGo">상세 설계 보기</button>`;
+    <button class="btn" id="pcStructure" type="button" data-group="${group}">관련 구조 편집</button><button class="btn primary" id="pcGo">상세 설계 보기</button>`;
 }
 function issueHTML(g) {
   const gov = R.govRated?.row, f = gov?.f || {};
@@ -1739,6 +1973,8 @@ function bindCadWorkspace(m) {
 function mountOverview(m) {
   bindOverviewSpecs(m);
   bindOverviewEditor(m);
+  bindStructureEditor(m);
+  m.querySelector('[data-structure-home]')?.addEventListener('click', () => go('st-2'));
   const host = m.querySelector('#viewer'); if (!host) return;
   const cad = bindCadWorkspace(m);
   const issues = buildIssues();
@@ -1759,6 +1995,11 @@ function mountOverview(m) {
       selector.value = /^(sun|planet|ring)/.test(id) ? 'material' : id === 'xroller' ? 'external' : 'pin';
       selector.dispatchEvent(new Event('change')); selector.focus();
     };
+    card.querySelector('#pcStructure').onclick = e => {
+      const section = m.querySelector(`[data-structure-group="${e.currentTarget.dataset.group}"]`);
+      cad.show('structure');
+      if (section) { section.open = true; section.querySelector('summary').focus(); }
+    };
     card.querySelector('#pcGo').onclick = () => { const p = bomList().find(x => x.id === id); if (p) go(p.step); };
   };
   const showIssue = g => {
@@ -1777,9 +2018,10 @@ function mountOverview(m) {
   });
   if (picker) picker.onchange = () => { cad.show(''); const id = picker.value || null; VIEW3D?.select(id, !!id); showCard(id); if (id) { card.querySelector('#pcX')?.focus({ preventScroll: true }); host.scrollIntoView({ block: 'nearest' }); } };
   const refreshOpacity = [];
-  mountViewer(host, 'full', { only: 'sprc', onOpacity: () => refreshOpacity.forEach(fn => fn()), onFrameRate: fps => { m.querySelector("#ovFps").textContent = fps + " FPS"; }, onPick: id => { if (id) cad.show(''); showCard(id); }, onIssue: g => { cad.show(''); showIssue(g); } });
+  mountViewer(host, 'full', { only: OVSTATE.assembly ? undefined : 'sprc', dimensionChange: structureMarker(), onOpacity: () => refreshOpacity.forEach(fn => fn()), onFrameRate: fps => { m.querySelector("#ovFps").textContent = fps + " FPS"; }, onPick: id => { if (id) cad.show(''); showCard(id); }, onIssue: g => { cad.show(''); showIssue(g); } });
   VIEW3D?.setIssues(issues);
-  if (OVSTATE.sel && bomList().some(p => p.id === OVSTATE.sel)) { VIEW3D?.select(OVSTATE.sel, false); showCard(OVSTATE.sel); }
+  if (OVSTATE.sel && bomList().some(p => p.id === OVSTATE.sel && IN3D(p.id))) { VIEW3D?.select(OVSTATE.sel, false); showCard(OVSTATE.sel); }
+  else OVSTATE.sel = null;
   const iv = OVSTATE.view;
   if (iv) { m.querySelector('#tExpR').value = Math.round((iv.explode || 0) * 100); m.querySelector('#tExp').textContent = iv.explode > .5 ? '조립' : '분해'; m.querySelector('#tSecA').value = iv.secAngle || 0; m.querySelector('#tSec').classList.toggle('on', !!iv.section); m.querySelector('#tPlay').textContent = iv.playing === false ? '회전 재생' : '회전 정지'; }
   m.querySelectorAll('[data-iss]').forEach(b => b.onclick = () => { const g = issues[+b.dataset.iss]; cad.show(''); VIEW3D?.select(g.partId, true); showIssue(g); host.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
@@ -1803,6 +2045,7 @@ function mountOverview(m) {
   tr.addEventListener('change', updateSpeeds);
   speedSlider.oninput = () => { tr.value = speedSlider.value; tr.dispatchEvent(new Event('change')); };
   m.querySelectorAll('[data-axial]').forEach(b => b.onclick = () => VIEW3D?.axialView(+b.dataset.axial));
+  m.querySelector('#ovAssembly').onclick = () => { OVSTATE.assembly = !OVSTATE.assembly; render(true); m.querySelector('#ovAssembly')?.focus({ preventScroll: true }); };
   const carrierButton = m.querySelector('#ovCarrier');
   let carriersVisible = true;
   carrierButton.onclick = () => {
@@ -1816,13 +2059,17 @@ function mountOverview(m) {
   const partBox = m.querySelector('#ovParts');
   // 부품 종류(행) × 단(열) 격자: 왼쪽 열 1단, 오른쪽 열 2단. 공유 링은 두 열에 걸친 버튼 하나(1·2단이 함께 투명)
   const TYPES = [['sun', '썬기어'], ['planet', '유성기어'], ['pin', '유성핀'], ['carrier', '캐리어'], ['ring', '링기어'], ['xroller', '출력 베어링']];
-  const parts3d = bomList().filter(p => IN3D(p.id)), nSt = Math.max(1, ...parts3d.map(p => +(p.id.match(/\d$/)?.[0] || 1)));
+  const parts3d = bomList().filter(p => IN3D(p.id)), nSt = nst().length;
+  if (OVSTATE.assembly) {
+    TYPES.push(['needle', '유성 베어링'], ['brgS', '썬 지지 베어링']);
+    for (const part of parts3d) if (!TYPES.some(([key]) => part.id.startsWith(key))) TYPES.push([part.id, part.name]);
+  }
   partBox.style.setProperty('--ov-cols', nSt);
   partBox.innerHTML = `<span class="ovp-corner"></span>${Array.from({ length: nSt }, (_, i) => `<span class="ovp-stage st${i + 1}" style="grid-column:${i + 2}">${i + 1}단</span>`).join('')}`
     + TYPES.map(([, t], r) => `<span class="ovp-head" style="grid-row:${r + 2}">${t}</span>`).join('');
   for (const part of parts3d) {
     const b = document.createElement('button'); b.className = 'btn';
-    const type = TYPES.findIndex(([k]) => part.id.startsWith(k)), stg = +(part.id.match(/\d$/)?.[0] || 0);
+    const type = TYPES.findIndex(([k]) => part.id.startsWith(k)), stg = +(PART_STAGE.exec(part.id)?.[1] || 0);
     b.style.gridRow = String(type + 2);
     b.style.gridColumn = stg ? String(stg + 1) : `2 / span ${nSt}`;
     if (stg) b.classList.add('st' + stg);

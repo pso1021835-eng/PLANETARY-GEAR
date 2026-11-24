@@ -9,23 +9,39 @@ async function run() {
   const root = path.resolve(__dirname, '..');
   const server = http.createServer(async (request, response) => {
     const file = new URL(request.url, 'http://localhost').pathname.slice(1) || 'index.html';
-    if (!/^[\w.-]+\.(html|js|css)$/.test(file)) { response.writeHead(404).end(); return; }
+    if (!/^(?:[\w-]+\.(?:html|js|css)|designs\/[\w-]+\.json)$/.test(file)) { response.writeHead(404).end(); return; }
     try {
       const body = await fs.readFile(path.join(root, file));
-      const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+      const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
       response.writeHead(200, { 'Content-Type': types[path.extname(file)] + '; charset=utf-8' }).end(body);
     } catch { response.writeHead(404).end(); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   let browser;
   try {
-    browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+    const executable = process.env.PGD_TEST_CHROME;
+    browser = await chromium.launch({ ...(executable ? { executablePath: executable } : { channel: 'chrome' }), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
     const page = await browser.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
       route => route.fulfill({ path: require.resolve('three/build/three.min.js'), contentType: 'text/javascript' }));
-    await page.goto('http://127.0.0.1:' + server.address().port + '/#overview');
+    await page.goto('http://127.0.0.1:' + server.address().port + '/#st-2');
+    await page.locator('#bMore').click();
+    await page.locator('#dbPage').click();
+    const standard = require('../designs/standard-d100-l100-i25.json');
+    const dbRow = page.locator('#main tr', { hasText: '★ 표준 DB' });
+    await dbRow.locator('td').nth(5).getByText('19.4', { exact: true }).waitFor();
+    await dbRow.getByRole('button', { name: '불러오기' }).click();
+    const db = await page.evaluate(() => {
+      const { D, R } = PGDApp.state();
+      return { name: D.name, ratio: R.ratio, cap: R.reducerCap, req: [D.req.Dmax, D.req.Lmax, D.req.Trated], ext: D.req.ext };
+    });
+    assert.equal(db.name, standard.name);
+    assert.equal(db.ratio, 25);
+    assert.deepEqual(db.req, [100, 100, 25]);
+    assert.deepEqual([db.ext.Fr, db.ext.Fa, db.ext.M], [0, 0, 15]);
+    assert.ok(Math.abs(db.cap - standard.summary.reducerCap) < 1e-8, JSON.stringify(db));
     await page.locator('#viewer canvas').waitFor();
     const tool = name => page.locator('[data-cad-open="'+name+'"]');
     const viewport = page.viewportSize();
@@ -45,6 +61,7 @@ async function run() {
     }
     await page.locator('#tExpR').press('End');
     assert.equal(await page.locator('#tExpR').inputValue(),'100');
+    await page.locator('#tExpR').press('Home');
     await page.locator('#ovCarrier').click();
     await page.locator('#cadClose').click();
     await page.locator('#tHome').click();
@@ -75,6 +92,86 @@ async function run() {
     await topic.selectOption('run');
     await edit(page.locator('#ovInputs [data-p="req.rpm"]'), 1234);
     assert.equal(await page.evaluate(() => PGDApp.state().D.req.rpm), 1234);
+
+    const form = page.locator('[data-structure-form]');
+    const field = key => form.locator(`[data-p="${key}"]`);
+    const group = key => form.locator(`[data-structure-group="${key}"]`);
+    async function openGroup(key) {
+      if (await group(key).getAttribute('open') === null) await group(key).locator('summary').click();
+    }
+    const state = () => page.evaluate(() => PGDApp.state().D);
+    const apply = () => form.getByRole('button', { name: '구조 변경 적용' }).click();
+    await tool('structure').click();
+    const previous = await page.evaluate(() => {
+      const { R, D } = PGDApp.state();
+      return { z: PGD3D.layout(R, D).S[1].z0, Fr: D.req.ext.Fr };
+    });
+    await edit(field('geom.stageGap'), 2.6);
+    await openGroup('2-10');
+    await edit(field('req.ext.Fr'), 123);
+    assert.equal((await state()).req.ext.Fr, previous.Fr);
+    assert.match(await form.locator('[role="status"]').innerText(), /적용 대기 2개/);
+    await apply();
+    assert.equal((await state()).req.ext.Fr, 123);
+    assert.equal((await state()).geom.stageGap, 2.6);
+    const bearingS0 = await page.evaluate(() => PGDApp.state().R.outBearing.s0peak);
+    const { C0, dp } = standard.D.outBearing;
+    const peakLoad = (123 + 2 * 15000 / dp) * (62.5 / 25);
+    assert.ok(Math.abs(bearingS0 - C0 / peakLoad) < 1e-8);
+
+    const moved = await page.evaluate(() => {
+      const { R, D } = PGDApp.state();
+      return PGD3D.layout(R, D).S[1].z0;
+    });
+    assert.ok(Math.abs(moved - previous.z - 2) < 1e-7);
+    await page.locator('.v3-structure-delta').waitFor();
+    assert.match(await page.locator('.v3-structure-delta').textContent(), /2단 기어 시작면 \+2\.000 mm/);
+    await page.locator('button[data-structure-home]').click();
+    assert.match(await page.locator('#main h2').innerText(), /구조 개념/);
+    assert.equal(await field('geom.stageGap').inputValue(), '2.6');
+
+    await page.evaluate(() => PGDApp.go('it-2-10'));
+    const directExternal = page.locator('#main [data-p="req.ext.Fr"]');
+    assert.equal(await directExternal.inputValue(), '123');
+    await edit(directExternal, 160);
+    await page.locator('[data-structure-open]').click();
+    assert.equal(await field('req.ext.Fr').inputValue(), '160');
+    await edit(field('req.ext.Fr'), 180);
+    await form.locator('[data-structure-reset]').click();
+    assert.equal(await field('req.ext.Fr').inputValue(), '160');
+
+    // Verify the structural drafts update the available controls before they touch the live model.
+    await openGroup('2-1');
+    const shared = field('config.sharedRing');
+    assert.equal(await shared.isChecked(), true);
+    await shared.uncheck();
+    assert.equal((await state()).config.sharedRing, true);
+    assert.equal(await field('stages.1.r').count(), 1);
+    await apply();
+    assert.equal((await state()).config.sharedRing, false);
+    assert.equal(await page.locator('[data-cad-part="ring2"]').count(), 1);
+    await field('config.stages').selectOption('1');
+    assert.equal(await field('struct.c1s2').count(), 0);
+    assert.equal((await state()).config.stages, 2);
+    await apply();
+    assert.equal((await state()).config.stages, 1);
+    assert.equal(await page.locator('[data-cad-part="ring2"]').count(), 0);
+    await field('config.stages').selectOption('2');
+    await field('config.sharedRing').check();
+    await apply();
+    assert.equal((await state()).config.sharedRing, true);
+    assert.equal(await page.locator('[data-cad-part="ring"]').count(), 1);
+
+    await tool('display').click();
+    await page.locator('#ovAssembly').click();
+    await page.locator('[data-cad-part="housing"]').waitFor();
+    await page.locator('[data-cad-part="needle1"]').click();
+    await page.locator('#pcStructure').click();
+    assert.ok(await group('2-9').locator('[data-p="needle.0.use"]').isVisible());
+    await tool('display').click();
+    await page.locator('#ovAssembly').click();
+    assert.equal(await page.locator('[data-cad-part="housing"]').count(), 0);
+    await tool('edit').click();
 
     await page.locator('#ovPickPart').selectOption('planet1');
     const width = page.locator('#pcard [data-p="stages.0.b"]');
