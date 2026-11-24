@@ -121,3 +121,11 @@
 .sc-changes { margin-block-start: 12px; padding: 10px; border: 1px solid var(--rule); border-radius: 6px; }
 .sc-changes ul { margin: 5px 0 9px; padding-inline-start: 20px; }
 .v3-structure-delta { position: absolute; bottom: 12px; left: 12px; max-width: calc(100% - 24px); margin: 0; padding: 5px 8px; border: 1px solid #7cdaff; border-radius: 5px; color: #e6f6ff; background: #142431; pointer-events: none; font-size: .875rem; }
+
+.placement-editor .placement-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin-block: 10px; }
+.placement-editor .placement-actions .f { min-width: 0; flex: 1 1 110px; }
+.placement-editor fieldset { border: 1px solid var(--rule); margin: 8px 0; }
+.placement-editor [data-placement-status]:empty { display: none; }
+.placement-editor [aria-pressed="true"] { border-color: var(--brick); background: var(--soft); }
+.cad-workspace.placement-dragging .cad-drawer { visibility: hidden; pointer-events: none; }
+.cad-workspace.placement-dragging #viewer canvas { cursor: move; }
