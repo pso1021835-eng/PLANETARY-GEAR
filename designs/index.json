@@ -1,5 +1,10 @@
 [
  {
+  "id": "standard-d100-l100-i25",
+  "name": "★ 표준 DB · Ø100×100 · 25 N·m · i 25 (기준 사례, 사용자 지정 2026-11-24)",
+  "file": "standard-d100-l100-i25.json"
+ },
+ {
   "id": "hds-82pi",
   "name": "HDS 82pi 1단 스퍼 (KISSsoft 보고서 R2)",
   "builtin": "defaultDesign"
