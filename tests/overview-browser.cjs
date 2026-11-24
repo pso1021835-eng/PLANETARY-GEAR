@@ -30,6 +30,7 @@ async function run() {
     const tool = name => page.locator('[data-cad-open="'+name+'"]');
     const viewport = page.viewportSize();
     const canvas = page.locator('#viewer canvas');
+    await page.locator('#main').evaluate(el => Promise.all(el.getAnimations().map(a => a.finished)));
     const bounds = await canvas.boundingBox();
     assert.ok(bounds.width >= viewport.width * .75 && bounds.height >= viewport.height * .65, JSON.stringify(bounds));
     assert.ok(bounds.y + bounds.height <= viewport.height + 1);
@@ -42,7 +43,8 @@ async function run() {
       assert.ok(await page.locator('[data-cad-panel="'+key+'"]').isVisible());
       assert.ok(await page.locator('#cadClose').isVisible());
     }
-    await page.locator('#tExpR').fill('65');
+    await page.locator('#tExpR').press('End');
+    assert.equal(await page.locator('#tExpR').inputValue(),'100');
     await page.locator('#ovCarrier').click();
     await page.locator('#cadClose').click();
     await page.locator('#tHome').click();

@@ -1634,6 +1634,7 @@ function overviewView() {
             <div data-cad-panel="spec">${overviewStagePanel()}</div>
             <div data-cad-panel="edit">${overviewEditor()}</div>
             <div data-cad-panel="display"><div class="ov-live"><div class="ov-console">
+             <details><summary>모델 조작 방법</summary><p class="note">드래그로 회전하고 Shift+드래그로 이동합니다. 휠로 확대하고 더블클릭으로 기본 시점으로 돌아갑니다. 부품을 누르면 치수를 확인할 수 있습니다. 빨간 번호는 기준 미달, 노란 번호는 주의 항목입니다. 번호를 누르면 원인과 대책이 열립니다. 배경이나 부품을 우클릭하면 보기 메뉴가 열립니다.</p></details>
              <div class="ov-line"><b>모델 표시</b><div class="ov-tools"><button class="btn" id="ovCarrier">캐리어·핀 숨기기</button><button class="btn" id="ovGrid">격자 ${D.view.grid===false?'OFF':'ON'}</button></div></div>
              <div class="ov-line"><b>조립 보기</b><div class="ov-tools"><label class="f">분해 정도<input type="range" id="tExpR" min="0" max="100" value="0"></label><label class="f">단면 각도<input type="range" id="tSecA" min="0" max="180" value="0"></label>
              ${nst().length>1 ? `<label class="f">단간 캐리어 간격 (mm)<input type="number" step="0.1" min="0" data-p="geom.stageGap" data-t="num" value="${D.geom?.stageGap ?? .6}"></label>` : ''}</div></div>
@@ -1713,6 +1714,7 @@ function bindCadWorkspace(m) {
     buttons.forEach(b => b.setAttribute('aria-expanded', String(b === trigger)));
     m.querySelectorAll('[data-cad-panel]').forEach(p => p.hidden = p.dataset.cadPanel !== key);
     if (trigger) {
+      if (narrow.matches && !tree.hidden) { OVSTATE.treeOpen = false; treeOpen(false); }
       m.querySelector('#cadPanelTitle').textContent = trigger.textContent;
       if (focus) { drawer.querySelector('.cad-drawer-scroll').scrollTop = 0; close.focus(); }
     } else if (focus) buttons.find(b=>b.dataset.cadOpen===previous)?.focus();
