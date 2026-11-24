@@ -593,7 +593,7 @@
     const loads = Array.from({ length: n }, (_, j) => kp * Math.max(0, x[0] - gap(x, j)));
     const sx = x[1], sy = x[2];
     const value = Math.min(n, Math.max(...loads) / Fmean);
-    return { value, src: '모델', note: `썬 고정 지지 (강성 ${ks.toFixed(1)} N/µm${sup.src !== '직접 입력' ? ' = ' + sup.src : ''}, 유격 ${cs} µm) · 유성 위치오차 ${delta} µm · 경로 강성 ${kpath.toFixed(0)} N/µm`, sunShift: Math.hypot(sx, sy) };
+    return { value, loads, src: '모델', note: `썬 고정 지지 (강성 ${ks.toFixed(1)} N/µm${sup.src !== '직접 입력' ? ' = ' + sup.src : ''}, 유격 ${cs} µm) · 유성 위치오차 ${delta} µm · 경로 강성 ${kpath.toFixed(0)} N/µm`, sunShift: Math.hypot(sx, sy) };
   }
 
   // ------------------------------------------------------------ evaluation at one operating point
@@ -729,7 +729,7 @@
         });
       });
       // planet bearing: radial load per planet (heaviest path) = pin force
-      stageOut.push({ i: stg.i, meshK, car, obr: lastStage ? obr : null, Tin, Tout: Tin * ratio, nIn, nc, rel, Ft, Kg, KgSrc: kg.src, KgNote: kg.note, kpath, ktan, pin, pinForce, planetRel: Math.abs(rel) * sun.z / planet.z });
+      stageOut.push({ i: stg.i, meshK, car, obr: lastStage ? obr : null, Tin, Tout: Tin * ratio, nIn, nc, rel, Ft, Kg, planetLoads: kg.loads, KgSrc: kg.src, KgNote: kg.note, kpath, ktan, pin, pinForce, planetRel: Math.abs(rel) * sun.z / planet.z });
       Tin *= ratio; nIn = nc;
     }
     return { rows, stages: stageOut, flank, Tout: op.Tout, rpm: op.rpm || 0 };

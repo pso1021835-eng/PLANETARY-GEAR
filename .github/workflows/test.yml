@@ -39,3 +39,10 @@ jobs:
         run: node basis_band_test.js
       - name: 문법 검사
         run: for f in *.js; do node --check "$f" || exit 1; done
+
+      - name: 3D 종합판정 브라우저 회귀
+        env:
+          NODE_PATH: ${{ runner.temp }}/overview-ui/node_modules
+        run: |
+          npm install --prefix "$RUNNER_TEMP/overview-ui" --no-save --ignore-scripts playwright@1.56.1 three@0.128.0
+          node tests/overview-browser.cjs
