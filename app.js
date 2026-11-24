@@ -797,7 +797,7 @@ const VIEWS = {
     const row = (k, x, kind, del) => { const sm = x.summary || {}, rq = x.request || {}; if (q && !JSON.stringify([x.name, sm, rq]).toLowerCase().includes(q)) return '';
       const cfg = sm.stages ? `${sm.stages}단${sm.sharedRing ? ' 공용 링' : ''} · ${(sm.gears || []).map(g => `m${g.m} ${g.s}/${g.p}/${g.r}×${g.n}`).join(' + ')}` : '—';
       return `<tr><td><b>${esc(x.name || '')}</b><br><small class="note">${kind}${x.saved ? ' · ' + new Date(x.saved).toLocaleString('ko-KR') : ''}</small></td><td>${esc(cfg)}</td><td>${fN(sm.ratio, 3)}</td><td>${sm.OD ? `Ø${fN(sm.OD)} × ${fN(sm.L)}` : '—'}</td>
-        <td>${rq.Trated != null ? fN(rq.Trated) + ' N·m' : '—'}</td><td>${sm.reducerCap != null ? `<b>${fN(sm.reducerCap)}</b> N·m` : '—'}</td><td class="l note">${esc(sm.governing || '')}</td>
+        <td>${rq.Trated != null ? fN(rq.Trated) + ' N·m' : '—'}</td><td>${sm.reducerCap != null ? `<b>${fN(sm.reducerCap)}</b> N·m` : '—'}</td><td>${sm.band ? `${fN(sm.band.ideal)} / ${fN(sm.band.iso)}${sm.band.lowLoad ? '<br><small class="note">저하중 ' + fN(sm.band.wm, 0) + ' N/mm</small>' : ''}` : '—'}<br><small class="note">판정 ${esc(rq.basis === 'iso' ? 'ISO' : rq.basis === 'ideal' ? '오차 0' : rq.basis || '')}</small></td><td class="l note">${esc(sm.governing || '')}</td>
         <td>${sm.verdictFail ? (sm.verdictFail.length ? `<b class="bad">${sm.verdictFail.length}개 미달</b>` : '<b class="good">전 항목 충족</b>') : '—'}</td>
         <td><button class="btn" data-dbo="${k}">불러오기</button>${del != null ? ` <button class="btn" data-dbx="${del}">삭제</button>` : ''}</td></tr>`; };
     const lib = DBLIB.map((x, i) => row('lib:' + i, x, '기본 설계')).join(''), my = mine.map((x, i) => row('mine:' + i, x, '내 케이스', i)).join('');
@@ -805,7 +805,7 @@ const VIEWS = {
       <div class="card"><div class="grid"><label class="f">검색 (이름 · 구성 · 지배 부위)<input type="text" id="dbQ" value="${esc(DBQ || '')}"></label></div>
       <p><button class="btn primary" id="dbSave2">현재 설계를 DB에 저장</button> <button class="btn" id="dbExp2">DB 내보내기 (케이스 JSON)</button> <button class="btn" id="dbImp2">케이스 JSON 가져오기</button>
       <span class="note">내 케이스 ${mine.length}건 · 기본 설계 ${DBLIB.length}건</span></p></div>
-      <div class="card scroll"><table class="dbt"><tr><th class="l">이름</th><th>구성</th><th>감속비</th><th>외경 × 길이 mm</th><th>요구 정격</th><th>감속기 한계</th><th class="l">지배 부위</th><th>판정</th><th></th></tr>${my}${lib}</table>
+      <div class="card scroll"><table class="dbt"><tr><th class="l">이름</th><th>구성</th><th>감속비</th><th>외경 × 길이 mm</th><th>요구 정격</th><th>감속기 한계</th><th>기어 용량 N·m<br><small>오차 0 / ISO</small></th><th class="l">지배 부위</th><th>판정</th><th></th></tr>${my}${lib}</table>
       ${!my && !lib ? '<p class="note">케이스가 없습니다.</p>' : ''}</div>`;
   },
   overviewOld() {
@@ -1751,7 +1751,7 @@ async function dbOpen(key, toOverview) {
 async function dbLoadLib(list) {
   for (const x of list) {
     try {
-      if (x.file) { const j = await (await fetch('designs/' + x.file + '?v=case4-1')).json(); x.D = j.schema === 'pgd-case/1' ? j.D : j; }
+      if (x.file) { const j = await (await fetch('designs/' + x.file + '?v=band-1')).json(); x.D = j.schema === 'pgd-case/1' ? j.D : j; }
       else if (x.builtin) x.D = E[x.builtin]();
       if (x.D && !x.summary) { const d = JSON.parse(JSON.stringify(x.D)); if (window.PGDChecks) { PGDChecks.ensure(d); PGDChecks.applyNeedles(d); } const c = caseRecord(d, E.analyze(d)); x.summary = c.summary; x.request = c.request; }
     } catch (e) { console.error(e); }
@@ -1763,7 +1763,7 @@ function dbRender() {
   $('#dbList').innerHTML = DBLIB.map((x, i) => row('lib:' + i, x.name, '기본')).join('') + mine.slice(0, 5).map((x, i) => row('mine:' + i, x.name, `${x.summary?.reducerCap ? (+x.summary.reducerCap).toFixed(0) + ' N·m · ' : ''}${new Date(x.saved).toLocaleDateString('ko-KR')}`)).join('') || '<span class="note">없음</span>';
   $('#dbList').querySelectorAll('[data-db]').forEach(b => b.onclick = e => { e.stopPropagation(); dbOpen(b.dataset.db); });
 }
-fetch('designs/index.json?v=case4-1').then(r => r.json()).catch(() => [{ name: 'HDS 예제', builtin: 'defaultDesign' }, { name: 'RH065 템플릿', builtin: 'templateDesign' }])
+fetch('designs/index.json?v=band-1').then(r => r.json()).catch(() => [{ name: 'HDS 예제', builtin: 'defaultDesign' }, { name: 'RH065 템플릿', builtin: 'templateDesign' }])
   .then(l => { DBLIB = l; dbRender(); return dbLoadLib(l); }).then(() => { if (view === 'db') render(true); });
 // 케이스 레코드 (pgd-case/1): 나중에 모아서 참고·학습에 쓰도록 요구 조건 · 설계 제원 · 결과 요약을 같은 형식으로 남긴다.
 function caseRecord(D = PGDApp.state().D, R = PGDApp.state().R) {
@@ -1775,7 +1775,7 @@ function caseRecord(D = PGDApp.state().D, R = PGDApp.state().R) {
       gears: S.map(x => ({ s: x.st.s, p: x.st.p, r: x.geo.r, n: x.st.n, m: x.st.m, beta: x.st.beta, b: x.st.b })),
       OD: L ? 2 * Math.max(L.housR, L.flangeR) : null, L: L ? (L.zFlange[1] + .4) - L.zIn : null, outBearing: D.outBearing?.name,
       gearCap: R.capacityLife, reducerCap: R.reducerCap, governing: R.reducerGov, eff: R.eff?.total, backlash: R.backlash?.arcmin,
-      verdictFail: R.verdict.filter(v => !v.ok).map(v => v.k) } : { errors: R?.errors || [] },
+      verdictFail: R.verdict.filter(v => !v.ok).map(v => v.k), band: (() => { try { return E.basisBand(D); } catch (e) { return null; } })() } : { errors: R?.errors || [] },
     D: JSON.parse(JSON.stringify(D)) };
 }
 $('#dbPage').onclick = e => { e.stopPropagation(); $('#moreMenu').hidden = true; go('db'); };

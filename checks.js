@@ -19,6 +19,7 @@
       s1motor: 'key', s1Dim: { d: null, L: 8, p: 40, n: 4, bd: 1.6, pcd: null },        // integral | key | press | clamp | spline | flange
       c1Support: 'none',                         // none | out | both | nested (S2 held by bearings in the S1 and C2 bores)
       obPos: 'flange',                           // inside | outside | flange
+      c2out: 'flange', c2outDim: { n: 6, bd: 3, dp: 3, pcd: null, d: null, L: null, p: 40 }, // C2 ↔ 출력 플랜지(크로스 롤러 내륜): integral | flange | pin | press
     },
     bolts: { grade: 12.9, mu: 0.12, util: 0.7 },
     thermal: { Tamb: 25, h: 12, duty: 1 },
@@ -79,6 +80,25 @@
     if (type === 'key') { const b = Math.max(1, d / 4), h = Math.max(1, d / 6); return Math.min(60 * b * L * d / 2, 100 * (h / 2) * L * d / 2) / 1000; } // 전단 60 · 면압 100 MPa (가정)
     if (type === 'spline') return (PI / 8) * d * d * L * 0.75 * 60 / 1000 * 2;  // 이 전단 60 MPa · 하중분배 0.75 (가정)
     return null;
+  }
+  // C2 ↔ 출력 플랜지(크로스 롤러 내륜) 결합: 출력 토크 전부가 지나고(피크 × 1.5), 볼트 결합은 외부 모멘트·축하중에 벌어지지 않아야 한다.
+  // 외부 하중은 엔진과 같이 비상 토크 비율(Temerg/Trated)로 키운다. PCD 빈칸 = 출력 베어링 dp − 2.5·Dw (내륜 중앙, 가정).
+  const C2N = { integral: '일체 (C2 = 내륜·출력 플랜지)', flange: '볼트 체결', pin: '다웰 핀', press: '압입' };
+  function c2outCheck(D, PT) {
+    const st = D.struct, x = { ...st.c2outDim }, ob = D.outBearing || {}, type = st.c2out || 'flange', head = `${ob.name || ''} · 위치 ${{ inside: '2단 기어 폭 안', outside: '2단 출력측 바깥', flange: '출력 플랜지 쪽' }[st.obPos]} · C2 결합 ${C2N[type]}`;
+    if (type === 'integral') return { kind: 'calc', val: `${head} — 체결 없음`, ok: true, c2: { type } };
+    if (!pos(x.pcd)) x.pcd = pos(ob.dp) ? ob.dp - 2.5 * (ob.Dw || 2) : null;
+    const d = x.d || x.pcd, L = x.L || 5, Tcap = jointCap(type, d, L, x.p, .12, x), need = 1.5 * Math.abs(PT.out ?? D.req.Tpeak);
+    const ext = D.req.ext || {}, k = (D.req.Temerg || D.req.Tpeak) / (D.req.Trated || 1);
+    let sep = null;
+    if (type === 'flange' && pos(x.n) && pos(x.pcd) && pos(x.bd)) {
+      const Fv = .6 * 1080 * PI / 4 * (x.bd * .85) ** 2, Fb = 4 * Math.abs(ext.M || 0) * k * 1000 / (x.n * x.pcd) + Math.abs(ext.Fa || 0) * k / x.n;
+      sep = { Fv, Fb, S: Fb > 0 ? Fv / Fb : Infinity };
+    }
+    const okT = Tcap != null && Tcap >= need, okS = !sep || sep.S >= 1.5;
+    const txt = Tcap == null ? '치수 입력 필요' : `${type === 'flange' ? `${x.n}×M${f(x.bd, 1)}` : type === 'pin' ? `${x.n}×Ø${f(x.dp, 1)}` : `Ø${f(d, 1)}×${f(L, 1)}`} PCD ${f(x.pcd, 1)} · 전달 ${f(Tcap, 1)} / 필요 ${f(need, 1)} N·m (피크 × 1.5)`
+      + (sep ? ` · 모멘트 벌어짐: 체결력 ${f(sep.Fv, 0)} / 볼트당 ${f(sep.Fb, 0)} N = ${f(sep.S, 2)} (≥ 1.5)` : type === 'pin' ? ' · 핀은 토크만 — 모멘트·축하중은 별도 볼트로' : '');
+    return { kind: 'calc', val: `${head} · ${txt}`, ok: Tcap == null ? null : okT && okS, c2: { type, Tcap, need, sep, pcd: x.pcd } };
   }
   // Ring reaction torque per stage (signed, same sign as the output torque T): ring holds T_carrier − T_sun of its stage.
   const RING_SF = 1.5;
@@ -157,7 +177,7 @@
     // 2-7 C1 지지 (입력 보강), 2-8 출력 베어링 위치
     const c1 = D.struct.c1Support, OBP = { inside: '2단 기어 폭 안', outside: '2단 출력측 바깥', flange: '출력 플랜지 쪽' };
     put('2-7', { kind: 'in', val: (D.loads.sunSupport || []).map((s, i) => `S${i + 1} ${s.mode === 'structure' ? `베어링 ${s.bearingK} N/µm` : `${s.k} N/µm`}`).join(' · ') + ` · C1 지지 ${c1 === 'none' ? '없음' : c1 === 'out' ? '출력측 1개' : c1 === 'nested' ? 'S2 양측 (S1 보어·C2 보어 베어링)' : '양측'}`, ok: S.length > 1 && c1 === 'none' ? false : null });
-    put('2-8', { kind: 'in', val: `${D.outBearing?.name || ''} · 위치 ${OBP[D.struct.obPos]}` });
+    put('2-8', c2outCheck(D, PT));
     // 2-10 하중 경로, gate 2
     const floating = S.length > 1 && c1 === 'none';
     put('2-10', { val: floating ? 'C1 지지 없음 → S2 반경 위치는 유성 맞물림에만 의존' : '모든 축에 반경 지지 있음', ok: !floating, html: loadPathHTML(D, S, floating) });
@@ -395,7 +415,7 @@
     '2-5': { view: 's2', title: 'C1–S2 결합', f: [['sel', 'struct.c1s2', '방식', [...JOPT, ['pin', '핀 결합']]], ['num', 'struct.c1s2Dim.d', '결합 지름 (빈칸=S2 보어)'], ['num', 'struct.c1s2Dim.L', '결합 길이 (빈칸=치폭)'], ['num', 'struct.c1s2Dim.p', '압입 면압 MPa (압입 시)']] },
     '2-6': { view: 's2', title: 'S1–모터축 결합', f: [['sel', 'struct.s1motor', '방식', [...JOPT, ['clamp', '클램프'], ['flange', '볼트 플랜지']]], ['num', 'struct.s1Dim.d', '축 지름 (빈칸=S1 보어)'], ['num', 'struct.s1Dim.L', '결합 길이'], ['num', 'struct.s1Dim.p', '면압 MPa (압입·클램프)']] },
     '2-7': { view: 's2', title: 'C1 지지 베어링', f: [['sel', 'struct.c1Support', 'C1 지지', [['none', '없음 (유성 위에 얹힘)'], ['out', '출력측 1개'], ['both', '양측'], ['nested', 'S2 양측 (S1·C2 보어 안 베어링)']]]] },
-    '2-8': { view: 's2', title: '출력 베어링 위치', f: [['sel', 'struct.obPos', '위치', [['inside', '2단 기어 폭 안'], ['outside', '2단 출력측 바깥'], ['flange', '출력 플랜지 쪽']]]] },
+    '2-8': { view: 's2', title: '출력 베어링 위치 · C2 결합', f: [['sel', 'struct.obPos', '위치', [['inside', '2단 기어 폭 안'], ['outside', '2단 출력측 바깥'], ['flange', '출력 플랜지 쪽']]], ['sel', 'struct.c2out', 'C2 ↔ 출력 플랜지', [['integral', '일체'], ['flange', '볼트'], ['pin', '다웰 핀'], ['press', '압입']]], ['num', 'struct.c2outDim.n', '볼트·핀 수'], ['num', 'struct.c2outDim.bd', '볼트 호칭 M'], ['num', 'struct.c2outDim.dp', '핀 지름'], ['num', 'struct.c2outDim.pcd', 'PCD (빈칸=베어링 dp − 2.5Dw)']] },
     '2-10': { view: 's2', title: '하중 경로도', f: [] },
     '3-6': { view: 's3', title: '모듈 역산 (필요 안전율 기준)', f: [] },
     '7-2': { view: 's9', title: '풀니들 유성 베어링', stage: true, f: [['chk', 'needle.{i}.use', '{s}단 풀니들 사용'], ['num', 'needle.{i}.Dw', '{s}단 니들 Dw'], ['num', 'needle.{i}.Lw', '{s}단 길이 Lw (빈칸=치폭−0.4)'], ['num', 'needle.{i}.Z', '{s}단 개수 Z (빈칸=최대)'], ['num', 'needle.{i}.HRCpin', '{s}단 핀 HRC'], ['num', 'needle.{i}.HRCbore', '{s}단 유성 보어 HRC'], ['chk', 'needle.{i}.apply', '{s}단 계산값을 베어링 계산에 적용 (유성 보어도 갱신)']] },
