@@ -7,11 +7,11 @@ const fmtN0 = x => Number.isFinite(x) ? Math.round(x).toLocaleString('ko-KR') : 
 const fmtH = h => !Number.isFinite(h) ? (h === Infinity ? '∞' : '—') : h >= 1e6 ? (h / 1e6).toFixed(1) + 'M' : h >= 1e4 ? (h / 1e3).toFixed(0) + 'k' : h.toFixed(0);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const KEY = 'pgd-design-v1';
+let LOADNOTES = [];
 let D = load(), R = null, MC = null, SENS = null, view = 'map', GOOD = null;
 const analysisJobs = window.createAnalysisJobs(E, () => new Worker('worker.js?v=ring-duty-1'));
 
 function fillMissing(dst, src) { for (const k in src) { if (dst[k] === undefined || dst[k] === null && src[k] !== null && typeof src[k] === 'object') dst[k] = JSON.parse(JSON.stringify(src[k])); else if (Array.isArray(src[k]) && Array.isArray(dst[k])) { dst[k].forEach((v, i) => { if (v && typeof v === 'object' && src[k][i] && typeof src[k][i] === 'object' && !Array.isArray(v)) fillMissing(v, src[k][i]); }); } else if (src[k] && typeof src[k] === 'object' && dst[k] && typeof dst[k] === 'object') fillMissing(dst[k], src[k]); } return dst; }
-let LOADNOTES = [];
 // pgd/1 files: duty modes, legacy shared-ring values (stage 2 may hold its own) and needle bearing sources are migrated
 // here; anything that changed the file's meaning is listed in LOADNOTES and shown with the warnings.
 function migrateLoaded(d) {
@@ -41,7 +41,7 @@ function compute() {
   if (window.PGDChecks) { PGDChecks.ensure(D); PGDChecks.applyNeedles(D); }
   try { R = E.analyze(D); } catch (e) { R = { errors: ['계산 오류: ' + e.message], warns: [] }; console.error(e); }
   if (LOADNOTES.length && R) R.warns = [...LOADNOTES, ...(R.warns || [])];
-  if (R?.ctx && !R.errors?.length) GOOD = { R, D: JSON.parse(JSON.stringify(D)) };
+  if (R?.ctx && !R.errors?.length) GOOD = { owner: D, R, D: JSON.parse(JSON.stringify(D)) };
   MC = null; SENS = null; XC = null;
 }
 
@@ -97,6 +97,10 @@ function bindInputs(root) {
     else if (t === 'int') v = parseInt(v, 10);
     else if (t === 'bool') v = elm.checked;
     else if (t === 'numsel') v = Number(v);
+    if (view === 'overview' && ovCompare.owner === D) {
+      const label = elm.closest('label')?.firstChild?.textContent?.trim() || elm.closest('tr')?.cells[0]?.textContent?.trim();
+      ovCompare.last = { path: elm.dataset.p, label: label || '선택한 입력' };
+    }
     set(elm.dataset.p, v);
     changed();
   }));
@@ -580,12 +584,12 @@ function renderVerdict() {
   const el = $('#verdict'), chip = $('#vchip');
   if (chip) {
     if (!R || R.errors?.length) chip.innerHTML = '<b class="bad">계산 불가</b>';
-    else { const nb = R.verdict.filter(x => !x.ok).length; chip.innerHTML = `<span>정격 <b class="${R.reducerCap < D.req.Trated ? 'bad' : 'good'}">${fmt(R.reducerCap, 1)}</b> / 목표 ${D.req.Trated} N·m</span><span class="vb ${nb ? 'bad' : 'good'}">${nb ? nb + '개 미달' : '전 항목 충족'}</span><i>▾</i>`; }
+    else { const nb = R.verdict.filter(x => !x.ok).length; chip.innerHTML = `<span>기어·유성 베어링 한계 <b class="${R.reducerCap < D.req.Trated ? 'bad' : 'good'}">${fmt(R.reducerCap, 1)}</b> / 목표 ${D.req.Trated} N·m</span><span class="vb ${nb ? 'bad' : 'good'}">${nb ? nb + '개 미달' : '전 항목 충족'}</span><i>▾</i>`; }
   }
   if (!R || R.errors?.length) { el.innerHTML = `<div class="kpi"><div class="label">계산 불가</div></div><ul class="warns">${(R?.errors || []).map(e => `<li>${esc(e)}</li>`).join('')}</ul>`; return; }
   const ok = R.verdict.every(x => x.ok);
   el.innerHTML = `
-   <div class="kpi"><div class="label">감속기 한계 · ${BASIS()} (${D.req.lifeH} h)</div><div class="big ${R.reducerCap < D.req.Trated ? 'bad' : ''}">${fmt(R.reducerCap, 1)}<small> N·m</small></div><div class="note">${esc(R.reducerGov)}</div><button type="button" class="btn" data-torque-trace>한계 근거 · 기준안 비교</button></div>
+   <div class="kpi"><div class="label">기어·유성 베어링 수명 한계 · ${BASIS()} (${D.req.lifeH} h)</div><div class="big ${R.reducerCap < D.req.Trated ? 'bad' : ''}">${fmt(R.reducerCap, 1)}<small> N·m</small></div><div class="note">${esc(R.reducerGov)}</div><button type="button" class="btn" data-torque-trace>한계 근거 · 기준안 비교</button></div>
    ${MC ? `<div class="kpi"><div class="label">시편 예측 · 중앙값 (P10–P90)</div><div class="big">${fmt(MC.capacity.p50, 1)}<small> N·m</small></div><div class="note">${fmt(MC.capacity.p10, 1)} – ${fmt(MC.capacity.p90, 1)} N·m · 몬테카를로 ${MC.n}회</div></div>` : `<div class="kpi"><div class="label">시편 예측</div><div class="note">11단계 검증에서 가상 검증을 실행하면 표시됩니다.</div></div>`}
    <div class="kpi"><div class="label">목표 정격 ${D.req.Trated} N·m · 판정</div><div class="big ${ok ? 'good' : 'bad'}" style="font-size:28px">${ok ? '전 항목 충족' : R.verdict.filter(x => !x.ok).length + '개 항목 미달'}</div></div>
    <ul>${R.verdict.map(x => `<li><span>${esc(x.k)}${verdictLinks(x)}</span><b class="${x.ok ? 'good' : 'bad'}">${x.ok ? '✓' : '✗'} ${fmtV(x)}</b></li>`).join('')}</ul>`;
@@ -1002,7 +1006,7 @@ const W = {
       <tr><td>유성 베어링 한계 (목표 수명)</td><td>${R.bearingCap.map(v => fmt(v, 1)).join(' / ')} N·m</td></tr>
       <tr><td>피크 ${D.req.Tpeak} N·m 지배 안전율</td><td class="${R.peakCheck.ok ? '' : 'bad'}">${fmt(R.peakCheck.S, 3)} / ${R.peakCheck.target} · ${R.peakCheck.label}</td></tr>
       <tr><td>비상 ${D.req.Temerg} N·m 지배 안전율</td><td class="${R.emergCheck.ok ? '' : 'bad'}">${fmt(R.emergCheck.S, 3)} / ${R.emergCheck.target} · ${R.emergCheck.label}</td></tr>
-      <tr><td><b>감속기 한계</b></td><td><b>${fmt(R.reducerCap, 2)} N·m</b> · ${esc(R.reducerGov)}</td></tr></table></div>`;
+      <tr><td><b>기어·유성 베어링 수명 한계</b></td><td><b>${fmt(R.reducerCap, 2)} N·m</b> · ${esc(R.reducerGov)}</td></tr></table></div>`;
   },
   lube() {
     if (!R?.lube) return '';
@@ -1467,8 +1471,145 @@ function overviewSpeedRows() {
   return rows.join('');
 }
 
+// Keep the comparison in this tab. An imported or newly opened design has its own baseline.
+const ovCompare = { owner: null, base: null, topic: '' };
+const ovTopics = [
+  ['', '입력할 항목 선택'], ['run', '얼마나 힘을 내고 얼마나 빨리 도나요?'],
+  ['duty', '언제 움직이고 멈추나요?'], ['external', '출력축에 어떤 힘이 걸리나요?'],
+  ['share', '유성마다 힘이 얼마나 걸리나요?'], ['fit', '기어 사이 틈은 얼마인가요?'],
+  ['space', '얼마나 작은 공간에 들어가야 하나요?'], ['material', '기어 재료와 열처리는 무엇인가요?'], ['pin', '핀과 캐리어는 어떻게 지지하나요?'],
+  ['bearing', '어떤 베어링을 쓰나요?'], ['lube', '어떤 윤활 조건인가요?'], ['other', '다른 설계 입력 찾기']
+];
+function ovSnapshot() {
+  if (!R?.rated || R.errors?.length) return null;
+  return { gear: R.capacityLife, limit: R.reducerCap, ratio: R.ratio, backlash: R.backlash?.range?.[1],
+    gov: R.reducerGov, basis: BASIS(), failures: R.verdict.filter(v => !v.ok).length };
+}
+function ovComparison() {
+  const now = ovSnapshot();
+  if (ovCompare.owner !== D) Object.assign(ovCompare, { owner: D, base: null, topic: '', item: '', inputs: null, last: null });
+  if (!ovCompare.base && now) {
+    ovCompare.base = now;
+    ovCompare.inputs = JSON.parse(JSON.stringify(D));
+  }
+  const base = ovCompare.base;
+  if (!now) return (GOOD && GOOD.owner === D ? '<button type="button" class="btn" data-ov-recover>마지막으로 계산된 입력 복원</button>' : '')+'<p class="bad" role="status">입력을 확인해 주세요. 현재 설정의 성능을 계산할 수 없습니다.</p>';
+  const rows = [['ratio', '감속비', '배', 3], ['gear', '기어 수명 기준 토크', 'N·m', 2],
+    ['limit', '기어·유성 베어링 수명 기준 토크', 'N·m', 2], ['backlash', '치합 백래시 상한', 'arcmin', 2]];
+  const cells = rows.map(([key, label, unit, digits]) => {
+    const a = base[key], b = now[key], delta = Number((b - a).toFixed(digits));
+    const change = !Number.isFinite(a) || !Number.isFinite(b) ? '—' : delta === 0 ? '변화 없음' : (delta > 0 ? '+' : '−') + fmt(Math.abs(delta), digits);
+    return '<tr><th scope="row">'+label+' ('+unit+')</th><td>'+fmt(a, digits)+'</td><td><b>'+fmt(b, digits)+'</b></td><td>'+change+'</td></tr>';
+  }).join('');
+  const gov = base.gov === now.gov ? esc(now.gov) : esc(base.gov)+' → '+esc(now.gov);
+  let edit = '';
+  if (ovCompare.last) {
+    const { path, label } = ovCompare.last;
+    const before = path.split('.').reduce((o, key) => o?.[key], ovCompare.inputs);
+    const after = get(path);
+    if (typeof before === 'number' || typeof after === 'number') {
+      edit = '<p>변경한 입력 · '+esc(label)+' <b>'+esc(before ?? '빈칸')+' → '+esc(after ?? '빈칸')+'</b></p>';
+    }
+  }
+  return edit+'<div class="scroll"><table><thead><tr><th>성능 예측</th><th>기준안</th><th>현재</th><th>변화</th></tr></thead><tbody>'+cells+'</tbody></table></div>'+
+    '<p>토크 한계를 결정하는 부품 <b>'+gov+'</b></p><p class="note">계산 기준 '+esc(base.basis)+(base.basis !== now.basis ? ' → '+esc(now.basis) : '')+
+    ' · 현재 종합판정 미달 '+now.failures+'개</p><button type="button" class="btn" data-ov-baseline>현재 값을 비교 기준으로</button>';
+}
+function ovLoadReport() {
+  if (!R?.rated || R.errors?.length) return '';
+  return R.rated.stages.map(s => {
+    const peak = s.Ft * s.Kg;
+    const individual = s.planetLoads;
+    const list = individual?.length && peak > 0 ? '<ul>'+individual.map((v,i) => '<li>유성 '+(i+1)+' <meter aria-label="유성 '+(i+1)+' 접선하중" min="0" max="'+Math.max(peak,...individual)+'" value="'+v+'"></meter> '+fmt(v,1)+' N</li>').join('')+'</ul>' : '';
+    return '<p><b>'+(s.i+1)+'단</b> · 평균 '+fmt(s.Ft,1)+' N · 최대 '+fmt(peak,1)+' N · Kγ '+fmt(s.Kg,2)+' ('+esc(s.KgSrc)+')</p>'+list;
+  }).join('');
+}
+function ovOtherInputs() {
+  const groups = [...PGDProc.STAGES, PGDProc.DFM];
+  const options = groups.map(group => {
+    const items = group.items.filter(([id]) => expRows(id).some(r => r.kind === 'in' && r.path));
+    if (!items.length) return '';
+    return '<optgroup label="'+esc(group.name)+'">'+items.map(([id,label]) => '<option value="'+esc(id)+'" '+
+      (id === ovCompare.item ? 'selected' : '')+'>'+esc(label)+'</option>').join('')+'</optgroup>';
+  }).join('');
+  const rows = expRows(ovCompare.item || '').filter(r => r.kind === 'in' && r.path);
+  return '<label class="f">설계 항목<select id="ovOtherItem"><option value="">항목 선택</option>'+options+
+    '</select></label><div class="grid">'+rows.map(inHTML).join('')+'</div>';
+}
+function ovInputs() {
+  const ids = { space: ['1-6','1-7','3-5'], pin: ['6-1','6-2','6-4'], bearing: ['7-1','7-5','7-7'], external: ['1-5'],
+    fit: ['4-7'], lube: ['5-10'], run: ['1-2','1-3'], duty: ['1-4'] };
+  const topic = ovCompare.topic;
+  if (!topic) return '';
+  if (topic === 'other') return ovOtherInputs();
+  if (topic === 'material') return (!R?.errors?.length && W.mat()) || '<p class="note">기어 제원을 확인하면 재료표를 표시합니다.</p>';
+  if (topic === 'share') {
+    const basis = [['iso','가공 오차 고려 (ISO)'],['ideal','오차 없는 이상 조립']];
+    if (D.loads.basis === 'tolerance') basis.push(['tolerance','공차 한계 (기존 설계)']);
+    const model = D.loads.basis !== 'ideal' && D.loads.kgMode === 'model';
+    return '<div class="grid">'+sel('loads.basis','계산 조건',basis)+expRows('5-6').filter(r=>r.kind==='in').map(inHTML).join('')+
+      (model ? num('loads.posError','핀 구멍 위치 공차 (± µm)',{min:0}) : '')+'</div>'+
+      '<p class="note">정격 운전에서 유성 하나가 받는 접선력입니다. 개별 막대는 핀 위치오차를 가정한 모델 결과입니다.</p>'+ovLoadReport();
+  }
+  const rows = (ids[topic] || []).flatMap(expRows).filter(r=>r.kind==='in' && r.type!=='duty');
+  const fields = '<div class="grid">'+rows.map(inHTML).join('')+'</div>';
+  if (topic === 'duty') return fields+W.duty();
+  if (topic === 'fit') return fields;
+  if (topic === 'bearing') return W.obpick()+'<details><summary>베어링 값 직접 입력</summary>'+fields+'</details>';
+  return fields;
+}
+function ovPartPicker() {
+  const parts = bomList().filter(p => IN3D(p.id));
+  if (!parts.length) return '';
+  return '<label class="f">수정할 부품<select id="ovPickPart"><option value="">모델 또는 목록에서 선택</option>'+
+    parts.map(p => '<option value="'+esc(p.id)+'" '+(p.id===OVSTATE.sel?'selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select></label>';
+}
+function overviewEditor() {
+  const comparison = ovComparison();
+  return '<section class="card" id="ovEditor"><h3>설계 변경과 결과</h3><p class="note">부품을 누르면 치수를 바꿀 수 있습니다. 운전 조건과 힘은 아래에서 선택하세요.</p>'+
+    '<div class="grid">'+ovPartPicker()+'<label class="f">무엇을 바꿀까요?<select id="ovTopic">'+ovTopics.map(([key,label])=>'<option value="'+key+'" '+(key===ovCompare.topic?'selected':'')+'>'+label+'</option>').join('')+'</select></label></div>'+
+    '<div id="ovInputs">'+ovInputs()+'</div><div id="ovCompare" aria-live="polite">'+comparison+'</div></section>';
+}
+function bindOverviewEditor(m) {
+  const topic = m.querySelector('#ovTopic');
+  const inputs = m.querySelector('#ovInputs');
+  const bindWidgets = () => {
+    const item = inputs.querySelector('#ovOtherItem');
+    if (item) item.onchange = () => {
+      ovCompare.item = item.value;
+      inputs.innerHTML = ovOtherInputs();
+      bindInputs(inputs);
+      bindWidgets();
+      inputs.querySelector('#ovOtherItem').focus();
+    };
+    if (ovCompare.topic === 'duty') WB.duty(inputs);
+    if (ovCompare.topic === 'bearing') WB.obpick(inputs);
+  };
+  bindWidgets();
+  topic.onchange = () => {
+    ovCompare.topic = topic.value;
+    inputs.innerHTML = ovInputs();
+    bindInputs(inputs);
+    bindWidgets();
+  };
+  m.querySelector('#ovCompare').onclick = e => {
+    if (e.target.closest('[data-ov-recover]') && GOOD?.owner === D) {
+      const restored = JSON.parse(JSON.stringify(GOOD.D));
+      ovCompare.owner = restored;
+      D = restored;
+      changed();
+      return;
+    }
+    if (!e.target.closest('[data-ov-baseline]')) return;
+    ovCompare.base = null;
+    ovCompare.last = null;
+    m.querySelector('#ovCompare').innerHTML = ovComparison();
+    m.querySelector('[data-ov-baseline]')?.focus();
+  };
+}
+
 function overviewView() {
-  if (!R || R.errors?.length) return head('3D · 종합판정', '기어 제원을 수정하면 3D 모델과 판정을 다시 계산합니다.') + '<div class="ov-workbench">' + overviewStagePanel() + '<div>' + errBox() + '</div></div>';
+  if (!R || R.errors?.length) return head('3D · 종합판정', '기어 제원을 수정하면 3D 모델과 판정을 다시 계산합니다.') + '<div class="ov-workbench">' + overviewStagePanel() + '<div>' + errBox() + overviewEditor() + '</div></div>';
   const issues = buildIssues();
   return `<div class="ov-head"><h2>1. 종합판정</h2><button type="button" class="btn" data-torque-trace>허용토크 근거 · 기준안 비교</button><p class="lead">실측값 없이 규격식·물리 모델·명시된 가정으로 계산한 감속기입니다. 붉은 번호는 기준 미달 부위, 노란 번호는 주의 부위입니다. 부품을 누르면 상세가, 번호를 누르면 원인과 대책이 열립니다. 드래그 회전 · Shift+드래그 이동 · 휠 확대 · 더블클릭 기본 시점 · 우클릭 메뉴(배경: 보기 설정 / 부품: 투명·분해·단면·숨기기).</p></div>
     <div class="ov-workbench">${overviewStagePanel()}<section class="card ov-live"><h3>단별 유성 배치 3D</h3><div id="viewer" class="full">
@@ -1476,6 +1617,7 @@ function overviewView() {
       <div class="v3-card" id="pcard" hidden></div>
       <div class="v3-pop" id="ipop" hidden></div>
     </div>
+      ${overviewEditor()}
       <div class="ov-console">
         <div class="ov-line" role="group" aria-label="모델 보기"><b>모델 보기</b><div class="ov-actions">
           <button class="btn" data-axial="1">상면</button><button class="btn" data-axial="-1">하면</button><button class="btn" id="tHome">기본 시점</button>
@@ -1527,7 +1669,8 @@ function partCardHTML(id) {
   return `<div class="pc-h"><b>${esc(p.name)}</b><button class="x" id="pcX" aria-label="닫기">×</button></div>
     <table><tr><td>수량</td><td>${p.qty}</td></tr><tr><td>재료 · 열처리</td><td>${esc(p.material)} · ${esc(p.heat)}</td></tr><tr><td>중량 (추정)</td><td>${fmt(p.mass * 1000, 1)} g</td></tr>
     ${p.verdict ? `<tr><td>판정</td><td class="${p.verdict.ok ? 'good' : 'bad'}">${p.verdict.ok ? '통과' : '미달'} · ${esc(p.verdict.text)}</td></tr>` : ''}</table>
-    <h4>치수 (mm)</h4>${dimsHTML(id)}
+    <h4>부품 입력</h4>${dimsHTML(id)}
+    <button class="btn" id="pcRelated" type="button">${/^(sun|planet|ring)/.test(id) ? '관련 입력 · 재료와 열처리' : id === 'xroller' ? '관련 입력 · 출력축 하중' : '관련 입력 · 핀과 캐리어'}</button>
     <button class="btn primary" id="pcGo">상세 설계 보기</button>`;
 }
 function issueHTML(g) {
@@ -1547,17 +1690,24 @@ function issueHTML(g) {
 }
 function mountOverview(m) {
   bindOverviewSpecs(m);
+  bindOverviewEditor(m);
   const host = m.querySelector('#viewer'); if (!host) return;
   const issues = buildIssues();
   const card = m.querySelector('#pcard'), pop = m.querySelector('#ipop'), bom = m.querySelector('#bom');
   let sel = null;
   const showCard = id => {
-    sel = id; bom.innerHTML = bomHTML(id, true); bindBom();
+    sel = id; const picker = m.querySelector('#ovPickPart'); if (picker) picker.value = id || '';
+    bom.innerHTML = bomHTML(id, true); bindBom();
     OVSTATE.sel = id;
     if (id && id !== DWSTATE.id) { const dw = m.querySelector('#dwg'); if (dw) { dw.outerHTML = drawingHTML(id); bindDrawing(m, onDwSel); } }
     if (!id) { card.hidden = true; return; }
     card.innerHTML = partCardHTML(id); card.hidden = false; bindInputs(card);
-    card.querySelector('#pcX').onclick = () => { card.hidden = true; OVSTATE.sel = null; VIEW3D?.select(null); };
+    card.querySelector('#pcX').onclick = () => { showCard(null); VIEW3D?.select(null); };
+    card.querySelector('#pcRelated').onclick = () => {
+      const selector = m.querySelector('#ovTopic');
+      selector.value = /^(sun|planet|ring)/.test(id) ? 'material' : id === 'xroller' ? 'external' : 'pin';
+      selector.dispatchEvent(new Event('change')); selector.focus();
+    };
     card.querySelector('#pcGo').onclick = () => { const p = bomList().find(x => x.id === id); if (p) go(p.step); };
   };
   const showIssue = g => {
@@ -1569,6 +1719,8 @@ function mountOverview(m) {
   bindDrawing(m, onDwSel);
   const bindBom = () => bom.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { VIEW3D?.select(tr.dataset.id, true); showCard(tr.dataset.id); });
   bom.innerHTML = bomHTML(null, true); bindBom();
+  const picker = m.querySelector('#ovPickPart');
+  if (picker) picker.onchange = () => { const id = picker.value || null; VIEW3D?.select(id, !!id); showCard(id); if (id) { card.querySelector('#pcX')?.focus({ preventScroll: true }); host.scrollIntoView({ block: 'nearest' }); } };
   const refreshOpacity = [];
   mountViewer(host, 'full', { only: 'sprc', onOpacity: () => refreshOpacity.forEach(fn => fn()), onFrameRate: fps => { m.querySelector("#ovFps").textContent = fps + " FPS"; }, onPick: id => showCard(id), onIssue: g => showIssue(g) });
   VIEW3D?.setIssues(issues);
