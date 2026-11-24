@@ -1,0 +1,642 @@
+{
+ "schema": "pgd-case/1",
+ "id": "semi-d80-l80-i20-h20",
+ "name": "세미로보틱스 Ø80×80 · 40 N·m · i 20 · 중공 Ø20 — 불성립 · 근사안 32.5 N·m (중공 불가)",
+ "saved": "2026-11-24T01:10:00.000Z",
+ "source": "request-xlsx v2.2",
+ "meta": {
+  "client": "세미로보틱스",
+  "requester": "세미로보틱스",
+  "date": "2026-11-24",
+  "application": "로봇관절",
+  "requestForm": "PGD-REQ v2.2",
+  "rules": "v2.2 (입력값 변경 금지 · 미달 시 근사치 · 유성 ≤3 · 단별 용량 치폭 · SCM440 이온질화 · KISSsoft 방식 · 전위 0 · 모듈 0.4/0.6/0.8/1.0 · 헬리컬 12° · 핀 1 mm · 니들 0.5 mm)",
+  "decision": "입력 조건 동시 성립 불가 (감속비 20 + Ø80 + 중공 Ø20: 2단 최대 감속비 약 10). 근사안 = 감속비·외형·길이 유지, 중공 불가, 허용 토크 32.5 N·m (요구 대비 81 %)",
+  "unmet": [
+   {
+    "item": "중공 Ø20",
+    "reason": "썬 피치원 ≥ 약 31 mm 필요 → 단 감속비 ≤ 3.3, 2단 ≤ 약 10.6"
+   },
+   {
+    "item": "정격 40 N·m (KISSsoft 방식)",
+    "value": 32.5,
+    "pct": 81,
+    "reason": "외경 Ø80에서 1단 썬 치면 피팅 · 유성 4~6개도 32.7 이하"
+   },
+   {
+    "item": "피크 80 / 비상 120 N·m 정적",
+    "value": [
+     0.97,
+     0.8
+    ]
+   }
+  ],
+  "reference": [
+   {
+    "change": "중공 Ø20 유지",
+    "maxRatio": 9.62,
+    "isoCap": 7.9
+   },
+   {
+    "change": "이론(오차 0) 판정",
+    "cap": 52.2
+   }
+  ]
+ },
+ "request": {
+  "Trated": 40,
+  "Tpeak": 80,
+  "Temerg": 120,
+  "rpm": 3000,
+  "lifeH": 20000,
+  "ratio": 20,
+  "Dmax": 80,
+  "Lmax": 80,
+  "hollow": 20,
+  "backlashMax": 10,
+  "ext": {
+   "Fr": 240,
+   "Fa": 120,
+   "M": 10
+  },
+  "duty": [
+   {
+    "torque": 100,
+    "time": 15,
+    "mode": "rated",
+    "rpm": 0
+   },
+   {
+    "torque": 60,
+    "time": 30,
+    "mode": "rated"
+   },
+   {
+    "torque": 30,
+    "time": 35,
+    "mode": "rated"
+   },
+   {
+    "torque": 10,
+    "time": 20,
+    "mode": "rated"
+   }
+  ],
+  "dutyRate": 0.5,
+  "basis": "iso",
+  "aiDecided": [
+   "피크 80 (정격×2)",
+   "비상 120 (피크×1.5)",
+   "입력 3,000 rpm",
+   "수명 20,000 h",
+   "백래시 10 arcmin",
+   "상체 피치 스펙트럼",
+   "Fr 240 / Fa 120 N",
+   "양방향",
+   "2단 분리 링",
+   "유성 3개",
+   "헬리컬 12°",
+   "모듈 0.8 / 1.0",
+   "전위 0",
+   "치폭 13.5 / 35 (단별 용량 균형)",
+   "SCM440 이온질화",
+   "IKO CRBS508V",
+   "풀니들 Ø2.5 / Ø2 · 핀 Ø6 / Ø6",
+   "KISSsoft 방식 판정"
+  ]
+ },
+ "summary": {
+  "stages": 2,
+  "sharedRing": false,
+  "ratio": 20,
+  "gears": [
+   {
+    "s": 18,
+    "p": 27,
+    "r": 72,
+    "n": 3,
+    "m": 0.8,
+    "beta": 12,
+    "b": 13.5,
+    "x": [
+     0,
+     0,
+     0
+    ]
+   },
+   {
+    "s": 21,
+    "p": 21,
+    "r": 63,
+    "n": 3,
+    "m": 1,
+    "beta": 12,
+    "b": 35,
+    "x": [
+     0,
+     0,
+     0
+    ]
+   }
+  ],
+  "OD": 80,
+  "L": 79.7,
+  "outBearing": "IKO CRBS508V",
+  "gearCap": 32.53241123413559,
+  "reducerCap": 32.53241123413559,
+  "governing": "기어 · 1단 썬–유성 썬 치면(피팅)",
+  "idealCap": 52.24141611370218,
+  "mcP10": 45.1,
+  "eff": 0.9556647253399435,
+  "backlash": 4.653631090579641,
+  "verdictFail": [
+   "정격 토크 · 목표 수명 (기어)",
+   "부하 스펙트럼 수명 (기어)",
+   "피크 접촉 미달",
+   "비상 접촉 미달"
+  ],
+  "checklistFail": [
+   "3-6: 1단 m 0.8 / 필요 0.859 (피팅) → 규격 1 · 2단 m 1 / 필요 1.049 (피팅) → 규격 1.25"
+  ]
+ },
+ "D": {
+  "schema": "pgd/1",
+  "name": "세미로보틱스 Ø80×80 · 40 N·m · i 20 · 중공 Ø20 — 근사안 (i 20 · 중공 불가 · 32.5 N·m)",
+  "req": {
+   "case": "upper-pitch",
+   "ext": {
+    "Fr": 240,
+    "Fa": 120,
+    "M": 10
+   },
+   "Trated": 40,
+   "Tpeak": 80,
+   "Temerg": 120,
+   "rpm": 3000,
+   "lifeH": 20000,
+   "SH": 1,
+   "SF": 1.4,
+   "SHstat": 1,
+   "SFstat": 1.2,
+   "s0": 1,
+   "SBmin": 1.5,
+   "effMin": 90,
+   "backlashMax": 10,
+   "duty": [
+    {
+     "torque": 100,
+     "time": 15,
+     "mode": "rated",
+     "rpm": 0
+    },
+    {
+     "torque": 60,
+     "time": 30,
+     "mode": "rated"
+    },
+    {
+     "torque": 30,
+     "time": 35,
+     "mode": "rated"
+    },
+    {
+     "torque": 10,
+     "time": 20,
+     "mode": "rated"
+    }
+   ],
+   "ratio": 20,
+   "Dmax": 80,
+   "Lmax": 80,
+   "stiffMin": null
+  },
+  "config": {
+   "stages": 2,
+   "sharedRing": false,
+   "floatingSun": false
+  },
+  "design": {
+   "quality": "MQ"
+  },
+  "stages": [
+   {
+    "s": 18,
+    "p": 27,
+    "n": 3,
+    "m": 0.8,
+    "beta": 12,
+    "alpha": 20,
+    "b": 13.5,
+    "xs": 0,
+    "xp": 0,
+    "xr": 0,
+    "autoRingShift": true,
+    "grade": 6,
+    "mod": {
+     "crown": 0,
+     "tip": 0,
+     "verified": "none"
+    },
+    "sunBore": null,
+    "planetBore": 11,
+    "ringOD": 75,
+    "bearing": {
+     "name": "풀니들 Ø2.5×13.1 × 10 (계산)",
+     "C": 10308,
+     "C0": 10172,
+     "count": 1,
+     "manual": {
+      "name": "풀니들 Ø2.5 × 10 (추정)",
+      "C": 4121,
+      "C0": 3864,
+      "planetBore": 11
+     },
+     "calc": {
+      "name": "풀니들 Ø2.5×13.1 × 10 (계산)",
+      "C": 10308,
+      "C0": 10172,
+      "planetBore": 11
+     },
+     "src": "needle"
+    },
+    "jt": [
+     20,
+     25
+    ],
+    "pin": {
+     "d": 6,
+     "type": "single",
+     "material": "SUJ2",
+     "wall": 2.5,
+     "allow": 1200,
+     "holeMode": "through",
+     "depth": null
+    },
+    "carrier": {
+     "width": 2.5,
+     "outerD": null,
+     "innerD": null,
+     "bossT": 0,
+     "bossD": null,
+     "axialClearance": 0.3,
+     "material": "S45C",
+     "groove": 5.5,
+     "pocket": null,
+     "pocketShape": "slot"
+    },
+    "r": null,
+    "tipChamfer": [
+     0,
+     0,
+     0
+    ],
+    "asn": [
+     [
+      0,
+      0
+     ],
+     [
+      -0.054,
+      -0.084
+     ],
+     [
+      -0.054,
+      -0.084
+     ]
+    ],
+    "cutter": {
+     "z0": 32,
+     "x0": 0
+    }
+   },
+   {
+    "s": 21,
+    "p": 21,
+    "n": 3,
+    "m": 1,
+    "beta": 12,
+    "alpha": 20,
+    "b": 35,
+    "xs": 0,
+    "xp": 0,
+    "xr": 0,
+    "autoRingShift": true,
+    "grade": 6,
+    "mod": {
+     "crown": 0,
+     "tip": 0,
+     "verified": "none"
+    },
+    "sunBore": null,
+    "planetBore": 10,
+    "ringOD": 75,
+    "bearing": {
+     "name": "풀니들 Ø2×34.6 × 11 (계산)",
+     "C": 19147,
+     "C0": 25120,
+     "count": 1,
+     "manual": {
+      "name": "풀니들 Ø2 × 11 (추정)",
+      "C": 6222,
+      "C0": 5833,
+      "planetBore": 10
+     },
+     "calc": {
+      "name": "풀니들 Ø2×34.6 × 11 (계산)",
+      "C": 19147,
+      "C0": 25120,
+      "planetBore": 10
+     },
+     "src": "needle"
+    },
+    "jt": [
+     20,
+     25
+    ],
+    "pin": {
+     "d": 6,
+     "type": "double",
+     "material": "SUJ2",
+     "wall": 2.5,
+     "allow": 1200,
+     "holeMode": "through",
+     "depth": null
+    },
+    "carrier": {
+     "width": null,
+     "groove": null,
+     "pocket": null,
+     "pocketShape": "slot",
+     "outerD": null,
+     "innerD": null,
+     "bossD": null,
+     "bossT": 2,
+     "material": "S45C"
+    },
+    "r": null,
+    "tipChamfer": [
+     0,
+     0,
+     0
+    ],
+    "asn": [
+     [
+      0,
+      0
+     ],
+     [
+      -0.054,
+      -0.084
+     ],
+     [
+      -0.054,
+      -0.084
+     ]
+    ],
+    "cutter": {
+     "z0": 32,
+     "x0": 0
+    }
+   }
+  ],
+  "materials": [
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 27,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 27,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 27,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 27,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 27,
+    "depth": 0.1
+   },
+   {
+    "family": "NV",
+    "surfaceHRC": 60,
+    "coreHRC": 27,
+    "depth": 0.1
+   }
+  ],
+  "lube": {
+   "type": "grease",
+   "nu40": 320,
+   "nu100": 25,
+   "temp": 70,
+   "rho": 0.88,
+   "alphaP": 2,
+   "starvation": 0.7,
+   "XL": 1,
+   "XW": 1,
+   "fzg": 12,
+   "rzFlank": 1,
+   "rzRoot": 6,
+   "base": "mineral"
+  },
+  "loads": {
+   "basis": "iso",
+   "KA": 1,
+   "kgMode": "model",
+   "kgFixed": 1.1,
+   "posError": 5,
+   "sunSupport": [
+    {
+     "mode": "structure",
+     "k": 20,
+     "play": 2.5,
+     "bearingK": 30,
+     "od": 29.5,
+     "id": 20.5,
+     "overhang": 9
+    },
+    {
+     "mode": "structure",
+     "k": 20,
+     "play": 1.5,
+     "bearingK": 30,
+     "od": 20,
+     "id": 17.5,
+     "overhang": 3.5
+    }
+   ],
+   "fmaMode": "rss",
+   "carrierParallel": 10,
+   "extraFsh": [
+    0,
+    0
+   ],
+   "reverse": true
+  },
+  "reliability": {
+   "mode": "iso",
+   "covH": 0.08,
+   "covF": 0.07
+  },
+  "perf": {
+   "muMode": "model",
+   "mu": 0.06,
+   "otherLoss": 1.5
+  },
+  "outBearing": {
+   "name": "IKO CRBS508V",
+   "rows": 2,
+   "type": "roller",
+   "C": 6930,
+   "C0": 9800,
+   "dp": 58,
+   "Km": 30,
+   "Z": 0,
+   "Dw": 2.5,
+   "Lw": 2.25,
+   "preload": 0,
+   "maker": "IKO",
+   "series": "CRBS…V",
+   "model": "CRBS508V",
+   "d": 50,
+   "D": 66,
+   "B": 8,
+   "dpEst": true,
+   "mass": 0.084,
+   "r": 0.4,
+   "rIn": 0.4,
+   "rOut": 0.4,
+   "rSrc": "카탈로그",
+   "status": "IKO 공식 확인",
+   "source": "IKO 공식 CAD 카탈로그 (PARTcommunity/MISUMI)",
+   "holes": false,
+   "DwEst": true,
+   "auto": "추천 제원: 외경 안 최대 C0"
+  },
+  "carrier": {
+   "allowP": 300,
+   "allowB": 250
+  },
+  "housing": {
+   "wall": 2.5,
+   "coverT": 3,
+   "flangeT": 3,
+   "boltN": 8,
+   "boltD": 5
+  },
+  "geom": {},
+  "struct": {
+   "ringHousing": "integral",
+   "c1s2": "pin",
+   "c1s2Dim": {
+    "d": 20,
+    "L": 5.5,
+    "p": 40,
+    "n": 6,
+    "dp": 3.5,
+    "pcd": 25.5
+   },
+   "s1motor": "flange",
+   "s1Dim": {
+    "d": 20.5,
+    "L": 9,
+    "p": 40,
+    "n": 4,
+    "bd": 2,
+    "pcd": 26
+   },
+   "c1Support": "nested",
+   "obPos": "outside",
+   "ringFit": {
+    "delta": 0.03,
+    "mu": 0.12,
+    "E": 70000,
+    "nu": 0.33,
+    "Sy": 240,
+    "boltN": 6,
+    "boltD": 3
+   }
+  },
+  "needle": [
+   {
+    "use": true,
+    "apply": true,
+    "Dw": 2.5,
+    "Lw": null,
+    "Z": 10,
+    "HRCpin": 60,
+    "HRCbore": 58
+   },
+   {
+    "use": true,
+    "apply": true,
+    "Dw": 2,
+    "Lw": null,
+    "Z": 11,
+    "HRCpin": 60,
+    "HRCbore": 58
+   }
+  ],
+  "verify": {
+   "feaKcar": [
+    null,
+    null
+   ],
+   "feaSigmaF": null,
+   "testT": 28,
+   "testNote": "시험성적서 정격 (RDP-RH065 9N)"
+  },
+  "anim": {
+   "rpm": 1000,
+   "slow": 0.02
+  },
+  "mc": {
+   "samples": 200,
+   "utilization": 0.7
+  },
+  "bolts": {
+   "grade": 12.9,
+   "mu": 0.12,
+   "util": 0.7
+  },
+  "thermal": {
+   "Tamb": 25,
+   "h": 12,
+   "duty": 0.5
+  },
+  "review": {
+   "by": "",
+   "date": "",
+   "status": "draft",
+   "note": ""
+  },
+  "dfm": {
+   "qty": 100,
+   "rate": 60000,
+   "steel": 3000,
+   "alu": 7000,
+   "ht": 8000,
+   "proc": {
+    "sun": "hob",
+    "planet": "hob",
+    "ring": "shape",
+    "carrier": "mill",
+    "housing": "turn",
+    "pin": "buy"
+   }
+  }
+ }
+}
