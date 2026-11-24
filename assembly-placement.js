@@ -16,7 +16,7 @@
   const datum = 'datum';
   const safeId = id => typeof id === 'string' && /^[a-zA-Z][a-zA-Z0-9-]{0,40}$/.test(id) && !['constructor', 'prototype'].includes(id);
   const finite = (value, fallback) => typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-  const defaultJoint = () => ({ mode: 'free', reference: datum, locks: [], gapRadial: null, gapAxial: null, kRadial: null, kAxial: null, kMoment: null });
+  const defaultJoint = () => ({ mode: 'free', reference: datum, locks: [], outputSupport: false, gapRadial: null, gapAxial: null, kRadial: null, kAxial: null, kMoment: null });
 
   function read(D) {
     const state = D.assemblyPlacement;
@@ -29,6 +29,7 @@
       const raw = row.joint;
       const mode = JOINTS.some(([key]) => key === raw?.mode) ? raw.mode : 'free';
       const joint = { ...defaultJoint(), mode, reference: safeId(raw?.reference) ? raw.reference : datum };
+      joint.outputSupport = raw?.outputSupport === true;
       joint.locks = mode === 'custom' ? AXES.map((_, i) => raw?.locks?.[i] === true) : [];
       for (const key of ['gapRadial', 'gapAxial', 'kRadial', 'kAxial', 'kMoment']) joint[key] = finite(raw?.[key], null);
       edits[id] = { offset: AXES.map((_, i) => finite(row.offset?.[i], 0)), joint };

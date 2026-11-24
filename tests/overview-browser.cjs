@@ -253,6 +253,22 @@ async function run() {
     assert.deepEqual(joint.locks, [false, false, true, false, false, false]);
     assert.equal(joint.gapAxial, 10);
 
+    await placement.locator('[data-placement-select]').selectOption('xroller');
+    await placement.locator('[name="pose-2"]').fill('-5');
+    await placement.getByText('유격·지지 강성', { exact: true }).click();
+    await placement.locator('[name="kRadial"]').fill('80');
+    await placement.getByRole('button', { name: '배치·구속 적용' }).click();
+    const solved = await page.evaluate(() => {
+      const { D, R } = PGDApp.state();
+      const L = PGD3D.layout(R, D);
+      return { z: R.assembly.supports.reactions[0].p[2], nominal: (L.zBear[0] + L.zBear[1]) / 2,
+        manual: R.assembly.supports.reactions[0].f[0], ext: D.req.ext.Fr, fixed: R.assembly.reverse.shaftTorque };
+    });
+    assert.ok(Math.abs(solved.z - solved.nominal + 5) < 1e-8);
+    assert.ok(Math.abs(solved.manual + solved.ext) < 1e-6);
+    assert.equal(solved.fixed, 1);
+    await page.getByRole('heading', { name: '배치에 따른 조립 해석' }).waitFor();
+
     await page.evaluate(() => PGDApp.go('map'));
     assert.equal(await page.locator('body.cad-mode').count(), 0);
     assert.deepEqual(errors, []);

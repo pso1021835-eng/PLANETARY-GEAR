@@ -40,6 +40,14 @@ function compute() {
   E.syncDutyTorque(D);
   if (window.PGDChecks) { PGDChecks.ensure(D); PGDChecks.applyNeedles(D); }
   try { R = E.analyze(D); } catch (e) { R = { errors: ['계산 오류: ' + e.message], warns: [] }; console.error(e); }
+  if (R?.rated) {
+    try {
+      R.assembly = PGDAssemblyPhysics.analyze(R, D, PGD3D.layout(R, D), placementParts().map(p => p.id));
+    } catch (e) {
+      R.assembly = { error: '조립 해석을 계산할 수 없습니다. ' + e.message };
+      console.error(e);
+    }
+  }
   if (LOADNOTES.length && R) R.warns = [...LOADNOTES, ...(R.warns || [])];
   if (R?.ctx && !R.errors?.length) GOOD = { owner: D, R, D: JSON.parse(JSON.stringify(D)) };
   MC = null; SENS = null; XC = null;
@@ -264,6 +272,7 @@ function itemPage(id) {
     <div class="isecs">${itemSections(id, c)}</div>
     ${k === '2' ? relatedStructureInputs(id) + structureChanges() : ''}
     ${id === '2-7' || id === '2-8' ? placementHTML(false) : ''}
+    ${id === '2-8' || id === '2-10' ? PGDAssemblyAnalysisView.render(R, D, false) : ''}
     ${ext || wid ? `<h3 class="cardsh">상세 계산·표</h3>${ext ? `<div class="card pcx">${ext}</div>` : ''}${wid}` : ''}
     <div class="irel"><div><h4>선행 — 먼저 확인할 항목</h4>${rl.up.map(([u, t]) => relChip(u, t, c, fb(u))).join('') || '<p class="note">없음</p>'}</div>
       <div><h4>영향 — 이 값을 바꾸면 다시 볼 항목</h4>${rl.down.map(([u, t]) => relChip(u, t, c, O.indexOf(u) < idx)).join('') || '<p class="note">없음</p>'}</div></div>
@@ -307,7 +316,7 @@ function stagePage(k) {
   return `<div class="shead"><span class="snum">${k}</span><div><h2>${esc(k === 'D' ? '가공·원가 (병행 트랙)' : g.name)}</h2><p class="lead">항목 ${g.total}개 · 검토 완료 ${done}${stale ? ` · <b class="bad">재검토 ${stale}</b>` : ''} · 항목을 누르면 전용 페이지로 갑니다.</p></div><button class="btn primary" data-goit="${first}">${first}부터 검토 →</button></div>
     <div class="pgate ${gateCls(g.gate.ok)}">단계 게이트 · ${esc(g.gate.t)} — ${g.gate.ok === true ? '통과' : g.gate.ok === false ? '미달' : '판정 기준 없음 (설계자 확인)'}</div>
     ${k === '2' ? (window.PGDStructure?.render('overview', c) || '') +
-      '<div class="sc-links"><button type="button" class="btn" data-structure-open>3D에서 구조 편집</button></div>' + structureBatchHTML() + placementHTML(false) : ''}
+      '<div class="sc-links"><button type="button" class="btn" data-structure-open>3D에서 구조 편집</button></div>' + structureBatchHTML() + placementHTML(false) + PGDAssemblyAnalysisView.render(R, D, false) : ''}
     <ol class="slist">${g.items.map((i, n) => { const sp = IT()[i.id] || {}, ok = itemOk(i.id, c); return `<li><button data-goit="${i.id}"><span class="pid">${i.id}</span><span class="st"><b>${esc(i.t)}</b><small>${esc(sp.what || '')}</small></span><span class="srcs">${srcChips(i.id)}</span><span class="pval">${esc(String(i.val ?? ''))}</span>${okMark(ok)}${rvBadge(sts[n])}</button></li>`; }).join('')}</ol>
     <div class="pager">${prev ? `<button class="btn" data-v="st-${prev}">← ${prev} ${esc(nameOf(prev))}</button>` : '<span></span>'}${next ? `<button class="btn primary" data-v="st-${next}">${next} ${esc(nameOf(next))} →</button>` : ''}</div>`;
 }
@@ -315,6 +324,7 @@ function bindStructurePage(root) {
   root.querySelectorAll('[data-structure-open]').forEach(button => button.onclick = () => openStructureInOverview(button.dataset.structureOpen));
   bindStructureEditor(root);
   bindPlacement(root, false);
+  bindAssemblyAnalysis(root);
 }
 function bindStagePage(m) { bindItemCommon(m, null); m.querySelectorAll('[data-v]').forEach(b => b.onclick = () => go(b.dataset.v)); bindStructurePage(m); }
 // ------------------------------------------------------------------ core review (groups.js): 99 items folded into ~20 linked groups
@@ -1888,7 +1898,7 @@ function cadTree() {
 function overviewView() {
   if (!R || R.errors?.length) return head('3D · 종합판정', '기어 제원을 수정하면 3D 모델과 판정을 다시 계산합니다.') + '<div class="ov-workbench">' + overviewStagePanel() + '<div>' + errBox() + overviewEditor() + structureBatchHTML() + '</div></div>';
   const issues = buildIssues();
-  const panels = [['spec','기어 제원'],['structure','구조 일괄 편집'],['placement','배치·구속'],['edit','조건·결과 비교'],['display','표시·구동 설정'],['drawing','도면'],['results','상세 판정']];
+  const panels = [['spec','기어 제원'],['structure','구조 일괄 편집'],['placement','배치·구속'],['analysis','조립 해석'],['edit','조건·결과 비교'],['display','표시·구동 설정'],['drawing','도면'],['results','상세 판정']];
   const buttons = panels.map(([key,label])=>`<button class="btn" type="button" data-cad-open="${key}" aria-controls="cadDrawer" aria-expanded="false">${label}</button>`).join('');
   return `<section class="cad-workspace" aria-label="3D 종합판정">
     <div class="cad-ribbon" aria-label="설계 명령"><button type="button" class="btn" data-cad-tree aria-controls="cadTree">부품 목록</button>${buttons}<button class="btn" type="button" data-torque-trace>허용토크 근거</button></div>
@@ -1903,6 +1913,7 @@ function overviewView() {
             <div data-cad-panel="edit">${overviewEditor()}</div>
             <div data-cad-panel="structure">${structureBatchHTML()}<button type="button" class="btn" data-structure-home>구조 개념 상세 보기</button></div>
             <div data-cad-panel="placement">${placementHTML(true)}</div>
+            <div data-cad-panel="analysis">${PGDAssemblyAnalysisView.render(R, D, true)}</div>
             <div data-cad-panel="display"><div class="ov-live"><div class="ov-console">
              <details><summary>모델 조작 방법</summary><p class="note">드래그로 회전하고 Shift+드래그로 이동합니다. 휠로 확대하고 더블클릭으로 기본 시점으로 돌아갑니다. 부품을 누르면 치수를 확인할 수 있습니다. 빨간 번호는 기준 미달, 노란 번호는 주의 항목입니다. 번호를 누르면 원인과 대책이 열립니다. 배경이나 부품을 우클릭하면 보기 메뉴가 열립니다.</p></details>
              <div class="ov-line"><b>모델 표시</b><div class="ov-tools"><button type="button" class="btn" id="ovAssembly" aria-pressed="${OVSTATE.assembly}">${OVSTATE.assembly ? '기어·캐리어 보기' : '전체 조립 보기'}</button><button class="btn" id="ovCarrier">캐리어·핀 숨기기</button><button class="btn" id="ovGrid">격자 ${D.view.grid===false?'OFF':'ON'}</button></div></div>
@@ -1921,7 +1932,7 @@ function overviewView() {
             <div data-cad-panel="results"><div class="ov-sum">${issues.length ? `<div class="card"><h3>기준 미달·주의 ${issues.length}곳</h3><ol class="iss">${issues.map((g, k) => `<li class="${g.sev}"><button data-iss="${k}">${esc(g.title)}</button></li>`).join('')}</ol></div>` : '<div class="card"><h3 class="good">모든 항목이 기준을 만족합니다</h3></div>'}
     ${VIEWS.overviewOld().replace(/^<h2>.*?<\/h2><p class="lead">.*?<\/p>/s, '')}${componentsHTML()}</div></div>
           </div></aside></section></div>
-    <footer class="cad-status"><span>감속비 <b>${fmt(R.ratio,2)} : 1</b></span><span>기어·유성 베어링 한계 <b>${fmt(R.reducerCap,2)} N·m</b></span>${Object.keys(D.assemblyPlacement?.edits || {}).length ? '<span>배치 변경 · 물리 해석 연동 대기</span>' : ''}<span class="note">드래그 회전 · Shift+드래그 이동 · 휠 확대 · 우클릭 보기 설정</span></footer>
+    <footer class="cad-status"><span>감속비 <b>${fmt(R.ratio,2)} : 1</b></span><span>기어·유성 베어링 한계 <b>${fmt(R.reducerCap,2)} N·m</b></span>${Object.keys(D.assemblyPlacement?.edits || {}).length ? '<span>배치 영향은 조립 해석에서 확인</span>' : ''}<span class="note">드래그 회전 · Shift+드래그 이동 · 휠 확대 · 우클릭 보기 설정</span></footer>
   </section>`;
 }
 
@@ -2022,6 +2033,40 @@ function bindCadWorkspace(m) {
   show(OVSTATE.panel || '');
   return { show, hideMobileTree() { if(narrow.matches) { OVSTATE.treeOpen = false; treeOpen(false); } } };
 }
+function bindAssemblyAnalysis(root, cad) {
+  const node = root.querySelector('[data-assembly-analysis]');
+  if (!node) return;
+  const showAssembled = () => {
+    cad.show('');
+    const range = root.querySelector('#tExpR'), button = root.querySelector('#tExp');
+    range.value = 0;
+    button.textContent = '분해';
+    VIEW3D?.setExplode(0);
+  };
+  PGDAssemblyAnalysisView.bind(node, {
+    apply: (settings, ext) => {
+      D.assemblyPhysics = settings;
+      D.req.ext = { ...D.req.ext, ...ext };
+      changed();
+    },
+    contact: cad ? index => {
+      const hit = R.assembly.clearance.hits[index];
+      if (!hit) return;
+      showAssembled();
+      VIEW3D?.showContact(hit);
+      root.querySelector('#tPlay').textContent = '회전 재생';
+    } : null,
+    flow: cad ? mode => {
+      if (mode === 'held' || mode === 'free') {
+        const rows = mode === 'held' ? R.assembly.reverse.held : R.assembly.reverse.byStage;
+        if (!rows?.length) return '역구동 토크·속도와 운전 저항을 입력하면 경로를 표시합니다.';
+        showAssembled();
+      }
+      VIEW3D?.showAnalysisFlow(R.assembly, mode);
+      return '';
+    } : null
+  });
+}
 function mountOverview(m) {
   bindOverviewSpecs(m);
   bindOverviewEditor(m);
@@ -2030,6 +2075,7 @@ function mountOverview(m) {
   const host = m.querySelector('#viewer'); if (!host) return;
   const cad = bindCadWorkspace(m);
   bindPlacement(m, true);
+  bindAssemblyAnalysis(m, cad);
   const pickPlacement = id => {
     PLACEMENT_UI.id = id;
     if (OVSTATE.panel !== 'placement') cad.show('placement');
@@ -2039,16 +2085,17 @@ function mountOverview(m) {
     resetPlacementPreview();
     VIEW3D?.select(id, false);
   };
-  const placementRibbon = m.querySelector('[data-cad-open="placement"]');
-  const togglePlacement = placementRibbon.onclick;
-  placementRibbon.onclick = () => {
-    if (OVSTATE.panel !== 'placement' && !OVSTATE.assembly) {
-      OVSTATE.panel = 'placement';
-      OVSTATE.assembly = true;
-      render(true);
-      m.querySelector('#cadClose')?.focus();
-    } else togglePlacement();
-  };
+  m.querySelectorAll('[data-cad-open="placement"], [data-cad-open="analysis"]').forEach(button => {
+    const toggle = button.onclick, key = button.dataset.cadOpen;
+    button.onclick = () => {
+      if (OVSTATE.panel !== key && !OVSTATE.assembly) {
+        OVSTATE.panel = key;
+        OVSTATE.assembly = true;
+        render(true);
+        m.querySelector('#cadClose')?.focus();
+      } else toggle();
+    };
+  });
   const issues = buildIssues();
   const card = m.querySelector('#pcard'), pop = m.querySelector('#ipop'), bom = m.querySelector('#bom');
   let sel = null;

@@ -129,3 +129,7 @@
 .placement-editor [aria-pressed="true"] { border-color: var(--brick); background: var(--soft); }
 .cad-workspace.placement-dragging .cad-drawer { visibility: hidden; pointer-events: none; }
 .cad-workspace.placement-dragging #viewer canvas { cursor: move; }
+.assembly-analysis details { margin-top: 12px; border-top: 1px solid var(--rule); padding-block: 7px; }
+.assembly-analysis summary { cursor: pointer; font-weight: 600; }
+.assembly-analysis [data-analysis-status]:empty { display: none; }
+.v3-analysis-legend { position: absolute; inset: auto 12px 44px 12px; width: fit-content; max-width: calc(100% - 24px); padding: 5px 8px; border: 1px solid #7cdaff; border-radius: 5px; color: #e6f6ff; background: #142431; pointer-events: none; font-size: .875rem; }

@@ -850,11 +850,13 @@
     if (opt.initialView?.section) setSection(true);
 
     // ---- highlight
-    const HL = { hover: new TH.Color(0x1a1612), sel: new TH.Color(0x5c2208) };
+    const HL = { hover: new TH.Color(0x1a1612), sel: new TH.Color(0x5c2208), contact: new TH.Color(0x9c290a) };
+    let contactParts = [];
     function paint() {
       meshes.forEach(ms => { const m = ms.material; if (!m.emissive) return; m.emissive.setRGB(0, 0, 0); });
       if (st.hover) meshesOf(st.hover).forEach(ms => ms.material.emissive?.copy(HL.hover));
       if (st.selected) meshesOf(st.selected).forEach(ms => ms.material.emissive?.copy(HL.sel));
+      for (const id of contactParts) meshesOf(id).forEach(ms => ms.material.emissive?.copy(HL.contact));
     }
     // shared materials across a part are fine; planets share one material per stage (by design: highlight together)
 
@@ -1117,6 +1119,63 @@
     raf = requestAnimationFrame(frame);
     const ro = new ResizeObserver(() => { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); });
     ro.observe(host);
+    let pathOverlay = null, pathLegend = null;
+    function clearAnalysis() {
+      contactParts = [];
+      paint();
+      if (pathOverlay) {
+        root.remove(pathOverlay);
+        pathOverlay.traverse(x => { x.geometry?.dispose(); x.material?.dispose(); });
+        pathOverlay = null;
+      }
+      pathLegend?.remove();
+      pathLegend = null;
+    }
+    function legend(message) {
+      pathLegend = document.createElement('div');
+      pathLegend.className = 'v3-analysis-legend';
+      pathLegend.textContent = message;
+      ui.appendChild(pathLegend);
+    }
+    function showContact(hit) {
+      clearAnalysis();
+      contactParts = [hit.a, hit.b];
+      st.theta = hit.angle * Math.PI / 180;
+      st.playing = false;
+      paint();
+      legend(`${hit.names.join(' ↔ ')} · 입력축 ${fmt(hit.angle, 1)}° · 모델 외곽 간극 ${fmt(hit.margin, 3)} mm`);
+    }
+    function showAnalysisFlow(analysis, mode) {
+      clearAnalysis();
+      if (mode === 'clear') return;
+      const rows = mode === 'held' ? analysis.reverse.held : analysis.reverse.byStage;
+      if (!rows?.length) return;
+      pathOverlay = new TH.Group();
+      const arrow = (start, direction, size, color) => {
+        const n = new TH.Vector3(...direction);
+        if (n.lengthSq() <= 1e-14 || !(size > 0)) return;
+        const arrow = new TH.ArrowHelper(n.normalize(), new TH.Vector3(...start), size, color, Math.min(2.5, size * .3), Math.min(1.8, size * .2));
+        for (const child of arrow.children) {
+          child.geometry = child.geometry.clone();
+          child.material.depthTest = false;
+          child.renderOrder = 4;
+        }
+        pathOverlay.add(arrow);
+      };
+      const top = maxR * 1.05;
+      for (const row of rows) {
+        const stage = L.S[row.stage - 1], end = stage.z0 + stage.b;
+        if (row.output > 0) arrow([0, top, end], [0, 0, -1], stage.b, 0x7cdaff);
+        if (row.ring > 0) arrow([0, top, stage.z0 + stage.b / 2], [0, 1, 0], 8, 0xffc477);
+      }
+      const springs = analysis.supports;
+      if (springs?.reactions) {
+        arrow(springs.load.p, springs.load.f, 9, 0xff8070);
+        for (const r of springs.reactions) arrow(r.p, r.f, 7, 0x8ce6a3);
+      }
+      root.add(pathOverlay);
+      legend(`${mode === 'held' ? '입력축 고정' : '입력축 회전 허용'} · 파랑 토크 전달 · 주황 고정 링 · 빨강 외력 · 녹색 반력`);
+    }
     function dispose() {
       cancelAnimationFrame(raf); ro.disconnect(); io.disconnect(); document.removeEventListener('pointerdown', onDocDown);
       scene.traverse(o => { o.geometry?.dispose?.(); if (o.material) [].concat(o.material).forEach(m => m.dispose?.()); });
@@ -1129,7 +1188,7 @@
       setGrid(on) { grid.visible = prefs.grid = on; savePrefs(); },
       dispose, select, focus, resetView, setExplode, setSection, setIssues, setOpacity, showAll, setVisible, isolate,
       get state() { return st; }, getView: () => ({ az: goal.az, el: goal.el, dist: goal.dist, target: goal.target.toArray(), explode: st.explodeTarget, theta: st.theta, playing: st.playing, section: st.section, secAngle: st.secAngle, selected: st.selected }), setSectionAngle: a => { st.secAngle = a; }, togglePlay: () => (st.playing = !st.playing),
-      setPlacement(next) { offsets = next; },
+      setPlacement(next) { offsets = next; }, showContact, showAnalysisFlow,
       placementPosition(id) {
         const part = parts.get(id);
         if (!part) return null;

@@ -39,12 +39,13 @@
           <label class="f">기준 부품 <select name="reference">${options([[P.datum, '조립 기준 좌표'], ...catalog.filter(p => p.id !== id).map(p => [p.id, p.name])], joint.reference)}</select></label>
         </div>
         <fieldset data-placement-locks ${joint.mode === 'custom' ? '' : 'hidden'}><legend>기준 부품에 구속할 자유도</legend>${P.AXES.map((axis, i) => `<label class="c"><input type="checkbox" name="lock-${i}" ${joint.locks[i] ? 'checked' : ''}> ${axis}</label>`).join('')}</fieldset>
+        ${body ? `<label class="c"><input type="checkbox" name="outputSupport" ${joint.outputSupport ? 'checked' : ''}> 이 부품의 중심을 출력축 지지점으로 사용</label>` : ''}
         <details><summary>유격·지지 강성</summary><div class="grid">${fits.map(([key, label]) => `<label class="f">${label}<input type="number" step="any" min="0" name="${key}" value="${joint[key] ?? ''}" placeholder="미입력"></label>`).join('')}</div></details>
         <div class="placement-actions"><button type="submit" class="btn primary">배치·구속 적용</button><button type="button" class="btn" data-placement-reset>배치·구속 초기화</button>${body ? '<button type="button" class="btn" data-placement-remove>추가 부품 삭제</button>' : ''}</div>
       </form>
       <p class="note" data-placement-pose>${issue ? esc(issue) : '표시 위치 변화 · ' + values(result.poses.get(id) || offset)}</p>` : ''}
       <p role="status" data-placement-status></p>
-      <p class="note">지지 강성·유격은 해석 입력값입니다. 연결된 해석 결과가 있을 때 반력·강성·간섭·역구동을 표시합니다.</p>
+      <p class="note">지지 강성·유격과 위치를 바꾸면 조립 해석을 갱신합니다. 결과는 조립 해석에서 확인하세요.</p>
     </section>`;
   }
 
@@ -77,7 +78,7 @@
     const getDraft = () => {
       const state = placement(), previous = P.entry(state, id);
       const joint = { ...previous.joint, mode: mode.value, reference: input.elements.reference.value,
-        locks: P.AXES.map((_, i) => input.elements[`lock-${i}`].checked) };
+        outputSupport: input.elements.outputSupport?.checked === true, locks: P.AXES.map((_, i) => input.elements[`lock-${i}`].checked) };
       for (const [key] of fits) joint[key] = input.elements[key].value === '' ? null : input.elements[key].valueAsNumber;
       const offset = poseFields.map(field => field.valueAsNumber);
       state.edits[id] = { offset, joint };
