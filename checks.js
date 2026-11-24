@@ -19,6 +19,7 @@
       s1motor: 'key', s1Dim: { d: null, L: 8, p: 40, n: 4, bd: 1.6, pcd: null },        // integral | key | press | clamp | spline | flange
       c1Support: 'none',                         // none | out | both | nested (S2 held by bearings in the S1 and C2 bores)
       obPos: 'flange',                           // inside | outside | flange
+      obFit: { inner: null, outer: null },          // 출력 베어링 끼워맞춤 공차 등급 (예: 내륜–보스 'k5', 외륜–하우징 'H7'); 빈칸 = 입력 필요
       c2out: 'flange', c2outDim: { n: 6, bd: 3, dp: 3, pcd: null, d: null, L: null, p: 40 }, // C2 ↔ 출력 플랜지(크로스 롤러 내륜): integral | flange | pin | press
     },
     bolts: { grade: 12.9, mu: 0.12, util: 0.7 },
@@ -100,6 +101,49 @@
       + (sep ? ` · 모멘트 벌어짐: 체결력 ${f(sep.Fv, 0)} / 볼트당 ${f(sep.Fb, 0)} N = ${f(sep.S, 2)} (≥ 1.5)` : type === 'pin' ? ' · 핀은 토크만 — 모멘트·축하중은 별도 볼트로' : '');
     return { kind: 'calc', val: `${head} · ${txt}`, ok: Tcap == null ? null : okT && okS, c2: { type, Tcap, need, sep, pcd: x.pcd } };
   }
+  // 출력 베어링 결합 자동 계산 (#73 S3-1c): 캐리어 보스(또는 출력 플랜지 허브) ↔ 내륜, 하우징 ↔ 외륜.
+  // 상태: ok 충족 · fail 미달 · input 입력 필요 · na 적용 대상 아님 (D2-2). 잠긴 치수(사용자 입력)는 바꾸지 않고 필요한 수정량만 낸다.
+  const ST_ORDER = { fail: 3, input: 2, ok: 1, na: 0 };
+  const worst = list => list.reduce((a, b) => (ST_ORDER[b] > ST_ORDER[a] ? b : a), 'na');
+  function outBearingFit(R, D, L) {
+    if (!R?.ctx || !L) return null;
+    const S = stg(R), last = S[S.length - 1], car = last.carrier || {}, ci = S.length - 1, inC = D.stages[ci]?.carrier || {};
+    const ob = D.outBearing || {}, fit = D.struct.obFit || {}, G = D.geom || {}, TOL = .05, CHK = .5;
+    const d = 2 * L.raceIn, Do = 2 * L.raceOut, B = L.Bw, dimSrc = L.cat ? '카탈로그' : '추정 (dp ± 1.1·Dw · 카탈로그 확인)';
+    const chk = (key, label, status, value, need, note, fix) => ({ key, label, status, value, need, note, fix: fix || null });
+    // --- 내륜: 회전 측 (C2와 함께 회전). 안착부 = 출력측 캐리어 보스, 보스가 없으면 출력 플랜지 허브
+    const useBoss = car.bossT > 0, seatD = useBoss ? car.bossD : 2 * L.hubR, seatL = useBoss ? car.bossT : L.sh.flangeT;
+    const seatName = useBoss ? `C${S.length} 보스` : '출력 플랜지 허브', lockD = useBoss ? inC.bossD != null : G.oflange?.hubD != null, lockL = useBoss ? inC.bossT != null : false;
+    const dd = seatD - d, inner = [];
+    if (Math.abs(dd) <= TOL) inner.push(chk('seatD', '안착 지름', 'ok', seatD, d, `${seatName} Ø${f(seatD, 2)} = 내경 Ø${f(d, 2)} (공칭 일치, 끼워맞춤은 공차로)`));
+    else if (d > car.outerD + TOL && useBoss) inner.push(chk('seatD', '안착 지름', 'fail', seatD, d, `내경 Ø${f(d, 2)}가 캐리어 최대외경 Ø${f(car.outerD, 2)}보다 커서 보스로 받칠 수 없음 — 캐리어 외경 확대 또는 어댑터 필요`, { path: `stages.${ci}.carrier.outerD`, value: +d.toFixed(2), locked: inC.outerD != null }));
+    else inner.push(chk('seatD', '안착 지름', lockD ? 'fail' : 'input', seatD, d, `${seatName} Ø${f(seatD, 2)} ${dd < 0 ? '<' : '>'} 내경 Ø${f(d, 2)} (${dd < 0 ? '틈' : '간섭'} ${f(Math.abs(dd), 2)} mm)${lockD ? ' · 잠긴 치수 — 필요한 수정량만 표시' : ' · 자동 치수 — 내경에 맞춘 값 적용 제안'}`,
+      { path: useBoss ? `stages.${ci}.carrier.bossD` : 'geom.oflange.hubD', value: +d.toFixed(2), delta: +(-dd).toFixed(2), locked: lockD }));
+    inner.push(seatL >= B - TOL ? chk('seatL', '안착 길이', 'ok', seatL, B, `${f(seatL, 1)} ≥ 내륜 폭 ${f(B, 1)} mm`)
+      : chk('seatL', '안착 길이', 'fail', seatL, B, `${f(seatL, 1)} < 내륜 폭 ${f(B, 1)} mm`, useBoss ? { path: `stages.${ci}.carrier.bossT`, value: +(B + .5).toFixed(1), delta: +(B + .5 - seatL).toFixed(1), locked: lockL } : null));
+    const shoulder = car.outerD / 2 - d / 2;
+    inner.push(shoulder >= CHK ? chk('axial', '축방향 위치', D.struct.c2out === 'flange' ? 'ok' : 'input', shoulder, CHK,
+      `캐리어 판 어깨 ${f(shoulder, 2)} mm로 한쪽 위치 결정 · 반대쪽 ${D.struct.c2out === 'flange' ? '출력 플랜지 볼트 클램프' : '고정 방식 확인 필요 (너트·스냅링·플랜지)'}`)
+      : chk('axial', '축방향 위치', inC.outerD != null ? 'fail' : 'input', shoulder, CHK, `캐리어 판 어깨 ${f(shoulder, 2)} mm < ${CHK} mm — 내륜을 받칠 어깨 부족${inC.outerD != null ? '' : ' (자동 외경 — 캐리어 외경 확대 또는 어깨 링 검토)'}`, { path: `stages.${ci}.carrier.outerD`, value: +(d + 2 * CHK).toFixed(2), locked: inC.outerD != null }));
+    inner.push(fit.inner ? chk('fit', '끼워맞춤', 'ok', fit.inner, null, `내륜–${seatName} ${fit.inner} (입력값)`) : chk('fit', '끼워맞춤', 'input', null, null, '공차 입력 필요 (카탈로그 권장 끼워맞춤 확인)'));
+    // --- 외륜: 고정 측 (하우징)
+    const outer = [], wallMin = L.sh.wall, t = L.flangeR - L.raceOut, lockF = G.housing?.flangeD != null, Dout = 2 * Math.max(L.housR, L.flangeR);
+    outer.push(chk('bore', '하우징 안착 지름', 'ok', Do, Do, `하우징 보어 Ø${f(Do, 2)} = 외경 (${dimSrc})`));
+    outer.push(t >= wallMin - TOL ? chk('wall', '안착부 벽 두께', 'ok', t, wallMin, `${f(t, 2)} ≥ ${f(wallMin, 1)} mm`)
+      : chk('wall', '안착부 벽 두께', 'fail', t, wallMin, `${f(t, 2)} < ${f(wallMin, 1)} mm${lockF ? ' · 잠긴 치수 — 필요한 수정량만 표시' : ''}`, { path: 'geom.housing.flangeD', value: +(2 * (L.raceOut + wallMin)).toFixed(2), delta: +(2 * (wallMin - t)).toFixed(2), locked: lockF }));
+    if (D.req.Dmax) outer.push(Dout <= D.req.Dmax + TOL ? chk('od', '외경 한계', 'ok', Dout, D.req.Dmax, `Ø${f(Dout, 1)} ≤ Ø${D.req.Dmax}`)
+      : chk('od', '외경 한계', 'fail', Dout, D.req.Dmax, `Ø${f(Dout, 1)} > Ø${D.req.Dmax} — 외륜 Ø${f(Do, 1)} + 벽 ${f(wallMin, 1)} mm가 들어가지 않음 (작은 형번 또는 벽 축소 검토)`));
+    else outer.push(chk('od', '외경 한계', 'na', Dout, null, '외경 한계 미입력'));
+    const lip = L.raceOut - L.ocIR;
+    outer.push(lip >= CHK ? chk('axial', '축방향 위치', 'ok', lip, CHK, `하우징 어깨 + 출력 커버 걸림 ${f(lip, 2)} mm`) : chk('axial', '축방향 위치', 'fail', lip, CHK, `출력 커버 걸림 ${f(lip, 2)} mm < ${CHK} mm`, { path: 'geom.ocover.id', value: +(2 * (L.raceOut - CHK)).toFixed(2), locked: G.ocover?.id != null }));
+    outer.push(fit.outer ? chk('fit', '끼워맞춤', 'ok', fit.outer, null, `외륜–하우징 ${fit.outer} (입력값)`) : chk('fit', '끼워맞춤', 'input', null, null, '공차 입력 필요 (카탈로그 권장 끼워맞춤 확인)'));
+    const si = worst(inner.map(x => x.status)), so = worst(outer.map(x => x.status));
+    const seated = !inner.concat(outer).some(x => x.status === 'fail' && ['seatD', 'seatL', 'wall', 'axial'].includes(x.key));
+    return { bearing: { name: ob.name || '', d, D: Do, B, src: dimSrc },
+      inner: { part: seatName, status: si, checks: inner }, outer: { part: '하우징', status: so, checks: outer },
+      rotation: seated ? '내륜은 캐리어와 함께 회전 / 외륜은 하우징에 고정' : '결합 미성립 — 회전·고정 관계를 확정할 수 없음',
+      status: worst([si, so]) };
+  }
   // Ring reaction torque per stage (signed, same sign as the output torque T): ring holds T_carrier − T_sun of its stage.
   const RING_SF = 1.5;
   const sgn = (x, d = 2) => (x >= 0 ? '+' : '−') + f(Math.abs(x), d);
@@ -177,7 +221,11 @@
     // 2-7 C1 지지 (입력 보강), 2-8 출력 베어링 위치
     const c1 = D.struct.c1Support, OBP = { inside: '2단 기어 폭 안', outside: '2단 출력측 바깥', flange: '출력 플랜지 쪽' };
     put('2-7', { kind: 'in', val: (D.loads.sunSupport || []).map((s, i) => `S${i + 1} ${s.mode === 'structure' ? `베어링 ${s.bearingK} N/µm` : `${s.k} N/µm`}`).join(' · ') + ` · C1 지지 ${c1 === 'none' ? '없음' : c1 === 'out' ? '출력측 1개' : c1 === 'nested' ? 'S2 양측 (S1 보어·C2 보어 베어링)' : '양측'}`, ok: S.length > 1 && c1 === 'none' ? false : null });
-    put('2-8', c2outCheck(D, PT));
+    {
+      const c2 = c2outCheck(D, PT), fit = outBearingFit(R, D, L), SL = { ok: '충족', fail: '미달', input: '입력 필요', na: '해당 없음' };
+      const ftxt = fit ? ` · 베어링 결합: 내륜–${fit.inner.part} ${SL[fit.inner.status]} / 외륜–하우징 ${SL[fit.outer.status]}` : '';
+      put('2-8', { ...c2, val: c2.val + ftxt, ok: c2.ok === false || fit?.status === 'fail' ? false : c2.ok, fit });
+    }
     // 2-10 하중 경로, gate 2
     const floating = S.length > 1 && c1 === 'none';
     put('2-10', { val: floating ? 'C1 지지 없음 → S2 반경 위치는 유성 맞물림에만 의존' : '모든 축에 반경 지지 있음', ok: !floating, html: loadPathHTML(D, S, floating) });
@@ -438,5 +486,5 @@
     'D6': { view: 'out', title: '원가 절감 대안', f: [] },
   };
 
-  globalThis.PGDChecks = { ensure, compute, ringReaction, ringJoints, applyNeedles, migrateNeedles, FORMS, needleCalc, costModel, assemblySteps };
+  globalThis.PGDChecks = { ensure, compute, outBearingFit, ringReaction, ringJoints, applyNeedles, migrateNeedles, FORMS, needleCalc, costModel, assemblySteps };
 })();
