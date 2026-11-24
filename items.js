@@ -165,6 +165,8 @@
       ['D', 'sel', 'struct.c2out', 'C2 ↔ 출력 플랜지·내륜 결합', { o: [['integral', '일체 (C2 = 내륜·플랜지)'], ['flange', '볼트 체결'], ['pin', '다웰 핀'], ['press', '압입']] }],
       ['D', 'num', 'struct.c2outDim.n', '볼트·핀 수', { if: D => ['flange', 'pin'].includes(D.struct.c2out), step: 1 }], ['D', 'num', 'struct.c2outDim.bd', '볼트 호칭 M', { if: D => D.struct.c2out === 'flange' }], ['D', 'num', 'struct.c2outDim.dp', '핀 지름 mm', { if: D => D.struct.c2out === 'pin' }],
       ['D', 'num', 'struct.c2outDim.pcd', 'PCD mm (빈칸 = 베어링 dp − 2.5·Dw)', { if: D => ['flange', 'pin'].includes(D.struct.c2out) }], ['D', 'num', 'struct.c2outDim.d', '압입 지름 mm', { if: D => D.struct.c2out === 'press' }], ['D', 'num', 'struct.c2outDim.L', '압입 길이 mm', { if: D => D.struct.c2out === 'press' }],
+      ['D', 'str', 'struct.obFit.inner', '내륜–보스(출력축) 공차 (빈칸 = 기준 h7)'], ['D', 'str', 'struct.obFit.outer', '외륜–하우징 보어 공차 (빈칸 = 기준 H7)'],
+      ['C', '출력 베어링 결합 (내륜 · 외륜)', c => { const F = c.CK?.['2-8']?.fit; if (!F) return '—'; const SL = { ok: '충족', fail: '미달', input: '입력 필요', na: '해당 없음' }; return [['내륜–' + F.inner.part, F.inner], ['외륜–하우징', F.outer]].map(([n, g]) => `${n} ${SL[g.status]}: ` + g.checks.map(x => `${x.label} ${SL[x.status]}`).join(', ')).join(' · ') + ` · ${F.rotation}`; }, '안착 지름·길이 = 베어링 내경·폭, 벽 두께 ≥ 하우징 벽, 축방향 어깨·커버 걸림 ≥ 0.5 mm, 끼워맞춤 공차는 입력값'],
       ['C', 'C2 결합 전달·벌어짐', c => ck(c, '2-8'), '볼트: n·0.6σy·As·μ0.15·PCD/2 ≥ 1.5·Tpeak, 체결력 / (4M/(n·PCD) + Fa/n) ≥ 1.5 · 핀: n·(π/4)dp²·150·PCD/2'],
       ['P', '출력 베어링 기울기 → fsh', c => rows(c).length ? `${f(c.R.outBearing?.tiltRated, 3)}′ → ${f(Math.max(...rows(c).map(r => r.f.fshOB || 0)), 2)} µm` : '—', '롤러 분포 모델 기울기 × 치폭'],
       ['J', 'asm', '선택한 위치에서 조립 순서(8-7)가 성립하는지 확인했다']],

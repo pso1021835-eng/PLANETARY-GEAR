@@ -37,6 +37,8 @@ jobs:
         run: node recommend_compact_test.js
       - name: 산정 기준 폭 · 저하중 경고 · C2–출력 플랜지 결합
         run: node basis_band_test.js
+      - name: 출력 베어링 결합 자동 계산
+        run: node ob_fit_test.js
       - name: 문법 검사
         run: for f in *.js; do node --check "$f" || exit 1; done
 
