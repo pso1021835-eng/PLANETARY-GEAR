@@ -905,7 +905,7 @@
     }
     const change = opt.dimensionChange;
     const gauge = new TH.Group();
-    let dimensionLabel;
+    let dimensionLabel, dimensionText, dimensionAssembled;
     if (change) {
       const r = maxR * 1.06;
       const edge = (z, color, dashed) => {
@@ -934,7 +934,8 @@
       root.add(gauge);
       dimensionLabel = document.createElement('p');
       dimensionLabel.className = 'v3-structure-delta';
-      dimensionLabel.textContent = `${change.label} ${delta > 0 ? '+' : ''}${fmt(delta, 3)} mm · 점선 이전 / 실선 현재`;
+      dimensionText = `${change.label} ${delta > 0 ? '+' : ''}${fmt(delta, 3)} mm`;
+      dimensionLabel.textContent = dimensionText;
       ui.appendChild(dimensionLabel);
     }
 
@@ -1020,7 +1021,13 @@
       const active = moving || st.playing;   // gear spin barely moves the shadow: refresh every 6th frame, once more on stop
       if (renderer.shadowMap.enabled && (active ? ++shadowTick % 6 === 1 : wasActive)) renderer.shadowMap.needsUpdate = true;
       wasActive = active;
-      if (dimensionLabel) dimensionLabel.hidden = !(gauge.visible = st.explode < .01 && st.explodeTarget < .01);
+      if (dimensionLabel) {
+        gauge.visible = st.explode < .01 && st.explodeTarget < .01;
+        if (dimensionAssembled !== gauge.visible) {
+          dimensionAssembled = gauge.visible;
+          dimensionLabel.textContent = dimensionText + (dimensionAssembled ? ' · 점선 이전 / 실선 현재' : ' · 위치 기준선은 조립 보기에서 표시');
+        }
+      }
       renderer.render(scene, camera);
       layoutLeaders();
     }
