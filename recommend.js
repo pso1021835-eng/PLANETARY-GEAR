@@ -255,6 +255,15 @@
     D.geom = {};
     const sc = o => Object.fromEntries(Object.entries(o).map(([key, v]) => [key, typeof v === 'number' && !['n', 'p'].includes(key) ? r05(v * k) || v : v]));
     D.struct = { ...T.struct, c1s2Dim: sc(T.struct.c1s2Dim), s1Dim: sc(T.struct.s1Dim) };
+    // C2 ↔ 출력 플랜지·내륜 볼트: 마찰 전달 ≥ 1.5 × 피크가 되는 가장 작은 호칭·개수 (체결력 0.6σy(12.9)·μ 0.15 — 2-8 판정과 같은 식)
+    {
+      const pcd = D.outBearing.dp - 2.5 * (D.outBearing.Dw || 2), need = 1.5 * (D.req.Tpeak || 0);
+      const capOf = (n, bd) => n * .6 * 1080 * Math.PI / 4 * (bd * .85) ** 2 * .15 * pcd / 2 / 1000;
+      let pick = null;
+      for (const bd of [3, 4, 5, 6]) { for (const n of [6, 8, 12]) if (n * (bd * 2 + 2) <= Math.PI * pcd && capOf(n, bd) >= need) { pick = { n, bd }; break; } if (pick) break; }
+      D.struct.c2out = 'flange';
+      D.struct.c2outDim = { ...(T.struct.c2outDim || {}), n: pick?.n ?? 12, bd: pick?.bd ?? 6, dp: 3, pcd: null, d: null, L: null, p: 40 };
+    }
     const sup = T.loads.sunSupport.map(s => ({ ...s, od: r05(s.od * k), id: r05(s.id * k), overhang: r05(s.overhang * kz) }));
     D.loads = { ...D.loads, sunSupport: ns > 1 ? sup : [sup[1]], extraFsh: [0, 0] };
     const ringOD = spec.OD - 2 * wall;

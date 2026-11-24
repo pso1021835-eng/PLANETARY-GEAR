@@ -720,7 +720,7 @@
           rows.push({
             id: `${stg.i}-${j}-${part}`, stage: stg.i + 1, mesh: ms.label, part, partName: NAMES[part],
             H, F, HP, FP, SH: HP / H, SF: FP / F, N,
-            f: { KA, Kg, KgSrc: kg.src, KgNote: kg.note, Kv, KvRegion: P.dyn.region, KHb, KFb, KHa, KFa, fma, fmaSrc, fsh, fshPin: pinGap, fshCar, fshOB, fshSun, fbx, fby, fHb5, B1, B2, frac: face.frac, crown, cg: k.cg, cb: k.cb, cp: k.cp, Nres: P.dyn.N,
+            f: { KA, Kg, KgSrc: kg.src, KgNote: kg.note, Kv, KvRegion: P.dyn.region, KHb, KFb, KHa, KFa, fma, fmaSrc, fsh, fshPin: pinGap, fshCar, fshOB, fshSun, wm: line * Kv, fbx, fby, fHb5, B1, B2, frac: face.frac, crown, cg: k.cg, cb: k.cb, cp: k.cp, Nres: P.dyn.N,
               ZH: ms.ZH, ZE, Zeps: ms.Zeps, Zbeta: ms.Zbeta, ZBD: ms[sym], sym, fZCa: ms.fZCa, YF: shape.YF, YS: shape.YS, Ybeta: shape.Ybeta, YB: rm.YB,
               ZL, ZV, ZR, ZNT, YNT, Ydel, YR, YM, Hlim: mat.Hlim, Flim: mat.Flim, Ft, H0,
               F0: Ft / (bw * st.m) * shape.YF * shape.YS * shape.Ybeta * rm.YB, sFn: shape.sFn, rhoF: shape.rhoF, hFe: shape.hFe, aFen: shape.aFen, xE: shape.x, rootSrc: shape.source },
@@ -1339,6 +1339,13 @@
     out.lube = lubrication(ctx, D);
     if (out.lube.meshes.some(m => m.outOfRange)) out.warns.push(`스커핑: 하중 wBt ${Math.min(...out.lube.meshes.map(m => m.wBt)).toFixed(0)} N/mm < 150 N/mm — ISO/TS 6336-20/21 적용 범위 밖 (참고값)`);
     if (out.lube.lambdaMin < 1) out.warns.push(`유막비 λ 최소 ${out.lube.lambdaMin.toFixed(2)} (정격): 경계 윤활입니다. 극압(EP) 그리스·표면 조도 개선 없이는 마모·마이크로피팅 위험이 큽니다 (이 판정은 피팅·굽힘 강도 계산에 포함되지 않음).`);
+    // ISO 6336 method C at light specific load: the tolerances (µm) exceed the mesh deflection, so KHβ (√ regime), KHα (cap)
+    // and the model Kγ all grow as the load falls — σH ∝ T^~0.25 and the life capacity collapses. Faithful to ISO/KISSsoft,
+    // but far below test data for small reducers (RH065: iso 0.95–2.8 N·m vs 28 N·m rated) → flag it and show both bases.
+    if (ctx.basis === 'iso') {
+      const wm = Math.min(...out.rated.rows.map(r => r.f?.wm).filter(Number.isFinite));
+      if (wm < 100) out.warns.push(`ISO 방법 C 저하중 영역: 정격 Fm/b 최소 ${wm.toFixed(0)} N/mm < 100 N/mm — 공차(µm)가 치 처짐보다 커서 KHβ·KHα${D.loads.kgMode === 'model' ? '·Kγ(모델)' : ''}가 하중이 낮을수록 커집니다. 소형 감속기에서는 실측보다 크게 보수적이므로 오차 0 기준 용량과 함께 보세요 (basisBand).`);
+    }
     out.eff = efficiency(ctx, D, D.req.Trated);
     out.backlash = backlash(ctx, D);
     out.tooth = toothData(ctx);
@@ -1541,7 +1548,15 @@
     };
   }
 
-  const api = { shiftMap, shiftCandidates, shiftScore, lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, ringTeeth, ringShiftOffset, matchRingShift, sharedStage, sharedRingOf, syncSharedRing, planetShiftFor, centresFor, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, templateDesign, cyclesFor, spectrumDamage, bearingLife, staticCheck, dutyMode, dutyLevels, dutyTorque, setDutyUnit, syncDutyTorque, migrateDuty, validateExt, NAMES };
+  // Gear capacity on both rating bases (ideal = zero error, iso = ISO 6336 method C with the design's Kγ input) and the
+  // lowest rated specific load — the band a review reports instead of a single-basis verdict.
+  function basisBand(D) {
+    const run = basis => { const d = JSON.parse(JSON.stringify(D)); d.loads = { ...d.loads, basis }; const R = analyze(d); if (R.errors?.length) return null;
+      return { cap: R.capacityLife, wm: Math.min(...R.rated.rows.map(r => r.f?.wm).filter(Number.isFinite)) }; };
+    const ideal = run('ideal'), iso = run('iso');
+    return ideal && iso ? { ideal: ideal.cap, iso: iso.cap, ratio: iso.cap / ideal.cap, wm: iso.wm, lowLoad: iso.wm < 100, kg: D.loads?.kgMode === 'fixed' ? D.loads.kgFixed : D.loads?.kgMode } : null;
+  }
+  const api = { basisBand, shiftMap, shiftCandidates, shiftScore, lubrication, rollerModel, carrierModel, sunSupportK, viscosityAt, CASES, applyCase, outputBearing, carrierPin, sensitivity, analyze, prepare, evaluate, capacity, monteCarlo, geometry, ringTeeth, ringShiftOffset, matchRingShift, sharedStage, sharedRingOf, syncSharedRing, planetShiftFor, centresFor, tolerances, material, FAMILY, hrc2hv, hv2hrc, curve, ZN, YN, defaultDesign, templateDesign, cyclesFor, spectrumDamage, bearingLife, staticCheck, dutyMode, dutyLevels, dutyTorque, setDutyUnit, syncDutyTorque, migrateDuty, validateExt, NAMES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PGD = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
