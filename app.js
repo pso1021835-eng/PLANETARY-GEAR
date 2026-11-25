@@ -509,6 +509,12 @@ function studioDims(id, S = studioSrc()) {
     dia(90, ro, z1, `외경 Ø${fmt(sh.outerD, 2)}`, `${c}.outerD`, { auto: sh.outerD, off: [0, -14] });
     dia(200, ri, z1, `내경 Ø${fmt(sh.innerD, 2)}`, `${c}.innerD`, { auto: sh.innerD, off: [0, 0] });
     axial(150, ro + 1.5, z0, z1, `캐리어 두께 ${fmt(sh.width, 2)}`, `${c}.width`, { auto: sh.widthAuto ? sh.width : undefined, off: [0, -14] });
+    // 돌출 보스 (출력축): 판 끝(고정) → 보스 끝(움직임) 방향으로 두께, 보스 끝에서 외경
+    if (sh.boss && sh.bossT > 0) {
+      const up = sh.boss[1] > z1 - 1e-6, za = up ? sh.boss[0] : sh.boss[1], zb2 = up ? sh.boss[1] : sh.boss[0];
+      axial(-30, sh.bossD / 2 + 1.5, za, zb2, `보스 두께 ${fmt(sh.bossT, 2)}`, `${c}.bossT`, { min: 0, off: [0, 14] });
+      dia(60, sh.bossD / 2, zb2, `보스 외경 Ø${fmt(sh.bossD, 2)}`, `${c}.bossD`, { auto: sh.bossD, min: sh.innerD + .5, max: sh.outerD, off: [0, -14] });
+    }
     out.push({ a: [0, 0, z1], b: [pin0.x, pin0.y, z1], text: `핀 PCD Ø${fmt(sh.drivePCD, 3)}`, kind: 'ref', off: [0, -12] });
     const pn = sh.pins[1 % sh.pins.length], pk = sh.pins[2 % sh.pins.length], tA = Math.atan2(pn.y, pn.x), tK = Math.atan2(pk.y, pk.x);
     // pin Ø: across the pin end, tangential direction
@@ -1346,7 +1352,7 @@ function runJob(type, done) {
 
 // ------------------------------------------------------------------ 3D (viewer3d.js) glue
 let VIEW3D = null;
-const OVSTATE = { view: null, sel: null, assembly: false };
+const OVSTATE = { view: null, sel: null, assembly: false, dims: true };   // dims: 선택 부품 치수 편집 (드래그) 표시
 const HOUS_DEF = { wall: 3, coverT: 4, boltN: 8, boltD: 3, flangeT: 5 };
 function ensureD() {
   D.housing = Object.assign({}, HOUS_DEF, D.housing || {});
@@ -1906,7 +1912,7 @@ function overviewView() {
       <aside class="cad-tree" id="cadTree" aria-label="조립 부품"><strong>조립 부품</strong>${cadTree()}</aside>
       <section class="cad-scene" aria-label="조립 모델">
         <div id="viewer" class="full"><div class="v3-bom closed" id="bom"></div><div class="v3-card" id="pcard" hidden></div><div class="v3-pop" id="ipop" hidden></div></div>
-        <div class="cad-viewbar" role="group" aria-label="모델 조작"><button class="btn" data-axial="1">상면</button><button class="btn" data-axial="-1">하면</button><button class="btn" id="tHome">기본 시점</button><button class="btn" id="tExp">분해</button><button class="btn" id="tSec">단면</button><button class="btn" id="tPlay">회전 정지</button><button class="btn" id="tBom" aria-expanded="false">BOM</button></div>
+        <div class="cad-viewbar" role="group" aria-label="모델 조작"><button class="btn" data-axial="1">상면</button><button class="btn" data-axial="-1">하면</button><button class="btn" id="tHome">기본 시점</button><button class="btn" id="tExp">분해</button><button class="btn" id="tSec">단면</button><button class="btn" id="tPlay">회전 정지</button><button type="button" class="btn" id="ovDims" aria-pressed="${OVSTATE.dims}" title="부품을 고르면 치수선과 ↔ 화살표가 나옵니다. 화살표를 끌어 0.5 mm 단위로 바꿉니다.">치수 ${OVSTATE.dims ? 'ON' : 'OFF'}</button><button class="btn" id="tBom" aria-expanded="false">BOM</button></div>
         <aside class="cad-drawer" id="cadDrawer" aria-label="상세 도구" hidden><div class="cad-drawer-head"><strong id="cadPanelTitle"></strong><button type="button" class="btn" id="cadClose">닫기</button></div>
           <div class="cad-drawer-scroll">
             <div data-cad-panel="spec">${overviewStagePanel()}</div>
@@ -2099,11 +2105,25 @@ function mountOverview(m) {
   const issues = buildIssues();
   const card = m.querySelector('#pcard'), pop = m.querySelector('#ipop'), bom = m.querySelector('#bom');
   let sel = null;
+  // 선택 부품의 치수선 · 노트 · 드래그 화살표 (부품 편집과 같은 치수 목록). 놓으면 값 반영 → 재계산 → 같은 부품 다시 선택
+  const ovDims = id => {
+    if (!VIEW3D?.dimEdit) return;
+    if (!OVSTATE.dims || !id || !studioParts().includes(id)) return VIEW3D.dimEdit(null);
+    VIEW3D.dimEdit(id, studioDims(id), {
+      onCommit: (d, v) => {
+        if (ovCompare.owner === D) ovCompare.last = { path: d.path, label: d.text };
+        recordStructureChange([{ path: d.path, label: d.text, before: get(d.path), value: v }]);
+        set(d.path, v); changed();
+      },
+      onMessage: msg => { const b = m.querySelector('#ovDims'); if (b) { b.title = msg; b.classList.add('flash'); setTimeout(() => b.classList.remove('flash'), 1500); } }
+    });
+  };
   const showCard = id => {
     m.querySelectorAll('[data-cad-part]').forEach(b => b.setAttribute('aria-pressed',String(b.dataset.cadPart === id)));
     sel = id; const picker = m.querySelector('#ovPickPart'); if (picker) picker.value = id || '';
     bom.innerHTML = bomHTML(id, true); bindBom();
     OVSTATE.sel = id;
+    ovDims(id);
     if (id && id !== DWSTATE.id) { const dw = m.querySelector('#dwg'); if (dw) { dw.outerHTML = drawingHTML(id); bindDrawing(m, onDwSel); } }
     if (!id || id.startsWith('added-')) { card.hidden = true; return; }
     card.innerHTML = partCardHTML(id); card.hidden = false; bindInputs(card);
@@ -2163,6 +2183,8 @@ function mountOverview(m) {
   const iv = OVSTATE.view;
   if (iv) { m.querySelector('#tExpR').value = Math.round((iv.explode || 0) * 100); m.querySelector('#tExp').textContent = iv.explode > .5 ? '조립' : '분해'; m.querySelector('#tSecA').value = iv.secAngle || 0; m.querySelector('#tSec').classList.toggle('on', !!iv.section); m.querySelector('#tPlay').textContent = iv.playing === false ? '회전 재생' : '회전 정지'; }
   m.querySelectorAll('[data-iss]').forEach(b => b.onclick = () => { const g = issues[+b.dataset.iss]; cad.show(''); VIEW3D?.select(g.partId, true); showIssue(g); host.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  const dimBtn = m.querySelector('#ovDims');
+  if (dimBtn) dimBtn.onclick = () => { OVSTATE.dims = !OVSTATE.dims; dimBtn.setAttribute('aria-pressed', String(OVSTATE.dims)); dimBtn.textContent = `치수 ${OVSTATE.dims ? 'ON' : 'OFF'}`; ovDims(OVSTATE.sel); };
   const er = m.querySelector('#tExpR'), eb = m.querySelector('#tExp');
   eb.onclick = () => { const on = !(VIEW3D?.state.explodeTarget > .5); VIEW3D?.setExplode(on ? 1 : 0); er.value = on ? 100 : 0; eb.textContent = on ? '조립' : '분해'; };
   er.oninput = () => { VIEW3D?.setExplode(er.value / 100); eb.textContent = er.value > 50 ? '조립' : '분해'; };
