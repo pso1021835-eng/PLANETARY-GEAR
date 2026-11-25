@@ -365,7 +365,7 @@
   }
 
   // parts list for BOM (also used for picking names); masses are geometric estimates
-  function partsList(R, D) {
+  function partsList(R, D, includeHidden = false) {
     const L = layout(R, D), out = [];
     const fam = i => { const m = D.materials[i]; return m ? { material: { NV: '질화강', Eh: '침탄강', VA: '조질합금강', VC: '탄소강' }[m.family] || m.family, heat: { NV: '질화', Eh: '침탄', VA: '조질', VC: '조질' }[m.family] + (m.surfaceHRC ? ` HRC${m.surfaceHRC}` : '') } : { material: '—', heat: '—' }; };
     const reqSH = D.req.SH, reqSF = D.req.SF;
@@ -408,7 +408,7 @@
     if (L.S.length > 1) out.push({ id: 'brgS2', name: '2단 썬기어 베어링', qty: 1, material: '베어링강', heat: '—', step: 'shous', mass: annulusMass(L.oshaftR, L.sunBoreR, L.b2w, STEEL) * .6 });
     out.push({ id: 'seal', name: '오일 실', qty: 2, material: 'NBR', heat: '—', step: 'shous', mass: .002 });
     out.push({ id: 'bolts', name: `볼트 M${L.sh.boltD}`, qty: L.sh.boltN * (partOn(D, 'cover') ? 2 : 1), material: 'SCM435', heat: '흑착색 12.9', step: 'shous', mass: Math.PI / 4 * L.sh.boltD ** 2 * 10 * STEEL });
-    const shown = out.filter(p => partOn(D, p.id));
+    const shown = includeHidden ? out : out.filter(p => partOn(D, p.id));
     shown.forEach((p, i) => { p.no = i + 1; const o = optOf(p.id); p.option = o?.key || null; p.locked = partLocked(D, p.id); });
     return shown;
   }
@@ -665,6 +665,15 @@
       mkBolts(sh.boltN, L.flangeBoltR, L.zFlange[1] + bd * .35, outRot, unit * 3.6);
     }
 
+    const placement = full ? globalThis.PGDPlacement : null;
+    const placementData = placement?.read(D);
+    for (const body of placementData?.bodies || []) {
+      const half = body.length / 2;
+      const geometry = body.shape === 'box' ? new TH.BoxGeometry(body.width, body.depth, body.length)
+        : ringSolid(body.bore / 2, body.width / 2, -half, half);
+      add(new TH.Mesh(geometry, mkMat('shaft')), body.id);
+    }
+
     // ---- crisp feature edges (thin graphite lines) on non-gear solids
     const edgeMats = [];
     const EDGE = /^(housing|cover|ocover|oflange|carrier\d|xroller|inshaft|oshaft|pin\d|brgS\d|seal)$/;
@@ -698,6 +707,72 @@
     // world: reducer axis = z, y up. Part centres (local to root) for focus / leader anchors
     root.updateMatrixWorld(true);
     parts.forEach((p, id) => { const bb = new TH.Box3(); p.objs.forEach(o => bb.expandByObject(o)); p.center = bb.getCenter(new TH.Vector3()); p.radius = bb.getSize(new TH.Vector3()).length() / 2; });
+    let offsets = placement ? placement.solve(placementData, opt.placementIds || [...parts.keys()]).poses : null;
+    let placementTool = null, placementGesture = null;
+    const original = new Map();
+    const offsetRot = new TH.Quaternion(), offsetEuler = new TH.Euler();
+    const worldRot = new TH.Quaternion(), parentRot = new TH.Quaternion();
+    const targets = [];
+    function restorePlacement() {
+      for (const [object, transform] of original) {
+        object.position.copy(transform.position);
+        object.quaternion.copy(transform.quaternion);
+      }
+      original.clear();
+    }
+    function drawPlacement() {
+      if (!offsets || ![...offsets.values()].some(pose => pose.some(Boolean))) return;
+      root.updateMatrixWorld(true);
+      targets.length = 0;
+      for (const [id, pose] of offsets) {
+        const part = parts.get(id);
+        if (!part || !pose.some(Boolean)) continue;
+        const [x, y, z, rx, ry, rz] = pose;
+        offsetRot.setFromEuler(offsetEuler.set(rx * Math.PI / 180, ry * Math.PI / 180, rz * Math.PI / 180));
+        const offset = new TH.Vector3(x, y, z);
+        for (const object of part.objs) {
+          if (original.has(object)) continue;
+          original.set(object, { position: object.position.clone(), quaternion: object.quaternion.clone() });
+          const position = object.getWorldPosition(new TH.Vector3()).sub(part.center).applyQuaternion(offsetRot).add(part.center).add(offset);
+          const quaternion = object.getWorldQuaternion(new TH.Quaternion()).premultiply(offsetRot);
+          let depth = 0;
+          for (let parent = object.parent; parent; parent = parent.parent) depth++;
+          targets.push({ object, position, quaternion, depth });
+        }
+      }
+      targets.sort((a, b) => a.depth - b.depth);
+      for (const { object, position, quaternion } of targets) {
+        object.position.copy(object.parent.worldToLocal(position));
+        object.quaternion.copy(worldRot.copy(quaternion).premultiply(object.parent.getWorldQuaternion(parentRot).invert()));
+        object.updateWorldMatrix(false, true);
+      }
+    }
+    function placementStart(event) {
+      if (!placementTool || event.button !== 0) return false;
+      const center = parts.get(placementTool.id).center.clone(), offset = offsets?.get(placementTool.id);
+      if (offset) center.add(new TH.Vector3(...offset.slice(0, 3)));
+      const end = center.clone();
+      end.setComponent(placementTool.axis, end.getComponent(placementTool.axis) + 10);
+      center.project(camera); end.project(camera);
+      const rect = renderer.domElement.getBoundingClientRect();
+      const dx = (end.x - center.x) * rect.width / 2, dy = (center.y - end.y) * rect.height / 2;
+      const scale = dx * dx + dy * dy;
+      if (scale < 16) {
+        placementTool.onEnd('이 시점에서 이동 축이 겹칩니다. 시점을 돌리거나 치수를 입력하세요.');
+        placementTool = null;
+        return true;
+      }
+      placementGesture = { x: event.clientX, y: event.clientY, dx: dx * 10 / scale, dy: dy * 10 / scale };
+      renderer.domElement.setPointerCapture(event.pointerId);
+      return true;
+    }
+    function placementEnd() {
+      if (!placementGesture) return false;
+      placementGesture = null;
+      placementTool.onEnd();
+      placementTool = null;
+      return true;
+    }
     const S0 = Math.max(maxR * 2, len);
     const expandedRadius = Math.max(maxR, ...kin.map(p => p.a + p.radialTravel + p.planetRadius));
     const expandedExtent = Math.max(...kin.map(p => {
@@ -775,11 +850,13 @@
     if (opt.initialView?.section) setSection(true);
 
     // ---- highlight
-    const HL = { hover: new TH.Color(0x1a1612), sel: new TH.Color(0x5c2208) };
+    const HL = { hover: new TH.Color(0x1a1612), sel: new TH.Color(0x5c2208), contact: new TH.Color(0x9c290a) };
+    let contactParts = [];
     function paint() {
       meshes.forEach(ms => { const m = ms.material; if (!m.emissive) return; m.emissive.setRGB(0, 0, 0); });
       if (st.hover) meshesOf(st.hover).forEach(ms => ms.material.emissive?.copy(HL.hover));
       if (st.selected) meshesOf(st.selected).forEach(ms => ms.material.emissive?.copy(HL.sel));
+      for (const id of contactParts) meshesOf(id).forEach(ms => ms.material.emissive?.copy(HL.contact));
     }
     // shared materials across a part are fine; planets share one material per stage (by design: highlight together)
 
@@ -810,11 +887,16 @@
     cv.addEventListener('pointerup', untouch, true); cv.addEventListener('pointercancel', untouch, true);
     cv.addEventListener('pointerdown', e => {
       closeMenu();
-      if (e.button === 2 || touches.size > 1) return;
+      if (e.button === 2 || touches.size > 1 || placementStart(e)) return;
       drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, pan: e.shiftKey || e.button === 1, t: performance.now() };
       cv.setPointerCapture(e.pointerId); vel.az = vel.el = 0;
     });
     cv.addEventListener('pointermove', e => {
+      if (placementGesture) {
+        const g = placementGesture;
+        placementTool.onMove((e.clientX - g.x) * g.dx + (e.clientY - g.y) * g.dy);
+        return;
+      }
       if (drag) {
         const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
         if (drag.pan) {
@@ -827,8 +909,9 @@
       const id = pick(e.clientX, e.clientY); if (id !== st.hover) { st.hover = id; paint(); showTip(id, e); } else if (id) moveTip(e);
     });
     cv.addEventListener('pointerleave', () => { st.hover = null; paint(); hideTip(); });
+    cv.addEventListener('pointercancel', placementEnd);
     cv.addEventListener('pointerup', e => {
-      if (!drag) return;
+      if (placementEnd() || !drag) return;
       const moved = Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4; drag = null;
       if (!moved) { const id = pick(e.clientX, e.clientY); select(id, false); opt.onPick?.(id); vel.az = vel.el = 0; }
     });
@@ -986,6 +1069,7 @@
       const sp = dt / .8; st.explode += clamp(st.explodeTarget - st.explode, -sp, sp);
       const span = 1 + stagger * (nLayers - 1);
       const eLayer = l => ease(clamp(st.explode * span - stagger * l, 0, 1));
+      restorePlacement();
       movers.forEach(m => { m.obj.position.z = m.base.z + m.dz * eLayer(m.layer); });
       // camera damping + inertia
       if (!drag) { goal.az += vel.az; goal.el = clamp(goal.el + vel.el, -1.45, 1.45); vel.az *= .9; vel.el *= .9; if (Math.abs(vel.az) < 1e-5) vel.az = 0; if (Math.abs(vel.el) < 1e-5) vel.el = 0; }
@@ -1016,6 +1100,7 @@
       });
       if (inRot) inRot.rotation.z = st.theta + (kin[0]?.psi || 0);
       if (outRot) outRot.rotation.z = sunAng; if (cage) cage.rotation.z = sunAng / 2;
+      drawPlacement();
       // section plane through the axis (world)
       if (st.section) { const a = st.secAngle * Math.PI / 180; plane.normal.set(-Math.cos(a), -Math.sin(a), 0); plane.constant = 0; plane.applyMatrix4(root.matrixWorld); }
       const active = moving || st.playing;   // gear spin barely moves the shadow: refresh every 6th frame, once more on stop
@@ -1034,6 +1119,63 @@
     raf = requestAnimationFrame(frame);
     const ro = new ResizeObserver(() => { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); });
     ro.observe(host);
+    let pathOverlay = null, pathLegend = null;
+    function clearAnalysis() {
+      contactParts = [];
+      paint();
+      if (pathOverlay) {
+        root.remove(pathOverlay);
+        pathOverlay.traverse(x => { x.geometry?.dispose(); x.material?.dispose(); });
+        pathOverlay = null;
+      }
+      pathLegend?.remove();
+      pathLegend = null;
+    }
+    function legend(message) {
+      pathLegend = document.createElement('div');
+      pathLegend.className = 'v3-analysis-legend';
+      pathLegend.textContent = message;
+      ui.appendChild(pathLegend);
+    }
+    function showContact(hit) {
+      clearAnalysis();
+      contactParts = [hit.a, hit.b];
+      st.theta = hit.angle * Math.PI / 180;
+      st.playing = false;
+      paint();
+      legend(`${hit.names.join(' ↔ ')} · 입력축 ${fmt(hit.angle, 1)}° · 모델 외곽 간극 ${fmt(hit.margin, 3)} mm`);
+    }
+    function showAnalysisFlow(analysis, mode) {
+      clearAnalysis();
+      if (mode === 'clear') return;
+      const rows = mode === 'held' ? analysis.reverse.held : analysis.reverse.byStage;
+      if (!rows?.length) return;
+      pathOverlay = new TH.Group();
+      const arrow = (start, direction, size, color) => {
+        const n = new TH.Vector3(...direction);
+        if (n.lengthSq() <= 1e-14 || !(size > 0)) return;
+        const arrow = new TH.ArrowHelper(n.normalize(), new TH.Vector3(...start), size, color, Math.min(2.5, size * .3), Math.min(1.8, size * .2));
+        for (const child of arrow.children) {
+          child.geometry = child.geometry.clone();
+          child.material.depthTest = false;
+          child.renderOrder = 4;
+        }
+        pathOverlay.add(arrow);
+      };
+      const top = maxR * 1.05;
+      for (const row of rows) {
+        const stage = L.S[row.stage - 1], end = stage.z0 + stage.b;
+        if (row.output > 0) arrow([0, top, end], [0, 0, -1], stage.b, 0x7cdaff);
+        if (row.ring > 0) arrow([0, top, stage.z0 + stage.b / 2], [0, 1, 0], 8, 0xffc477);
+      }
+      const springs = analysis.supports;
+      if (springs?.reactions) {
+        arrow(springs.load.p, springs.load.f, 9, 0xff8070);
+        for (const r of springs.reactions) arrow(r.p, r.f, 7, 0x8ce6a3);
+      }
+      root.add(pathOverlay);
+      legend(`${mode === 'held' ? '입력축 고정' : '입력축 회전 허용'} · 파랑 토크 전달 · 주황 고정 링 · 빨강 외력 · 녹색 반력`);
+    }
     function dispose() {
       cancelAnimationFrame(raf); ro.disconnect(); io.disconnect(); document.removeEventListener('pointerdown', onDocDown);
       scene.traverse(o => { o.geometry?.dispose?.(); if (o.material) [].concat(o.material).forEach(m => m.dispose?.()); });
@@ -1046,6 +1188,19 @@
       setGrid(on) { grid.visible = prefs.grid = on; savePrefs(); },
       dispose, select, focus, resetView, setExplode, setSection, setIssues, setOpacity, showAll, setVisible, isolate,
       get state() { return st; }, getView: () => ({ az: goal.az, el: goal.el, dist: goal.dist, target: goal.target.toArray(), explode: st.explodeTarget, theta: st.theta, playing: st.playing, section: st.section, secAngle: st.secAngle, selected: st.selected }), setSectionAngle: a => { st.secAngle = a; }, togglePlay: () => (st.playing = !st.playing),
+      setPlacement(next) { offsets = next; }, showContact, showAnalysisFlow,
+      placementPosition(id) {
+        const part = parts.get(id);
+        if (!part) return null;
+        const center = new TH.Box3();
+        for (const object of part.objs) center.expandByObject(object);
+        return root.worldToLocal(center.getCenter(new TH.Vector3())).toArray();
+      },
+      armPlacement(tool) {
+        placementGesture = null;
+        placementTool = tool && parts.has(tool.id) ? tool : null;
+        return Boolean(placementTool);
+      },
       partIds: () => [...parts.keys()]
     };
   }

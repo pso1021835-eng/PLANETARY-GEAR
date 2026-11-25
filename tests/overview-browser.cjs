@@ -217,6 +217,58 @@ async function run() {
     await page.locator('[data-cad-part="planet1"]').click();
     assert.ok(await page.locator('#pcard').isVisible());
     assert.equal(await page.locator('#cadTree').isVisible(), false);
+    // Placement edits use the standard DB assembly and the same data on the item page.
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await tool('placement').click();
+    const placement = page.locator('[data-placement]');
+    await placement.locator('[name="name"]').fill('검증용 링');
+    await placement.getByRole('button', { name: '부품 추가' }).click();
+    const editPlacement = placement.locator('[data-placement-edit]');
+    await editPlacement.locator('[data-placement-axis]').selectOption('0');
+    await editPlacement.getByRole('button', { name: '모델에서 이동' }).click();
+    const canvasRect = await canvas.boundingBox();
+    const dragX = canvasRect.x + canvasRect.width / 2, dragY = canvasRect.y + canvasRect.height / 2;
+    await page.mouse.move(dragX, dragY);
+    await page.mouse.down();
+    await page.mouse.move(dragX + 70, dragY, { steps: 5 });
+    await page.mouse.up();
+    assert.ok(Math.abs(Number(await editPlacement.locator('[name="pose-0"]').inputValue()) - 12) > .1);
+    assert.equal((await state()).assemblyPlacement.edits['added-1'].offset[0], 12);
+    await editPlacement.locator('[name="pose-0"]').fill('17');
+    await page.waitForFunction(() => Math.abs(PGDApp.placementPosition('added-1')?.[0] - 17) < .005);
+    assert.equal((await state()).assemblyPlacement.edits['added-1'].offset[0], 12);
+    await editPlacement.getByRole('button', { name: '배치·구속 적용' }).click();
+    assert.equal((await state()).assemblyPlacement.edits['added-1'].offset[0], 17);
+    await page.evaluate(() => PGDApp.go('it-2-8'));
+    await placement.locator('[data-placement-select]').selectOption('added-1');
+    assert.equal(await placement.locator('[name="pose-0"]').inputValue(), '17');
+    await placement.locator('[name="mode"]').selectOption('custom');
+    await placement.locator('[name="reference"]').selectOption('housing');
+    await placement.locator('[name="lock-2"]').check();
+    await placement.getByText('유격·지지 강성', { exact: true }).click();
+    await placement.locator('[name="gapAxial"]').fill('10');
+    await placement.getByRole('button', { name: '배치·구속 적용' }).click();
+    const joint = (await state()).assemblyPlacement.edits['added-1'].joint;
+    assert.equal(joint.reference, 'housing');
+    assert.deepEqual(joint.locks, [false, false, true, false, false, false]);
+    assert.equal(joint.gapAxial, 10);
+
+    await placement.locator('[data-placement-select]').selectOption('xroller');
+    await placement.locator('[name="pose-2"]').fill('-5');
+    await placement.getByText('유격·지지 강성', { exact: true }).click();
+    await placement.locator('[name="kRadial"]').fill('80');
+    await placement.getByRole('button', { name: '배치·구속 적용' }).click();
+    const solved = await page.evaluate(() => {
+      const { D, R } = PGDApp.state();
+      const L = PGD3D.layout(R, D);
+      return { z: R.assembly.supports.reactions[0].p[2], nominal: (L.zBear[0] + L.zBear[1]) / 2,
+        manual: R.assembly.supports.reactions[0].f[0], ext: D.req.ext.Fr, fixed: R.assembly.reverse.shaftTorque };
+    });
+    assert.ok(Math.abs(solved.z - solved.nominal + 5) < 1e-8);
+    assert.ok(Math.abs(solved.manual + solved.ext) < 1e-6);
+    assert.equal(solved.fixed, 1);
+    await page.getByRole('heading', { name: '배치에 따른 조립 해석' }).waitFor();
+
     await page.evaluate(() => PGDApp.go('map'));
     assert.equal(await page.locator('body.cad-mode').count(), 0);
     assert.deepEqual(errors, []);
