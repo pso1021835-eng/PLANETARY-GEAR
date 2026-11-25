@@ -50,3 +50,4 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/overview-ui" --no-save --ignore-scripts playwright@1.56.1 three@0.128.0
           node tests/overview-browser.cjs
+          node tests/dim-drag-browser.cjs

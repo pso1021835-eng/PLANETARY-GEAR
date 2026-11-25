@@ -548,7 +548,7 @@
       const pGeo = gearGeometry(g.parts[1], at, b, -st.beta, false, x.planetBore);
       for (let j = 0; j < st.n; j++) { const pm = new TH.Mesh(pGeo, pMat); pm.position.z = zb; add(pm, `planet${sid}`, root, 1, dzStage); pg.push(pm); }
       // Carrier holes and pin stock are positioned from the same resolved geometry.
-      const car = new TH.Group(); car.userData.stage = i;
+      const car = new TH.Group(); car.userData.stage = i; car.userData.dimZ = zb;   // 치수 편집: 캐리어 형상 좌표는 zb만큼 밀려 있음
       const shape = x.carrier;
       const body = new TH.Mesh(carrierBody(shape).translate(0, 0, zb), mkMat('carrier'));
       // Rounded pockets already carry their machined silhouette in the mesh.
@@ -1115,6 +1115,7 @@
       }
       renderer.render(scene, camera);
       layoutLeaders();
+      dimLayout();
     }
     raf = requestAnimationFrame(frame);
     const ro = new ResizeObserver(() => { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); });
@@ -1181,6 +1182,84 @@
       scene.traverse(o => { o.geometry?.dispose?.(); if (o.material) [].concat(o.material).forEach(m => m.dispose?.()); });
       finish.turned.dispose(); finish.grain.dispose(); scene.environment?.dispose?.(); renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); ui.remove();
     }
+    // ---- 치수 편집: 선택 부품의 치수선 · 노트 · 드래그 화살표 (#73 사용자 채팅 승인 2026-11-25)
+    // dims는 부품 편집(studioDims)과 같은 부품 좌표. 화살표를 치수 방향으로 끌면 0.5 mm 단위로 값이 바뀌고, 놓을 때 onCommit(d, 값)으로 반영한다.
+    const DIM_STEP = .5;
+    const dimUI = document.createElement('div'); dimUI.className = 'v3-dimed'; ui.appendChild(dimUI);
+    const dimSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); dimSvg.setAttribute('class', 'pv-dim'); dimUI.appendChild(dimSvg);
+    const dimLabs = document.createElement('div'); dimLabs.className = 'pv-labs'; dimUI.appendChild(dimLabs);
+    let dimSet = null, dimDrag = null;
+    const dimM = new TH.Matrix4(), dimT = new TH.Matrix4(), dimV = new TH.Vector3();
+    const dimFrame = () => {
+      const part = dimSet && parts.get(dimSet.id), obj = part && part.objs[0];
+      if (!obj || !obj.visible) return null;
+      // 회전(구동 애니메이션)은 빼고 위치(분해·배치 이동)만 따른다 — 끄는 동안 치수선이 돌지 않게
+      obj.parent.updateWorldMatrix(true, false);
+      return dimM.copy(obj.parent.matrixWorld).multiply(dimT.makeTranslation(obj.position.x, obj.position.y, obj.position.z + (obj.userData.dimZ || 0)));
+    };
+    const dimScreen = (p, M) => { dimV.set(p[0], p[1], p[2]).applyMatrix4(M).project(camera); const r = cv.getBoundingClientRect(); return { x: (dimV.x + 1) / 2 * r.width, y: (1 - dimV.y) / 2 * r.height, ok: dimV.z < 1 }; };
+    const dimEditable = d => d.path && !d.lock && d.kind !== 'ref';
+    const dimBase = d => +(Number.isFinite(d.value) ? d.value : Number.isFinite(d.auto) ? d.auto : Math.hypot(d.b[0] - d.a[0], d.b[1] - d.a[1], d.b[2] - d.a[2]));
+    const dimDia = d => /Ø/.test(d.text), dimFmt = (d, v) => (dimDia(d) ? 'Ø' : '') + (+v).toFixed(1);
+    function dimEdit(id, list, handlers = {}) {
+      dimDrag = null;
+      dimSet = id && list && list.length ? { id, list, h: handlers } : null;
+      dimLabs.innerHTML = '';
+      if (!dimSet) { dimSvg.innerHTML = ''; return; }
+      dimLabs.innerHTML = list.map((d, k) => `<span class="pv-lab ${dimEditable(d) ? 'ed' : 'ro'} ${d.kind || ''}" data-k="${k}">${d.text}</span>` + (dimEditable(d) ? `<button type="button" class="v3-dimgrip" data-k="${k}" title="끌어서 ${d.text.replace(/<[^>]*>/g, '')} 변경 (0.5 mm 단위, Esc 취소)" aria-label="${d.text} 치수 조절">↔</button>` : '')).join('');
+      dimLabs.querySelectorAll('.v3-dimgrip').forEach(g => g.addEventListener('pointerdown', e => {
+        e.stopPropagation(); e.preventDefault();
+        const d = list[+g.dataset.k], M = dimFrame(); if (!M) return;
+        const A = dimScreen(d.a, M), B = dimScreen(d.b, M), px = Math.hypot(B.x - A.x, B.y - A.y);
+        const mm = Math.hypot(d.b[0] - d.a[0], d.b[1] - d.a[1], d.b[2] - d.a[2]);
+        if (px < 8 || !(mm > 0)) { handlers.onMessage?.('이 시점에서는 치수 방향이 겹쳐 보입니다. 시점을 돌려 주세요.'); return; }
+        const v0 = dimBase(d);
+        dimDrag = { k: +g.dataset.k, d, x: e.clientX, y: e.clientY, ux: (B.x - A.x) / px, uy: (B.y - A.y) / px, mmPerPx: mm / px, v0, v: v0, mul: dimDia(d) ? 2 : 1 };   // 지름: 한쪽 끝을 δ 끌면 반지름 δ → 지름 2δ
+        g.setPointerCapture(e.pointerId); g.classList.add('on');
+      }));
+      dimLabs.querySelectorAll('.v3-dimgrip').forEach(g => {
+        g.addEventListener('pointermove', e => {
+          if (!dimDrag || dimDrag.k !== +g.dataset.k) return;
+          const t = ((e.clientX - dimDrag.x) * dimDrag.ux + (e.clientY - dimDrag.y) * dimDrag.uy) * dimDrag.mmPerPx * dimDrag.mul;
+          const lo = Number.isFinite(dimDrag.d.min) ? dimDrag.d.min : /T$|depth$/.test(dimDrag.d.path) ? 0 : DIM_STEP;
+          let v = Math.round((dimDrag.v0 + t) / DIM_STEP) * DIM_STEP; v = Math.max(lo, Number.isFinite(dimDrag.d.max) ? Math.min(dimDrag.d.max, v) : v);
+          dimDrag.v = +v.toFixed(3);
+        });
+        const end = (e, ok) => {
+          if (!dimDrag || dimDrag.k !== +g.dataset.k) return;
+          const { d, v, v0 } = dimDrag; dimDrag = null; g.classList.remove('on');
+          if (ok && Math.abs(v - v0) > 1e-9) handlers.onCommit?.(d, v);
+        };
+        g.addEventListener('pointerup', e => end(e, true));
+        g.addEventListener('pointercancel', e => end(e, false));
+        g.addEventListener('keydown', e => { if (e.key === 'Escape') end(e, false); });
+      });
+    }
+    function dimLayout() {
+      if (!dimSet) return;
+      const M = dimFrame();
+      dimUI.style.display = M ? '' : 'none'; if (!M) return;
+      let out = '';
+      const labs = dimLabs.querySelectorAll('.pv-lab'), grips = dimLabs.querySelectorAll('.v3-dimgrip');
+      let gi = 0;
+      dimSet.list.forEach((d, k) => {
+        const A = dimScreen(d.a, M), B = dimScreen(d.b, M), el = labs[k], grip = dimEditable(d) ? grips[gi++] : null;
+        const vis = A.ok && B.ok; if (el) el.style.display = vis ? '' : 'none'; if (grip) grip.style.display = vis ? '' : 'none'; if (!vis) return;
+        const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy) || 1, nx = -dy / len * 5, ny = dx / len * 5;
+        const tick = P => `M${P.x - nx} ${P.y - ny}L${P.x + nx} ${P.y + ny}`;
+        out += `<path class="${d.kind || ''}" d="M${A.x} ${A.y}L${B.x} ${B.y}${tick(A)}${tick(B)}"/>`;
+        let G = B;
+        if (dimDrag && dimDrag.k === k) {
+          const dpx = (dimDrag.v - dimDrag.v0) / dimDrag.mul / dimDrag.mmPerPx; G = { x: B.x + dimDrag.ux * dpx, y: B.y + dimDrag.uy * dpx };
+          out += `<path class="drag" d="M${B.x} ${B.y}L${G.x} ${G.y}${tick(G)}"/>`;
+          if (el) el.textContent = `${dimFmt(d, dimDrag.v0)} → ${dimFmt(d, dimDrag.v)} mm`;
+        } else if (el && el.textContent !== d.text) el.innerHTML = d.text;
+        const ax = d.at === 'b' ? G.x : (A.x + G.x) / 2, ay = d.at === 'b' ? G.y : (A.y + G.y) / 2;
+        if (el) { el.style.left = ax + (d.off?.[0] || 0) + 'px'; el.style.top = ay + (d.off?.[1] || 0) + 'px'; }
+        if (grip) { const u = 24 / len; grip.style.left = G.x + dx * u + 'px'; grip.style.top = G.y + dy * u + 'px'; grip.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(dy, dx)}rad)`; }
+      });
+      dimSvg.innerHTML = out;
+    }
     return {
       axialView(side) { resetView(); vel.az = vel.el = 0; goal.el = 0; goal.az = side > 0 ? 0 : Math.PI; },
       setFrameCap(limit) { prefs.frameCap = limit; frameDue = 0; savePrefs(); },
@@ -1201,6 +1280,7 @@
         placementTool = tool && parts.has(tool.id) ? tool : null;
         return Boolean(placementTool);
       },
+      dimEdit,
       partIds: () => [...parts.keys()]
     };
   }
