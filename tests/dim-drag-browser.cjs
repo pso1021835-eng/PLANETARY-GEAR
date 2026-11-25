@@ -22,7 +22,7 @@ async function run() {
   try {
     const executable = process.env.PGD_TEST_CHROME;
     browser = await chromium.launch({ ...(executable ? { executablePath: executable } : { channel: 'chrome' }), headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-    const page = await browser.newPage({ viewport: { width: 1400, height: 950 } });
+    const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     const three = process.env.PGD_TEST_THREE || require.resolve('three/build/three.min.js');
