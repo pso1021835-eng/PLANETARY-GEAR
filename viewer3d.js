@@ -1256,7 +1256,7 @@
         } else if (el && el.textContent !== d.text) el.innerHTML = d.text;
         const ax = d.at === 'b' ? G.x : (A.x + G.x) / 2, ay = d.at === 'b' ? G.y : (A.y + G.y) / 2;
         if (el) { el.style.left = ax + (d.off?.[0] || 0) + 'px'; el.style.top = ay + (d.off?.[1] || 0) + 'px'; }
-        if (grip) { const u = 24 / len; grip.style.left = G.x + dx * u + 'px'; grip.style.top = G.y + dy * u + 'px'; grip.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(dy, dx)}rad)`; }
+        if (grip) { const u = 24 / len; grip.style.left = G.x + dx * u + 'px'; grip.style.top = G.y + dy * u + 'px'; const ang = Math.atan2(dy, dx); grip.style.transform = `translate(-50%,-50%) rotate(${ang}rad)`; grip.dataset.ang = ang.toFixed(4); }
       });
       dimSvg.innerHTML = out;
     }

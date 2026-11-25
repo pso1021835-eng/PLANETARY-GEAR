@@ -37,7 +37,9 @@ async function run() {
     assert.ok(await page.locator('.v3-dimed .pv-lab', { hasText: '보스 외경' }).count());
     const before = await page.evaluate(() => PGDApp.state().D.stages[0].carrier.bossT ?? 4);
     // 화살표 방향으로 60 px 끌기 (드래그 중 "이전 → 새값" 표시)
-    const g = await grip.evaluate(el => { const r = el.getBoundingClientRect(), a = parseFloat(/rotate\(([-\d.e]+)rad\)/.exec(el.style.transform)[1]); return { x: r.x + r.width / 2, y: r.y + r.height / 2, a }; });
+    await page.waitForFunction(() => { const el = document.querySelector('.v3-dimgrip[title*="보스 두께"]'); return el && el.dataset.ang !== undefined && el.style.display !== 'none'; });
+    await page.waitForTimeout(300);   // 시점 감쇠가 멈출 때까지
+    const g = await grip.evaluate(el => { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, a: +el.dataset.ang }; });
     await page.mouse.move(g.x, g.y); await page.mouse.down();
     for (let i = 1; i <= 10; i++) await page.mouse.move(g.x + Math.cos(g.a) * 6 * i, g.y + Math.sin(g.a) * 6 * i);
     assert.ok(await page.locator('.v3-dimed .pv-lab', { hasText: '→' }).count(), '드래그 중 미리보기');
