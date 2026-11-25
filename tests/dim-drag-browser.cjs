@@ -40,9 +40,11 @@ async function run() {
     await page.waitForFunction(() => { const el = document.querySelector('.v3-dimgrip[title*="보스 두께"]'); return el && el.dataset.ang !== undefined && el.style.display !== 'none'; });
     await page.waitForTimeout(300);   // 시점 감쇠가 멈출 때까지
     const g = await grip.evaluate(el => { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, a: +el.dataset.ang }; });
+    const hit = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e && e.title; }, [g.x, g.y]);
+    assert.match(hit || '', /보스 두께/, '화살표 위치에 다른 요소: ' + hit);
     await page.mouse.move(g.x, g.y); await page.mouse.down();
     for (let i = 1; i <= 10; i++) await page.mouse.move(g.x + Math.cos(g.a) * 6 * i, g.y + Math.sin(g.a) * 6 * i);
-    assert.ok(await page.locator('.v3-dimed .pv-lab', { hasText: '→' }).count(), '드래그 중 미리보기');
+    await page.locator('.v3-dimed .pv-lab', { hasText: '→' }).waitFor({ timeout: 15000 });   // 드래그 중 미리보기 (다음 프레임)
     await page.mouse.up();
     await page.waitForFunction(b => (PGDApp.state().D.stages[0].carrier.bossT ?? 4) !== b, before);
     const after = await page.evaluate(() => PGDApp.state().D.stages[0].carrier.bossT);
