@@ -43,6 +43,8 @@ jobs:
         run: node request_test.js
       - name: 계산식 신뢰성 (무작위 기어 제원 120세트 · 독립 구현 대조 · 물리 법칙)
         run: node verify_test.js 120 7 && node verify_test.js 120 2026
+      - name: 자동 설계 (외형 고정 · 제작 규칙 · 입력 불변 · 판정 기준별)
+        run: node autodesign_test.js
       - name: 문법 검사
         run: for f in *.js; do node --check "$f" || exit 1; done
 
@@ -52,3 +54,4 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/overview-ui" --no-save --ignore-scripts playwright@1.56.1 three@0.128.0
           node tests/overview-browser.cjs
+          node tests/request-flow-browser.cjs

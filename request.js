@@ -198,7 +198,50 @@
     return res;
   }
 
-  const api = { FORMAT, SHEET, FIELDS, KINDS, ETA0, MARGIN, LIFE0, TM_PER_TA, parse, readXlsx, readSheet };
+  // ---- .xlsx 쓰기 (외부 라이브러리 없음): 무압축 zip + 인라인 문자열. 결과 시트 내보내기용.
+  // sheets: [{ name, rows: [[셀, ...], ...], widths: [열 너비...], head: [굵게 할 행 번호(0부터)...] }]
+  const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crc32 = b => { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+  const colName = i => { let s = ''; i++; while (i) { const r = (i - 1) % 26; s = String.fromCharCode(65 + r) + s; i = Math.floor((i - 1) / 26); } return s; };
+  function zipStore(files) {
+    const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+    const u16b = v => [v & 255, (v >>> 8) & 255], u32b = v => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
+    for (const [name, text] of files) {
+      const nm = enc.encode(name), data = enc.encode(text), c = crc32(data);
+      const head = [0x50, 0x4b, 3, 4, ...u16b(20), ...u16b(0x0800), ...u16b(0), ...u16b(0), ...u16b(0x21), ...u32b(c), ...u32b(data.length), ...u32b(data.length), ...u16b(nm.length), ...u16b(0)];
+      parts.push(new Uint8Array(head), nm, data);
+      central.push(new Uint8Array([0x50, 0x4b, 1, 2, ...u16b(20), ...u16b(20), ...u16b(0x0800), ...u16b(0), ...u16b(0), ...u16b(0x21), ...u32b(c), ...u32b(data.length), ...u32b(data.length), ...u16b(nm.length), ...u16b(0), ...u16b(0), ...u16b(0), ...u16b(0), ...u32b(0), ...u32b(off)]), nm);
+      off += head.length + nm.length + data.length;
+    }
+    const cdSize = central.reduce((s, x) => s + x.length, 0);
+    const end = new Uint8Array([0x50, 0x4b, 5, 6, 0, 0, 0, 0, ...u16b(files.length), ...u16b(files.length), ...u32b(cdSize), ...u32b(off), 0, 0]);
+    const all = [...parts, ...central, end], out = new Uint8Array(all.reduce((s, x) => s + x.length, 0)); let p = 0;
+    for (const x of all) { out.set(x, p); p += x.length; }
+    return out;
+  }
+  function writeXlsx(sheets) {
+    const ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main', rns = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+    const files = [];
+    files.push(['[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`]);
+    files.push(['_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`]);
+    files.push(['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="${ns}" xmlns:r="${rns}"><sheets>${sheets.map((sh, i) => `<sheet name="${esc(sh.name.slice(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`]);
+    files.push(['xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`]);
+    files.push(['xl/styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="${ns}"><fonts count="2"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="10"/><name val="Arial"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9E1F2"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf fontId="0" fillId="0" borderId="0" xfId="0"/><xf fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`]);
+    sheets.forEach((sh, i) => {
+      const head = new Set(sh.head || [0]);
+      const cols = (sh.widths || []).length ? `<cols>${sh.widths.map((w, j) => `<col min="${j + 1}" max="${j + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>` : '';
+      const rows = sh.rows.map((row, r) => `<row r="${r + 1}">${row.map((v, c) => {
+        if (v === null || v === undefined || v === '') return '';
+        const ref = colName(c) + (r + 1), st = head.has(r) ? ' s="1"' : '';
+        return typeof v === 'number' && Number.isFinite(v) ? `<c r="${ref}"${st}><v>${v}</v></c>` : `<c r="${ref}"${st} t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
+      }).join('')}</row>`).join('');
+      files.push([`xl/worksheets/sheet${i + 1}.xml`, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="${ns}" xmlns:r="${rns}">${cols}<sheetData>${rows}</sheetData></worksheet>`]);
+    });
+    return zipStore(files);
+  }
+
+  const api = { FORMAT, SHEET, FIELDS, KINDS, ETA0, MARGIN, LIFE0, TM_PER_TA, parse, readXlsx, readSheet, writeXlsx };
   root.PGDRequest = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

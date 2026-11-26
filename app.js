@@ -569,7 +569,7 @@ function renderRail() {
   const E2 = procEval(), c = ictx(), cur = view.startsWith('st-') ? view.slice(3) : view.startsWith('it-') ? itemStage(view.slice(3)) : null, curItem = view.startsWith('it-') ? view.slice(3) : null;
   const tab = (id, t, on) => `<button data-v="${id}" aria-current="${on}">${t}</button>`;
   const coreOn = view === 'core' || view.startsWith('cg-');
-  $('#tabs').innerHTML = tab('db', '설계 DB', view === 'db') + tab('map', '설계 지도', view === 'map') + tab('core', '핵심 검토', coreOn) + tab('it-' + LASTITEM, '전체 항목', !!cur) + tab('studio', '부품 편집', view === 'studio') + tab('overview', '3D · 종합판정', view === 'overview') + tab('proc', '체크리스트', view === 'proc');
+  $('#tabs').innerHTML = tab('req', '설계 의뢰', view === 'req') + tab('db', '설계 DB', view === 'db') + tab('map', '설계 지도', view === 'map') + tab('core', '핵심 검토', coreOn) + tab('it-' + LASTITEM, '전체 항목', !!cur) + tab('studio', '부품 편집', view === 'studio') + tab('overview', '3D · 종합판정', view === 'overview') + tab('proc', '체크리스트', view === 'proc');
   $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.v));
   // 모바일: 현재 탭이 가로 스크롤 밖에 있으면 보이게
   const curTab = $('#tabs').querySelector('[aria-current=true]'); if (curTab && $('#tabs').scrollWidth > $('#tabs').clientWidth) curTab.scrollIntoView({ block: 'nearest', inline: 'center' });
@@ -812,6 +812,8 @@ const tag = s => `<span class="tag ${s}">${s}</span>`;
 const partLabel = r => `${r.stage}단 ${r.mesh} · ${r.partName}`;
 
 const VIEWS = {
+  // 설계 의뢰 → 자동 설계 (최종 목적 흐름, request-ui.js)
+  req() { return window.PGDRequestUI ? PGDRequestUI.html() : head('설계 의뢰', '모듈을 불러오지 못했습니다.'); },
   // 설계 파일 DB: 케이스(요구 조건 · 설계 제원 · 결과 요약 · 전체 설계)를 쌓아 참고·학습에 쓴다. 초안 — 이 브라우저 저장 + 기본 설계.
   db() {
     const mine = dbMine(), q = (DBQ || '').trim().toLowerCase();
@@ -1304,6 +1306,16 @@ function bindMapDetail(el) {
   if (id) bindItemCommon(el, id);
 }
 const AFTER = {
+  req(m) {
+    if (!window.PGDRequestUI) return;
+    PGDRequestUI.bind(m, {
+      env: () => ({ E, C: PGDChecks, P: window.PGDProc, REC: PGDRecommend, PG: PGD3D }),
+      render: () => render(true),
+      apply: d => dbApply(d, true),
+      saveCase: (d, r) => { const l = dbMine(); l.unshift(caseRecord(d, r)); dbPut(l.slice(0, 200)); dbRender(); },
+      lib: () => DBLIB || [], mine: () => dbMine(), open: key => dbOpen(key, true)
+    });
+  },
   db(m) {
     const q = m.querySelector('#dbQ'); if (q) q.oninput = () => { DBQ = q.value; const pos = q.selectionStart; render(true); const n = $('#dbQ'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
     m.querySelector('#dbSave2').onclick = () => { const l = dbMine(); l.unshift(caseRecord()); dbPut(l.slice(0, 200)); dbRender(); render(true); };

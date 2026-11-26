@@ -45,5 +45,9 @@ const near = (a, b, m) => assert(Math.abs(a - b) < 1e-6, `${m}: ${a} ≠ ${b}`);
   // 6) 손상 파일 · 시트 없음
   await assert.rejects(Q.readXlsx(Buffer.from('not a zip')), /xlsx 파일이 아님/);
   await assert.rejects(Q.readXlsx(buf, { sheet: '없는 시트' }), /시트 없음/);
+  // 7) 결과 내보내기 xlsx: 쓴 것을 다시 읽으면 같은 값 (숫자·한글·특수문자·빈칸)
+  const out = Q.writeXlsx([{ name: '요약', rows: [['항목', '값'], ['정격 토크', 25], ['이름 <&> "따옴표"', '한글 · Ø100'], ['빈칸', null], ['작은 수', 0.000123]] }, { name: '기어 제원', rows: [['단', 'z'], [1, 18]] }]);
+  const back = await Q.readSheet(out, '요약'), back2 = await Q.readSheet(out, '기어 제원');
+  assert.strictEqual(back.B2, 25); assert.strictEqual(back.A3, '이름 <&> "따옴표"'); assert.strictEqual(back.B3, '한글 · Ø100'); assert.strictEqual(back.B4, undefined); assert.strictEqual(back.B5, 0.000123); assert.strictEqual(back2.B2, 18);
   console.log('설계의뢰서 PGD-REQ-2: all ok');
 })().catch(e => { console.error(e); process.exit(1); });

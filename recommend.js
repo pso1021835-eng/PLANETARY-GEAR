@@ -161,6 +161,7 @@
       for (let i = left; i < sorted.length && ratioOf(sorted[i]) <= upper; i++) {
         const second = sorted[i];
         if (!secondCounts.includes(second.n)) continue;
+        if (spec.hollow > 0 && second.s * second.m / cosBeta + 1e-9 < minSun) continue;   // 중공축이 2단 썬도 지나감
         if (type === 'sep' && (second.m < first.m || (second.m === first.m && second.R === first.R))) continue;
         add(type, [first, second]);
       }
