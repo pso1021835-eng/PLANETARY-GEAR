@@ -49,9 +49,9 @@
   function compareHTML(r) {
     const T = r.spec.T;
     return `<div class="card scroll"><h3>비교 ${r.top.length}안 <small class="note">목표 출력 토크 ${fx(T, 2)} N·m · ${fx(r.ms / 1000, 1)} s · 조합 ${r.searched}개 → 정밀 계산 ${r.checked}개 · 판정 기준 ${r.spec.basis === 'ideal' ? '오차 0 (옵션)' : 'ISO 6336:2019'}</small></h3>
-      <table class="dbt rq-cmp"><tr><th></th><th class="l">구성</th><th class="l">1단 (m · S/P/R)</th><th class="l">2단 (m · S/P/R)</th><th>전위 S/P/R</th><th>치폭 b1 / b2</th><th>외경 (2단 링)</th><th>1단 링 외경</th><th>길이</th><th>감속비</th><th>한계 토크</th><th>목표 대비</th><th>단별 한계 1 / 2</th><th>밸런스</th><th>질량 g</th><th class="l">지배</th><th></th></tr>
+      <table class="dbt rq-cmp"><tr><th></th><th class="l">구성</th><th class="l">1단 (m · S/P/R)</th><th class="l">2단 (m · S/P/R)</th><th>전위 S/P/R</th><th>치폭 b1 / b2</th><th>외경 (2단 링)</th><th>1단 링 외경</th><th>중공</th><th>길이</th><th>감속비</th><th>한계 토크</th><th>목표 대비</th><th>단별 한계 1 / 2</th><th>밸런스</th><th>질량 g</th><th class="l">지배</th><th></th></tr>
       ${r.top.map((x, k) => { const st = x.stages, two = st.length > 1; return `<tr class="${k === S.pick ? 'gov' : ''}"><td><b>${x.rank}</b></td><td class="l">${TYPE[x.type]}</td><td class="l">${two ? zs(st[0]) : '—'}</td><td class="l">${zs(st[st.length - 1])}</td>
-        <td>${st.map(xs).join(' · ')}</td><td>${x.bs.join(' / ')}</td><td>Ø${fx(x.OD, 1)}</td><td>${two ? 'Ø' + fx(x.ring1, 1) : '—'}</td><td>${fx(x.L, 1)}</td><td>${fx(x.ratio, 3)}</td>
+        <td>${st.map(xs).join(' · ')}</td><td>${x.bs.join(' / ')}</td><td>Ø${fx(x.OD, 1)}</td><td>${two ? 'Ø' + fx(x.ring1, 1) : '—'}</td><td>${x.hollow > 0 ? 'Ø' + fx(x.hollow, 1) : '중실'}</td><td>${fx(x.L, 1)}</td><td>${fx(x.ratio, 3)}</td>
         <td><b>${fx(x.cap, 2)}</b></td><td class="${x.cap >= T ? 'good' : 'bad'}">${fx(100 * x.cap / T, 0)} %</td><td>${x.stageCap.map(v => fx(v, 2)).join(' / ')}</td><td>${fx(x.balance, 2)}</td><td>${fx(x.mass * 1000, 0)}</td>
         <td class="l note rq-gov" title="${esc(x.gov || '')}">${esc(x.gov || '')}</td><td><button class="btn${k === S.pick ? ' primary' : ''}" data-rqpick="${k}">${k === S.pick ? '선택됨' : '선택'}</button></td></tr>`; }).join('')}</table>
       <p class="note">외경 = 2단 링기어 림 포함 외경 · 길이 = 1단 치폭 + 캐리어 간격 ${r.spec.gap} mm + 2단 치폭 · 한계 토크 = 기어 · 베어링 · 핀 중 최소 (정격 수명 ${r.spec.lifeH} h, ${r.spec.rpm} rpm) · 밸런스 = 단별 한계 최소 / 최대 (1에 가까울수록 고름).
@@ -65,16 +65,36 @@
     const fails = x.fails || [];
     return `<div class="card rq-res"><h3>${esc(x.tag)}</h3>
       <p class="rq-act"><button class="btn primary" id="rqApply">이 안으로 사이트 편집 → 3D · 항목</button> <button class="btn" id="rqXlsx">비교·결과 엑셀 내보내기</button> <button class="btn" id="rqSave">설계 DB에 저장</button> <span class="note" id="rqSaved"></span></p>
+      <div class="rq-prev" id="rqPrev" aria-label="선택안 3D 미리보기"></div>
       ${fails.length ? `<p class="bad">판정 미달 ${fails.length}건: ${fails.map(esc).join(' · ')}</p>` : '<p class="good">판정 항목 모두 충족</p>'}
       <div class="scroll"><h4 class="rq-g">기어 제원</h4><table class="dbt"><tr><th>단</th><th class="l">부품</th><th>z</th><th>mn</th><th>β°</th><th>x</th><th>d</th><th>da</th><th>df</th><th>b</th><th>등급</th><th>수량</th><th>SH</th><th>SF</th></tr>${gearRows}</table></div>
       <div class="scroll"><h4 class="rq-g">BOM</h4><table class="dbt"><tr><th>No</th><th class="l">부품</th><th>수량</th><th class="l">재질</th><th>질량 g</th><th class="l">판정</th></tr>${bomRows}</table></div></div>`;
+  }
+  // 설계 DB 유사 사례: 감속비(로그 차) + 출력 베어링 외경 차 + 같은 형번이면 가산
+  function similar(r, hooks) {
+    const out = [], q = r.q, B = q.bearing;
+    const add = (key, x, kind) => {
+      const rq = x.request || {}, sm = x.summary || {}, D = x.D || {}, ratio = rq.ratio || sm.ratio, ob = D.outBearing || {};
+      if (!(ratio > 0)) return;
+      const bD = ob.D || null, same = ob.model && ob.model === B.model;
+      const d = Math.abs(Math.log(ratio / q.ratio)) + (bD ? Math.abs(bD - B.D) / B.D : .5) - (same ? .2 : 0);
+      out.push({ key, kind, name: x.name || D.name || '', sim: Math.min(1, Math.exp(-d)), ratio, bearing: ob.name || sm.outBearing || '', cap: sm.reducerCap, OD: sm.OD });
+    };
+    try { (hooks.lib() || []).forEach((x, i) => add('lib:' + i, x, '기본 설계')); (hooks.mine() || []).forEach((x, i) => add('mine:' + i, x, '내 케이스')); } catch (e) { }
+    return out.sort((a, b) => b.sim - a.sim).slice(0, 3);
+  }
+  function similarHTML(r) {
+    const sims = S.hooks ? similar(r, S.hooks) : [];
+    if (!sims.length) return '';
+    return `<div class="card scroll"><h3>설계 DB 유사 사례</h3><table class="dbt"><tr><th class="l">사례</th><th class="l">구분</th><th>유사도</th><th>감속비</th><th class="l">출력 베어링</th><th>한계 토크</th><th></th></tr>${sims.map(x => `<tr><td class="l">${esc(x.name)}</td><td class="l">${x.kind}</td><td>${fx(100 * x.sim, 0)} %</td><td>${fx(x.ratio, 2)}</td><td class="l">${esc(x.bearing)}</td><td>${x.cap != null ? fx(x.cap, 2) + ' N·m' : '—'}</td><td><button class="btn" data-rqopen="${esc(x.key)}">열기</button></td></tr>`).join('')}</table>
+      <p class="note">감속비와 출력 베어링 외경이 가까운 순 (같은 형번 가산). 열면 그 설계로 사이트를 편집합니다.</p></div>`;
   }
   function resultHTML(r) {
     if (!r) return '';
     if (r.status === 'input') return `<div class="card"><h3 class="bad">의뢰서 오류</h3><p>${esc((r.errors || []).map(e => e.msg).join(' · '))}</p></div>`;
     if (r.status === 'none') return `<div class="card"><h3 class="bad">설계안 없음</h3><p>${esc(r.error)}</p></div>`;
     const log = (r.log || []).map(l => `<tr><td>${esc(l.kind)}</td><td class="l">${esc(l.key)}</td><td class="l">${esc(l.value)}</td><td class="l">${esc(l.why || '')}</td><td class="l note">${esc(l.basis || '')}</td></tr>`).join('');
-    return compareHTML(r) + detailHTML(r) + `<details class="card"><summary><b>결정 기록 ${(r.log || []).length}건</b></summary><div class="scroll"><table class="dbt"><tr><th>구분</th><th class="l">항목</th><th class="l">값</th><th class="l">이유</th><th class="l">근거</th></tr>${log}</table></div></details>`;
+    return compareHTML(r) + detailHTML(r) + similarHTML(r) + `<details class="card"><summary><b>결정 기록 ${(r.log || []).length}건</b></summary><div class="scroll"><table class="dbt"><tr><th>구분</th><th class="l">항목</th><th class="l">값</th><th class="l">이유</th><th class="l">근거</th></tr>${log}</table></div></details>`;
   }
 
   function html() {
@@ -89,10 +109,27 @@
       <div class="card"><h3>2. 자동 설계</h3>
         <div class="grid"><label class="f">판정 기준<select id="rqBasis"><option value="iso"${S.basis === 'iso' ? ' selected' : ''}>ISO 6336:2019 (KISSsoft 방식) · 기본</option><option value="ideal"${S.basis === 'ideal' ? ' selected' : ''}>이론 (오차 0) · 옵션</option></select></label></div>
         <p><button class="btn primary" id="rqRun" ${q.ok && !S.busy ? '' : 'disabled'}>자동 설계 실행</button> <span class="note" id="rqProg">${S.busy ? '계산 중…' : '보통 5~30초'}</span></p>
-        <p class="note">설계 규칙: 모듈 ${BF().RULE.mods.join('·')} · β ${BF().RULE.beta}° · 유성 ${BF().RULE.n}개 · 단 감속비 ${BF().RULE.stageRatio.join('~')} · 2단 링 피치원 ≥ 롤러 피치원 근처 · 치폭 ${BF().RULE.bMin} mm ~ 작은 기어 피치원 × ${BF().RULE.bPerD1} · ${BF().RULE.grade}급 (미달 시 5급) · 침탄 연삭 (이온질화 옵션) · 2단 링 외경 ≤ 베어링 외경 · SH ≥ 1.0 · SF ≥ 1.4</p></div>
+        <p class="note">설계 규칙: 모듈 ${BF().RULE.mods.join('·')} · β ${BF().RULE.beta}° · 유성 ${BF().RULE.n}개 · 단 감속비 ${BF().RULE.stageRatio.join('~')} · 2단 링 피치원 ≥ 롤러 피치원 근처 · 치폭 ${BF().RULE.bMin} mm ~ 작은 기어 피치원 × ${BF().RULE.bPerD1} · ${BF().RULE.grade}급 (미달 시 5급) · SCM440 이온질화 (침탄 연삭 옵션) · 2단 링 외경 ≤ 베어링 외경 · SH ≥ 1.0 · SF ≥ 1.4</p></div>
       <div id="rqResult">${resultHTML(S.run)}</div>`;
   }
 
+  // 가공 데이터 (선택안): 치두께 · 걸치기 이두께 Wk · 볼(핀) 넘김 치수 Md · ISO 1328-1 공차 — 엔진 R.tooth · E.tolerances
+  function machiningRows(x) {
+    const E = root.PGD, R = x.R, D = x.D, rows = [['단', '부품', 'z', 'mn', 'αn °', 'β °', 'x', '치폭 b', '정밀도', '치두께 sn 상한', '치두께 sn 하한', '걸치기 잇수 k', 'Wk 상한', 'Wk 하한', '볼 지름 DM', '볼 넘김 Md 상한', 'Md 하한', 'fp µm', 'ffα µm', 'fHα µm', 'fHβ µm', 'ffβ µm', 'Fr µm', '가공', '열처리']];
+    (R.tooth || []).forEach((t, i) => { const st = D.stages[i], g = R.ctx.stages[i].geo;
+      t.parts.forEach((p, k) => { const gp = g.parts[k], tol = E && E.tolerances ? E.tolerances(Math.abs(gp.z), st.m, gp.width, st.beta, st.grade) : {};
+        const mat = (D.materials || [])[i * 3 + k] || {}, proc = k === 2 ? '스카이빙 (연삭 불가)' : st.m < .5 ? '호빙 (m0.4 연삭 불가)' : '호빙';
+        rows.push([i + 1, p.name, Math.abs(gp.z), st.m, st.alpha ?? 20, st.beta, +fx(gp.x, 4), gp.width, st.grade, +fx(p.sn[0], 4), +fx(p.sn[1], 4), p.k ?? '', p.Wk ? +fx(p.Wk[0], 4) : '', p.Wk ? +fx(p.Wk[1], 4) : '', +fx(p.DM, 3), +fx(p.Md[0], 4), +fx(p.Md[1], 4),
+          ...['pitch', 'profileForm', 'profileSlope', 'helixSlope', 'helixForm', 'runout'].map(k => tol[k] != null ? +fx(tol[k], 1) : ''),
+          proc, mat.family === 'Eh' ? `침탄 HRC ${mat.surfaceHRC} · 깊이 ${mat.depth}` : `이온질화 HRC ${mat.surfaceHRC ?? ''} · 깊이 ${mat.depth ?? ''}`]); }); });
+    return rows;
+  }
+  // 의뢰서 시트 (PGD-REQ-3 그대로 — 결과 파일을 다시 불러오면 같은 의뢰 조건으로 읽힌다)
+  function requestRows(q) {
+    const F = Q().FIELDS_BF, rows = [['유성감속기 설계의뢰서 (베어링 기준)'], ['FORMAT', '양식 버전 (수정 금지)', Q().FORMAT_BF], ['이 파일을 사이트에서 다시 불러오면 아래 의뢰 조건으로 읽습니다.'], [], ['ID', '항목', '값', '단위', '구분', '빈칸일 때']];
+    F.forEach(f => { const v = S.cells[f.id]; rows.push([f.id, f.label, v === undefined ? '' : v, f.unit, f.need === 'Y' ? '필수' : '선택', f.blank]); });
+    return rows;
+  }
   function sheetsOf(r) {
     const q = r.q, F = Q().FIELDS_BF, T = r.spec.T;
     const req = F.map(f => [f.id, f.label, f.type === 'bearing' ? (q.bearing ? BF().bearingKey(q.bearing) : '') : f.type === 'yn' ? (q.input[f.key] ? 'Y' : 'N') : (q.input[f.key] ?? ''), f.unit, q.given[f.key] ? '입력' : '가정']);
@@ -106,8 +143,9 @@
     const g = [['단', '부품', '잇수 z', '모듈 mn', '비틀림각 β °', '전위 x', '기준원 d', '이끝원 da', '이뿌리원 df', '치폭 b', '정밀도', '수량', 'SH (정격)', 'SF (정격)'], ...gears.map(e => [e.stage, e.part, e.z, e.mn, e.beta, e.x, e.d, e.da, e.df, e.b, e.grade, e.qty, e.SH, e.SF])];
     const b = [['No', '부품', '수량', '재질', '질량 g', '판정'], ...bom.map(e => [e.no ?? '', e.name, e.qty, e.material || '', e.massG, e.verdict || ''])];
     const log = [['구분', '항목', '값', '이유', '근거'], ...(r.log || []).map(l => [l.kind, l.key, String(l.value ?? ''), l.why || '', l.basis || ''])];
-    return [{ name: '요약', rows: sum, widths: [22, 44, 10, 44], head: [0, 7, 8] }, { name: '비교 5안', rows: cmp, widths: [5, 12, 18, 18, 20, 6, 6, 10, 10, 8, 9, 11, 10, 9, 9, 8, 8, 40] },
-      { name: '기어 제원 (선택안)', rows: g, widths: [5, 8, 7, 8, 11, 8, 10, 10, 10, 8, 7, 6, 9, 9] }, { name: 'BOM (선택안)', rows: b, widths: [5, 32, 6, 14, 9, 40] }, { name: '결정 기록', rows: log, widths: [8, 24, 60, 40, 40] }];
+    const x0 = r.top[S.pick];
+    return [{ name: '의뢰서', rows: requestRows(q), widths: [7, 44, 16, 7, 8, 42], head: [0, 4] }, { name: '요약', rows: sum, widths: [22, 44, 10, 44], head: [0, 7, 8] }, { name: '비교 5안', rows: cmp, widths: [5, 12, 18, 18, 20, 6, 6, 10, 10, 8, 9, 11, 10, 9, 9, 8, 8, 40] },
+      { name: '기어 제원 (선택안)', rows: g, widths: [5, 8, 7, 8, 11, 8, 10, 10, 10, 8, 7, 6, 9, 9] }, { name: 'BOM (선택안)', rows: b, widths: [5, 32, 6, 14, 9, 40] }, { name: '가공 데이터 (선택안)', rows: x0 ? machiningRows(x0) : [[]], widths: [5, 8, 5, 6, 6, 6, 8, 7, 7, 10, 10, 9, 9, 9, 9, 11, 9, 7, 7, 7, 7, 7, 7, 20, 24] }, { name: '결정 기록', rows: log, widths: [8, 24, 60, 40, 40] }];
   }
   function download(bytes, name) {
     const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
@@ -147,6 +185,8 @@
     m.querySelector('#rqApply').onclick = () => hooks.apply(JSON.parse(JSON.stringify(x.D)));
     m.querySelector('#rqXlsx').onclick = () => { const name = (r.q.meta.client || '자동설계').replace(/[\\/:*?"<>|]/g, '_'); download(Q().writeXlsx(sheetsOf(r)), `자동설계결과_${name}_${new Date().toISOString().slice(0, 10)}.xlsx`); };
     m.querySelector('#rqSave').onclick = () => { hooks.saveCase(x.D, x.R); m.querySelector('#rqSaved').textContent = '설계 DB(내 케이스)에 저장했습니다.'; };
+    m.querySelectorAll('[data-rqopen]').forEach(b => b.onclick = () => hooks.open(b.dataset.rqopen));
+    const pv = m.querySelector('#rqPrev'); if (pv && hooks.preview) hooks.preview(pv, x.R, JSON.parse(JSON.stringify(x.D)));
   }
   root.PGDRequestUI = { html, bind, sheetsOf, state: () => S };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

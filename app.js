@@ -144,6 +144,9 @@ function procExtra() {
   XC = X; XC_MC = MC; return X;
 }
 function procEval() { return window.PGDProc ? PGDProc.evaluate(R, D, procExtra()) : []; }
+// 간소 입력 모드: 30분 초안에 쓰지 않는 11 검증 · 12 출력물 · D 가공·원가 단계는 목록에서 숨긴다 ('입력 전체'에서 다시 보임)
+const HIDE_MIN = ['11', '12', 'D'];
+function procNav() { const E2 = procEval(); return FULLIN ? E2 : E2.filter(g => !HIDE_MIN.includes(String(g.n))); }
 const gateCls = ok => ok === true ? 'ok' : ok === false ? 'bad' : '';
 // ------------------------------------------------------------------ item pages (items.js) · review records · navigation
 const IT = () => window.PGDItems?.I || {};
@@ -566,7 +569,7 @@ function bindStudio(m) {
   bindDrawing(m, id => { if (studioParts().includes(id)) { STUDIO.id = id; STUDIO.view = null; render(true); } else { const dw = m.querySelector('#dwg'); if (dw) { dw.outerHTML = drawingHTML(id); bindDrawing(m); } } });
 }
 function renderRail() {
-  const E2 = procEval(), c = ictx(), cur = view.startsWith('st-') ? view.slice(3) : view.startsWith('it-') ? itemStage(view.slice(3)) : null, curItem = view.startsWith('it-') ? view.slice(3) : null;
+  const E2 = procNav(), c = ictx(), cur = view.startsWith('st-') ? view.slice(3) : view.startsWith('it-') ? itemStage(view.slice(3)) : null, curItem = view.startsWith('it-') ? view.slice(3) : null;
   const tab = (id, t, on) => `<button data-v="${id}" aria-current="${on}">${t}</button>`;
   const coreOn = view === 'core' || view.startsWith('cg-');
   $('#tabs').innerHTML = tab('req', '설계 의뢰', view === 'req') + tab('db', '설계 DB', view === 'db') + tab('map', '설계 지도', view === 'map') + tab('core', '핵심 검토', coreOn) + tab('it-' + LASTITEM, '전체 항목', !!cur) + tab('studio', '부품 편집', view === 'studio') + tab('overview', '3D · 종합판정', view === 'overview') + tab('proc', '체크리스트', view === 'proc');
@@ -794,7 +797,7 @@ function bindProcCards(m) {
   m.querySelectorAll('.pcx [data-p]').forEach(elm => { if (!elm.dataset.bound) { elm.dataset.bound = 1; } });
 }
 function procView() {
-  const E2 = procEval();
+  const E2 = procNav();
   if (!E2.length) return head('설계 공정', '공정 데이터를 불러오지 못했습니다.');
   const c = ictx(), all = ord(), S = SRCD(), sts = Object.fromEntries(all.map(x => [x, rvState(x, c)]));
   const cnt = { D: 0, C: 0, M: 0, A: 0 }; all.forEach(id => { const k = srcCounts(id); for (const g in k) cnt[g] += k[g]; });
@@ -1309,7 +1312,16 @@ const AFTER = {
       render: () => render(true),
       apply: d => dbApply(d, true),
       saveCase: (d, r) => { const l = dbMine(); l.unshift(caseRecord(d, r)); dbPut(l.slice(0, 200)); dbRender(); },
-      lib: () => DBLIB || [], mine: () => dbMine(), open: key => dbOpen(key, true)
+      lib: () => DBLIB || [], mine: () => dbMine(), open: key => dbOpen(key, true),
+      // 선택안 3D 미리보기 — 가공 부품(S·P·R·C·핀) 기어 보기, 화면을 다시 그리면 정리된다
+      preview: (host, r, d) => {
+        if (VIEW3D) { VIEW3D.dispose(); VIEW3D = null; }
+        if (!window.THREE || !window.PGD3D || !r?.ctx) { host.innerHTML = '<p class="note" style="padding:12px">3D 라이브러리(three.js)를 불러오지 못했습니다.</p>'; return; }
+        d.view = d.view || {}; d.options = d.options || {};
+        for (const o of (PGD3D.OPTIONS || [])) d.options[o.key] = Object.assign({ on: true, lock: false }, d.options[o.key] || {});
+        try { VIEW3D = PGD3D.mount(host, { R: r, D: d, mode: 'gears', names: partNames(), save: () => { } }); if (VIEW3D) VIEW3D.full = false; }
+        catch (e) { console.error(e); host.innerHTML = `<p class="note" style="padding:12px">3D 생성 오류: ${esc(e.message)}</p>`; }
+      }
     });
   },
   db(m) {

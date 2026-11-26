@@ -47,6 +47,8 @@ jobs:
         run: node autodesign_test.js
       - name: 베어링 기준 자동 설계
         run: node bearing_first_test.js
+      - name: 유성 베어링 · 핀 독립 검증
+        run: node bearing_pin_verify_test.js
       - name: 문법 검사
         run: for f in *.js; do node --check "$f" || exit 1; done
 

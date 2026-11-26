@@ -19,7 +19,7 @@
     clearance: .3,       // 캐리어 축방향 틈새 (한쪽, mm)
     shortlist: 14, top: 5, iters: 3,
     src: {
-      material: '침탄 연삭 (Eh MQ, 표면 HRC 60 · 심부 HRC 36) — 서보 감속기 관례. 이온질화는 옵션',
+      material: '사용자 제작 조건: SCM440 이온질화 기본 (2026-11-26 재확인). 침탄 연삭은 옵션 — 모듈 0.4와 링기어는 연삭 불가',
       kappa: '가정 κ 0.2 — 실물 RH065(28 N·m · RAU5005 C0 5500) 0.18, PI82(16.2 N·m · C0 3220) 0.25',
       ring: '사용자 결정 AD-2: 2단 링기어 피치원 ≥ 롤러 피치원 근처, 링 외경 ≤ 베어링 외경 (2026-11-26 보완: 피치원 일치만으로는 기어가 베어링보다 훨씬 작아짐)',
       balance: '사용자 결정 AD-2: 1·2단 토크 밸런스 (출력 환산 단별 한계를 같게)',
@@ -120,11 +120,14 @@
     Object.assign(base.req, { case: 'custom', Trated: spec.T, Tpeak: spec.T, Temerg: spec.T, rpm: spec.rpm, lifeH: spec.lifeH, ratio: spec.i, Dmax: null, Lmax: null,
       ext: clone(spec.ext), duty: [{ torque: 100, time: 100, rpm: 0, mode: 'rated' }], dutyUnits: { torque: 'pct', time: 'pct' }, SH: 1, SF: 1.4 });
     base.loads.basis = spec.basis || 'iso';
-    const rspec = { OD: cand.od2 + 4, H: 400, ratio: spec.i, beta: RULE.beta, hollow: spec.hollow || 0 };
+    const rspec = { OD: cand.od2 + 4, H: 400, ratio: spec.i, beta: RULE.beta, hollow: spec.hollow > 0 ? spec.hollow : 0 };
     const D = REC.build(base, rspec, { ...cand, axial: 1 }, bs, E);
     D.outBearing = REC.catalogBearing(T.outBearing, spec.bearing);
     D.stages.forEach(s => { s.ringOD = null; s.grade = spec.grade || RULE.grade; });
-    if (!spec.nitride) D.materials = D.materials.map((m, k) => { const st = D.stages[Math.floor(k / 3)] || D.stages[0]; return { family: 'Eh', surfaceHRC: 60, coreHRC: 36, depth: +(0.2 + 0.3 * st.m).toFixed(2) }; });
+    // 중공: 입력값이면 썬 보어 = 중공, 빈칸이면 썬 림 하한(ISO 6336-3 sR ≥ 1.2·h, 여유 1.25·h)까지 키운 가능한 최대 (0.5 mm 내림)
+    if (spec.hollow == null) D.stages.forEach((s, k) => { const o = cand.stages[k], x = o.profile ? o.profile.xs : 0, m = o.m, df = mtOf(m) * o.s + 2 * x * m - 2.5 * m;
+      s.sunBore = Math.max(0, Math.floor((df - 2 * 1.25 * 2.25 * m) * 2) / 2); });
+    if (spec.carb) D.materials = D.materials.map((m, k) => { const st = D.stages[Math.floor(k / 3)] || D.stages[0]; return { family: 'Eh', surfaceHRC: 60, coreHRC: 36, depth: +(0.2 + 0.3 * st.m).toFixed(2) }; });
     if (D.stages.length > 1) { D.stages[0].carrier.width = Math.max(1.5, +(spec.gap - 2 * RULE.clearance).toFixed(2)); D.stages[0].carrier.axialClearance = RULE.clearance; }
     D.config.floatingSun = false;
     if (D.stages.length > 1) D.struct.c1Support = 'nested';
@@ -171,7 +174,8 @@
     if (cand.type === 'sep' && a.rings[0] > a.rings[1] + 1e-6) return { ok: false, why: `1단 링 외경 Ø${fx(a.rings[0], 1)} > 2단 Ø${fx(a.rings[1], 1)}` };
     const R = a.R, cap = R.reducerCap, sc = a.stageCap, L = bs.reduce((s, b) => s + b, 0) + (bs.length > 1 ? spec.gap : 0);
     let mass = Infinity; try { mass = env.PG.partsList(R, D).reduce((s, p) => s + (p.mass || 0) * (p.qty || 1), 0); } catch (e) { }
-    return { ok: true, D, R, bs, cap, stageCap: sc, balance: sc.length > 1 ? Math.min(...sc) / Math.max(...sc) : 1, OD: a.rings[a.rings.length - 1], ring1: a.rings[0], L, mass, gov: R.reducerGov,
+    const hollow = Math.min(...R.ctx.stages.map(s => s.geo.rims?.[0]?.solid ? 0 : (s.geo.rims?.[0]?.diameter || 0)));
+    return { ok: true, D, R, bs, cap, hollow, stageCap: sc, balance: sc.length > 1 ? Math.min(...sc) / Math.max(...sc) : 1, OD: a.rings[a.rings.length - 1], ring1: a.rings[0], L, mass, gov: R.reducerGov,
       ratio: R.ratio, dev: cand.dev, type: cand.type, stages: cand.stages, fails: R.verdict.filter(v => !v.ok).map(v => v.k) };
   }
 
@@ -186,10 +190,11 @@
     const log = [], t0 = Date.now(), step = async (m, p) => { if (onStep) { onStep(m, p); await new Promise(r => setTimeout(r, 0)); } };
     if (!q || !q.ok) return { status: 'input', errors: (q && q.errors) || [], log };
     const B = q.bearing, bt = torqueFromBearing(B, { s0: q.s0, kappa: q.kappa });
-    const spec = { basis: env.basis || 'iso', i: q.ratio, bearing: B, dp: bt.dp, T: bt.T, s0: bt.s0, kappa: bt.kappa, gap: q.gap, shift: q.shift, shared: q.shared, nitride: !!q.nitride, Dout: B.D, hollow: q.hollow || 0, rpm: q.rpm, lifeH: q.lifeH, ext: q.ext };
+    const spec = { basis: env.basis || 'iso', i: q.ratio, bearing: B, dp: bt.dp, T: bt.T, s0: bt.s0, kappa: bt.kappa, gap: q.gap, shift: q.shift, shared: q.shared, carb: !!q.carb, Dout: B.D, hollow: q.hollow == null ? null : q.hollow, rpm: q.rpm, lifeH: q.lifeH, ext: q.ext };
     log.push({ kind: '요구', key: '감속비', value: String(q.ratio), why: '의뢰 조건', basis: 'AD-2' });
+    log.push({ kind: '요구', key: '중공', value: q.hollow == null ? '가능한 최대 (썬 림 ≥ 1.25·h까지 보어 확대, 두 단 중 작은 값)' : q.hollow > 0 ? `Ø${q.hollow} (썬 보어)` : '중실', why: q.hollow == null ? '의뢰서 빈칸' : '의뢰 조건', basis: 'ISO 6336-3 림 계수 YB (sR/h ≥ 1.2)' });
     log.push({ kind: '베어링', key: '출력 베어링', value: `${bearingKey(B)} · d ${B.d} × D ${B.D} × B ${B.B} · dp ${fx(bt.dp, 2)} · C ${B.C} · C0 ${B.C0} N`, why: '사용자 선택', basis: B.source || '카탈로그' });
-    log.push({ kind: '재료', key: '기어 재료', value: q.nitride ? 'SCM440 이온질화 (옵션)' : '침탄 연삭 (Eh MQ, HRC 60 / 심부 36, 유효 경화 깊이 0.2 + 0.3·m)', why: q.nitride ? '의뢰서 O3 = Y' : '서보 감속기 관례 — 이온질화(σHlim 약 770 MPa) 대비 침탄(약 1300 MPa)', basis: RULE.src.material });
+    log.push({ kind: '재료', key: '기어 재료', value: q.carb ? '침탄 연삭 (옵션, Eh MQ, HRC 60 / 심부 36, 유효 경화 깊이 0.2 + 0.3·m)' : 'SCM440 이온질화 (NV MQ, 표면 HRC 60)', why: q.carb ? '의뢰서 O3 = Y — 모듈 0.4와 링기어는 연삭 불가(제작 조건)라 이 단은 실제 정밀도 확보를 따로 확인' : '사용자 제작 조건 (기본)', basis: RULE.src.material });
     log.push({ kind: '베어링', key: '목표 출력 토크', value: `M0 = C0·dp/(2000·s0) = ${fx(bt.M0, 1)} N·m → T = κ ${bt.kappa} × M0 = ${fx(bt.T, 2)} N·m`, why: '베어링 정정격에 맞는 출력 토크 (의뢰서 요구 토크는 쓰지 않음)', basis: RULE.src.kappa });
     await step('잇수 조합 탐색', 5);
     const cands = search(env.E, env.REC, spec, log);

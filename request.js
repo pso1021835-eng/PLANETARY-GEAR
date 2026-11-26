@@ -133,9 +133,9 @@
     ['G1', 'gap', '1·2단 캐리어 축방향 간격 (2단일 때)', 'mm', '', 'num', '3 mm'],
     ['O1', 'shift', '전위 탐색', 'Y/N', '', 'yn', 'N (전위 0)'],
     ['O2', 'shared', '1·2단 링기어 공유', 'Y/N', '', 'yn', 'N (링 분리 — 1단 링 외경은 2단 링 외경 안에서 자유)'],
-    ['O3', 'nitride', '기어 이온질화 (N = 침탄 연삭)', 'Y/N', '', 'yn', 'N (침탄 연삭)'],
+    ['O3', 'carb', '기어 침탄 연삭 (N = SCM440 이온질화)', 'Y/N', '', 'yn', 'N (SCM440 이온질화)'],
     ['I3', 'nr', '정격 입력 회전수', 'rpm', 'Y', 'num', ''],
-    ['I10', 'hollow', '중공 지름 (0 = 중실)', 'mm', '', 'num', '0'],
+    ['I10', 'hollow', '중공 지름 (0 = 중실)', 'mm', '', 'num', '가능한 최대 (썬 림 한계까지)'],
     ['I11', 'lifeH', '정격 수명', 'h', '', 'num', '20,000 h'],
     ['I12a', 'Fr', '출력 외력 — 반경 하중 Fr', 'N', '', 'num', '0'],
     ['I12b', 'Fa', '출력 외력 — 축 하중 Fa', 'N', '', 'num', '0'],
@@ -169,8 +169,8 @@
     if (!given.gap) { q.gap = 3; if (q.ratio > 10) asm('G1', '1·2단 캐리어 간격 3 mm (가정)'); }
     if (!given.shift) { q.shift = false; asm('O1', '전위 탐색 안 함 (전위 0)'); }
     if (!given.shared) { q.shared = false; asm('O2', '링 분리 (1단 링 외경은 2단 링 외경 안에서 자유)'); }
-    if (!given.nitride) q.nitride = false;
-    if (!given.hollow) q.hollow = 0;
+    if (!given.carb) q.carb = false;
+    if (!given.hollow) { q.hollow = null; asm('I10', '중공 미입력 → 가능한 최대 (썬 림 한계까지 보어 확대)'); }
     if (!given.lifeH) { q.lifeH = LIFE0; asm('I11', `정격 수명 ${LIFE0.toLocaleString('en-US')} h`); }
     for (const k of ['Fr', 'Fa', 'M']) if (!given[k]) q[k] = 0;
     if (!given.kappa) { q.kappa = 0.2; asm('K1', '토크 계수 κ 0.2 (가정 — 실물 2건 보정)'); }
@@ -180,7 +180,7 @@
     if (ok) { const dp = q.bearing.dp ?? (q.bearing.d + q.bearing.D) / 2, M0 = q.bearing.C0 * dp / (2000 * q.s0); derived = { dp: r6(dp), M0: r6(M0), T: r6(M0 * q.kappa), nOut: r6(q.nr / q.ratio) }; }
     const meta = { client: q.client, requester: q.requester, date: q.date, application: q.application };
     return { ok, format: FORMAT_BF, input: q, given, meta, derived, errors, assumptions,
-      bearing: q.bearing, ratio: q.ratio, gap: q.gap, shift: q.shift, shared: q.shared, nitride: q.nitride, hollow: q.hollow, rpm: q.nr, lifeH: q.lifeH, ext: { Fr: q.Fr, Fa: q.Fa, M: q.M }, kappa: q.kappa, s0: q.s0 };
+      bearing: q.bearing, ratio: q.ratio, gap: q.gap, shift: q.shift, shared: q.shared, carb: q.carb, hollow: q.hollow, rpm: q.nr, lifeH: q.lifeH, ext: { Fr: q.Fr, Fa: q.Fa, M: q.M }, kappa: q.kappa, s0: q.s0 };
   }
 
   // ---- .xlsx 읽기 (zip 중앙 디렉터리 + deflate-raw) ----
