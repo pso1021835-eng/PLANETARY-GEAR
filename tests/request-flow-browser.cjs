@@ -31,32 +31,36 @@ async function run() {
     await page.evaluate(() => PGDApp.go('req'));
     await page.locator('#rqRun').waitFor();
     await page.waitForLoadState('networkidle'); await page.waitForTimeout(1500);   // 초기 계산·DB 목록 로드가 끝난 뒤
-    // 빈 양식 불러오기 → 필수 6칸 오류, 실행 불가
-    // 한글 경로는 일부 환경에서 파일이 붙지 않아 내용(buffer)으로 전달
-    await page.setInputFiles('#rqFile', { name: '설계의뢰서_PGD-REQ-2.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: await fs.readFile(path.join(root, 'templates', '설계의뢰서_PGD-REQ-2.xlsx')) });
+    // 빈 양식(PGD-REQ-3) 불러오기 → 필수 3칸 오류, 실행 불가
+    await page.setInputFiles('#rqFile', { name: '설계의뢰서_PGD-REQ-3.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: await fs.readFile(path.join(root, 'templates', '설계의뢰서_PGD-REQ-3.xlsx')) });
     await page.waitForFunction(() => /불러옴/.test(document.querySelector('#rqFileMsg')?.textContent || ''), null, { timeout: 20000 }).catch(async e => { console.log('msg:', await page.locator('#rqFileMsg').innerText(), errors); throw e; });
-    assert.match(await page.locator('#rqFileMsg').innerText(), /확인 필요 6건/);
+    assert.match(await page.locator('#rqFileMsg').innerText(), /확인 필요 3건/);
     assert.equal(await page.locator('#rqRun').isDisabled(), true);
-    // 예시(표준 DB) → 자동 설계
+    // 예시 (i 25 · THK RU42) + 전위 탐색 → 자동 설계 → 5안 비교
     await page.locator('#rqExample').click();
-    await page.locator('#rqCheck', { hasText: '의뢰서 정상' }).waitFor();
+    await page.locator('#rqCheck', { hasText: '목표 출력 토크' }).waitFor();
+    await page.locator('[data-rqyn="O1"]').check();
     await page.locator('#rqRun').click();
     await page.locator('.rq-res').waitFor({ timeout: 240000 });
-    const gears = await page.locator('#rqResult table').nth(1).locator('tr').count(), bom = await page.locator('#rqResult table').nth(2).locator('tr').count();
+    const picks = await page.locator('[data-rqpick]').count();
+    assert.ok(picks >= 3 && picks <= 5, `비교안 ${picks}`);
+    await page.locator('[data-rqpick="1"]').click();
+    await page.locator('.rq-res h3', { hasText: '2안' }).waitFor();
+    const gears = await page.locator('.rq-res table').nth(0).locator('tr').count(), bom = await page.locator('.rq-res table').nth(1).locator('tr').count();
     assert.ok(gears >= 7 && bom >= 10, `제원표 ${gears} · BOM ${bom}`);
-    assert.match(await page.locator('.rq-res h3').innerText(), /ISO 6336:2019/);
     // 결과 엑셀
     const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('#rqXlsx').click()]);
     const buf = await fs.readFile(await dl.path());
     const Q = require(path.join(root, 'request.js'));
-    const sum = await Q.readSheet(buf, '요약'), g = await Q.readSheet(buf, '기어 제원');
-    assert.equal(sum.A2, '결과'); assert.equal(sum.A3, '요구 정격 토크'); assert.equal(sum.B3, 25); assert.equal(g.A1, '단');
-    // DB 저장 → 사이트 적용
+    const sum = await Q.readSheet(buf, '요약'), cmp = await Q.readSheet(buf, '비교 5안');
+    assert.equal(sum.A2, '출력 베어링'); assert.equal(sum.B2, 'THK RU42'); assert.equal(cmp.A1, '안'); assert.equal(cmp.A3, 2);
+    // DB 저장 → 사이트 적용 (고른 안)
     await page.locator('#rqSave').click();
     assert.ok(await page.evaluate(() => (JSON.parse(localStorage.getItem('pgd-db-v1') || '[]')).length >= 1), '설계 DB 저장');
     await page.locator('#rqApply').click();
     await page.waitForFunction(() => PGDApp.view() === 'overview');
-    assert.equal(await page.evaluate(() => PGDApp.state().D.loads.basis), 'iso');
+    assert.equal(await page.evaluate(() => PGDApp.state().D.outBearing.model), 'RU42');
+    assert.match(await page.evaluate(() => PGDApp.state().D.name), /베어링 기준/);
     assert.deepEqual(errors, []);
     console.log(`설계 의뢰 흐름: 제원표 ${gears - 1}행 · BOM ${bom - 1}행 · 결과 엑셀 · DB 저장 · 적용 ok`);
   } finally {
