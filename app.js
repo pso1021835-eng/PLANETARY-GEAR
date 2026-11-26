@@ -164,6 +164,21 @@ function evalMap() {
   EMC = { X, m }; return m;
 }
 function ictx() { const X = procExtra(), EM = evalMap(); return { R, D, X, CK: X.CK || {}, it: id => EM[id], EM }; }
+// ---- 간소 입력 (2026-11-26 사용자 결정 IN-1): 30분 컨셉 초안에 꼭 필요한 의뢰 조건만 입력받는다.
+// 나머지는 설계 규칙 고정값 · 자동 산출값으로 계산에 그대로 쓰이고, 항목 페이지에서는 읽기 전용으로 보인다.
+// 3D 종합판정 · 부품 편집 · 설계 지도는 그대로 수정 가능. 상단 '입력 전체'로 전부 다시 열 수 있다.
+const MIN_INPUTS = new Set(['req.Trated', 'req.Tpeak', 'req.Temerg', 'req.motorTmax', 'req.rpm', 'req.ratio', 'req.Dmax', 'req.Lmax',
+  'geom.inshaft.id', 'req.lifeH', 'req.ext.Fr', 'req.ext.Fa', 'req.ext.M']);
+let FULLIN = (() => { try { return localStorage.getItem('pgd-inputs') === 'full'; } catch (e) { return false; } })();
+const minRow = r => FULLIN || r.kind === 'calc' || r.kind === 'pred' || (r.kind === 'in' && r.path && MIN_INPUTS.has(r.path));
+function minimalize(root) {
+  if (FULLIN || !root) return;
+  root.querySelectorAll('[data-p]').forEach(el => {
+    if (MIN_INPUTS.has(el.dataset.p)) return;
+    el.disabled = true; el.title = '간소 입력: 규칙·자동값 (상단 입력 전체에서 수정)';
+    el.closest('label')?.classList.add('ro-min');
+  });
+}
 function expRows(id) {
   const sp = IT()[id] || (typeof gspec === 'function' ? gspec(id) : null); if (!sp) return [];
   const n = D.config.stages, out = [];
@@ -209,7 +224,7 @@ function inHTML(r) {
   return '';
 }
 function itemSections(id, c) {
-  const rs = expRows(id), S = SRCD(), ch = rv(id).chk || {};
+  const rs = expRows(id).filter(minRow), S = SRCD(), ch = rv(id).chk || {};
   return ['D', 'C', 'M', 'A'].map(g => {
     const xs = rs.filter(r => r.g === g); if (!xs.length) return '';
     const ins = xs.filter(r => r.kind === 'in'), cks = xs.filter(r => r.kind === 'chk'), outs = xs.filter(r => r.kind === 'calc' || r.kind === 'pred');
@@ -251,6 +266,7 @@ function itemPage(id) {
     ${errBox()}${alerts}
     ${wwwHTML(sp)}
     ${judgeHTML(id, c)}
+    ${FULLIN ? '' : '<p class="note minnote">간소 입력 — 의뢰 조건(토크·회전수·감속비·외경·길이·중공·수명·외력)만 입력합니다. 나머지는 설계 규칙 고정값과 자동 산출값입니다.</p>'}
     <div class="isecs">${itemSections(id, c)}</div>
     ${ext || wid ? `<h3 class="cardsh">상세 계산·표</h3>${ext ? `<div class="card pcx">${ext}</div>` : ''}${wid}` : ''}
     <div class="irel"><div><h4>선행 — 먼저 확인할 항목</h4>${rl.up.map(([u, t]) => relChip(u, t, c, fb(u))).join('') || '<p class="note">없음</p>'}</div>
@@ -360,6 +376,7 @@ function groupPage(id) {
     ${wwwHTML(sp)}
     <div class="ijud ${ok === true ? 'ok' : ok === false ? 'bad' : ''}"><span class="jm">${ok === true ? '통과' : ok === false ? '미달' : '판정 없음'}</span><span class="jv">세부 ${g.m.length}개 · 통과 ${np} · 미달 ${nf} · 판정 없음 ${g.m.length - np - nf}</span><span class="jk">기준 · 포함된 공정 항목의 판정이 모두 통과</span></div>
     <div class="card scroll gsub"><h3>세부 확인 <span class="note">— 번호를 누르면 99개 항목 페이지로</span></h3><table><tr><th>항목</th><th class="l">내용 · 기준</th><th class="l">현재 값</th><th>판정</th></tr>${subs}</table></div>
+    ${FULLIN ? '' : '<p class="note minnote">간소 입력 — 의뢰 조건(토크·회전수·감속비·외경·길이·중공·수명·외력)만 입력합니다. 나머지는 설계 규칙 고정값과 자동 산출값입니다.</p>'}
     <div class="isecs">${itemSections(id, c)}</div>
     ${ext || wid ? `<h3 class="cardsh">상세 계산·표</h3>${ext ? `<div class="card pcx">${ext}</div>` : ''}${wid}` : ''}
     <div class="irel"><div><h4>앞 묶음 — 먼저 확인</h4>${rl.up.map(([u, t]) => gChip(u, t, c, fb(u))).join('') || '<p class="note">없음</p>'}</div>
@@ -709,6 +726,7 @@ function render(keepScroll) {
     const gid = view.startsWith('cg-') ? view.slice(3) : null;
     m.innerHTML = gid ? groupPage(gid) : corePage();
     bindInputs(m);
+    minimalize(m);
     if (gid) bindGroupPage(m, gid); else bindCore(m);
     if (keepScroll) window.scrollTo(0, y);
     return;
@@ -717,6 +735,7 @@ function render(keepScroll) {
     const it = view.startsWith('it-');
     m.innerHTML = it ? itemPage(view.slice(3)) : stagePage(view.slice(3));
     bindInputs(m);
+    minimalize(m);
     if (it) bindItemPage(m, view.slice(3)); else bindStagePage(m);
     if (keepScroll) window.scrollTo(0, y);
     return;
@@ -1840,6 +1859,8 @@ function mountOverview(m) {
 // ------------------------------------------------------------------ header actions
 $('#dname').value = D.name || '';
 $('#dname').onchange = e => { D.name = e.target.value; save(); };
+{ const b = $('#bInputs'); const lab = () => { if (b) { b.textContent = FULLIN ? '입력 전체' : '입력 간소'; b.setAttribute('aria-pressed', String(FULLIN)); } }; lab();
+  if (b) b.onclick = () => { FULLIN = !FULLIN; try { localStorage.setItem('pgd-inputs', FULLIN ? 'full' : 'min'); } catch (e) { } lab(); render(true); }; }
 $('#bExample').onclick = () => { D = E.defaultDesign(); $('#dname').value = D.name; changed(); };
 $('#bExport').onclick = () => {
   const txt = JSON.stringify(D, null, 1);
