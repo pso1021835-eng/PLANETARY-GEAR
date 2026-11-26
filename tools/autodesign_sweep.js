@@ -9,7 +9,7 @@ const ST = { pass: '충족', short: '미달', none: '조합 없음', input: '입
   const tally = {};
   for (const basis of (process.env.BASES || "iso,ideal").split(",")) {
     console.log(`\n### 판정 기준: ${basis === 'iso' ? 'ISO 계산 조건 (§3 기본)' : '오차 0 가정 (참고)'}\n`);
-    console.log('| 의뢰 | 결과 | 목표 정격 (×1.3) | 예측 정격 | 오차 0 / ISO | 외형 | 질량 | 남은 미달 | 권장 미충족 | 시간 |');
+    console.log('| 의뢰 | 결과 | 요구 정격 | 예측 정격 | 오차 0 / ISO | 외형 | 질량 | 남은 미달 | 권장 미충족 | 시간 |');
     console.log('|---|---|---|---|---|---|---|---|---|---|');
     for (const c of cases) {
       const q = Q.parse(c), r = await A.run(q, { E, C: PGDChecks, P: PGDProc, REC, PG: PGD3D, basis });
