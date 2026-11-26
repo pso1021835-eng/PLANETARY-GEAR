@@ -1,4 +1,4 @@
-// 베어링 기준 자동 설계 (AD-2): 목표 토크 = κ·C0·dp/(2000·s0), 2단 링 피치원 ≥ 롤러 피치원 근처 · 링 외경 ≤ 베어링 외경, 침탄 기본, 링 공유·전위 탐색 옵션, 1단 링 외경 ≤ 2단, 5안 비교
+// 베어링 기준 자동 설계 (AD-2): 목표 토크 = κ·C0·dp/(2000·s0), 2단 링 피치원 ≥ 롤러 피치원 근처 · 링 외경 ≤ 베어링 외경, SCM440 이온질화 기본 (침탄 옵션), 링 공유·전위 탐색 옵션, 1단 링 외경 ≤ 2단, 5안 비교
 const assert = require('assert');
 const E = require('./engine.js'); globalThis.PGDBearings = require('./bearings.js');
 require('./carrier-geometry.js'); require('./viewer3d.js'); require('./checks.js');
@@ -20,7 +20,7 @@ const near = (a, b, t, m) => assert(Math.abs(a - b) <= t, `${m}: ${a} vs ${b}`);
     const st = x.stages, last = st[st.length - 1], dRing = last.m * last.R / Math.cos(12 * Math.PI / 180);
     assert(dRing >= 41.5 - 2.5 * last.m / Math.cos(12 * Math.PI / 180) - 1e-9, `링 피치원 ${dRing} ≥ 롤러 피치원 근처`);
     assert(x.OD <= 70 + 1e-6, `2단 링 외경 ${x.OD} ≤ 베어링 외경 70`);
-    assert(x.D.materials.every(m => m.family === 'Eh'), '기본 재료 침탄');
+    assert(x.D.materials.every(m => m.family === 'NV'), '기본 재료 SCM440 이온질화');
     assert.strictEqual(x.type, 'sep'); assert(x.ring1 <= x.OD + 1e-6, '1단 링 외경 ≤ 2단');
     assert(st.every(o => !o.profile || [o.profile.xs, o.profile.xp, o.profile.xr].every(v => v === 0)), '전위 0');
     near(x.ratio, 25, 0.25 + 1e-9, '감속비 ±1 %'); near(x.L, x.bs[0] + 3 + x.bs[1], 1e-9, '길이 = b1 + 간격 + b2');
@@ -28,10 +28,9 @@ const near = (a, b, t, m) => assert(Math.abs(a - b) <= t, `${m}: ${a} vs ${b}`);
     assert.strictEqual(x.D.outBearing.model, 'RU42'); assert(x.cap > 0 && x.stageCap.length === 2);
   }
   for (let k = 1; k < r.top.length; k++) assert(Math.round(r.top[k - 1].cap * 10) >= Math.round(r.top[k].cap * 10), '한계 토크 순');
-  // 침탄 연삭 기본에서 RU42 (C0 8350) 목표 34.7 N·m에 1안이 닿는다 (ISO)
-  assert(r.top[0].cap >= 0.9 * r.spec.T, `1안 ${r.top[0].cap} / 목표 ${r.spec.T}`);
-  // 이온질화 옵션
-  { const n = await BF.run(Q.parseBF({ I7: 25, B1: 'THK RU42', I3: 3000, O3: 'Y' }), env); assert.strictEqual(n.status, 'ok'); assert(n.top[0].D.materials.every(m => m.family === 'NV')); assert(n.top[0].cap < r.top[0].cap); }
+  // 침탄 연삭 옵션 (O3): 같은 베어링에서 한계 토크가 오르고 RU42 목표 34.7 N·m 근처에 닿는다 (ISO)
+  { const c = await BF.run(Q.parseBF({ I7: 25, B1: 'THK RU42', I3: 3000, O3: 'Y' }), env); assert.strictEqual(c.status, 'ok'); assert(c.top[0].D.materials.every(m => m.family === 'Eh'));
+    assert(c.top[0].cap > r.top[0].cap); assert(c.top[0].cap >= 0.9 * c.spec.T, `침탄 1안 ${c.top[0].cap} / 목표 ${c.spec.T}`); }
   // 3) 링 공유 + 전위 탐색
   r = await BF.run(Q.parseBF({ I7: 25, B1: 'THK RU42', I3: 3000, O1: 'Y', O2: 'Y' }), env);
   assert.strictEqual(r.status, 'ok', r.error); assert(r.top.every(x => x.type === 'shared' && x.D.config.sharedRing && x.stages[0].R === x.stages[1].R && x.stages[0].m === x.stages[1].m));

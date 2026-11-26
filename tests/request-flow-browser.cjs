@@ -54,6 +54,10 @@ async function run() {
     const Q = require(path.join(root, 'request.js'));
     const sum = await Q.readSheet(buf, '요약'), cmp = await Q.readSheet(buf, '비교 5안');
     assert.equal(sum.A2, '출력 베어링'); assert.equal(sum.B2, 'THK RU42'); assert.equal(cmp.A1, '안'); assert.equal(cmp.A3, 2);
+    const mc = await Q.readSheet(buf, '가공 데이터 (선택안)'); assert.equal(mc.L1, '걸치기 잇수 k'); assert.ok(mc.L2 >= 2 && mc.M2 > 0, '걸치기 이두께');
+    globalThis.PGDBearings = require(path.join(root, 'bearings.js')); require(path.join(root, 'bearing-first.js'));
+    const again = await Q.readXlsx(buf, { format: 'bf' }); assert.ok(again.ok, '결과 파일 의뢰서 시트 재불러오기 ' + JSON.stringify(again.errors)); assert.equal(again.ratio, 25); assert.equal(again.shift, true);
+    assert.ok(await page.locator('#rqPrev canvas').count() === 1, '선택안 3D 미리보기');
     // DB 저장 → 사이트 적용 (고른 안)
     await page.locator('#rqSave').click();
     assert.ok(await page.evaluate(() => (JSON.parse(localStorage.getItem('pgd-db-v1') || '[]')).length >= 1), '설계 DB 저장');
