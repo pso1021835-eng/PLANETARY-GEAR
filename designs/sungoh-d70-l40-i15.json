@@ -62,7 +62,7 @@
    "M": 20
   },
   "dutyRate": 0.5,
-  "basis": "ideal",
+  "basis": "iso",
   "aiDecided": [
    "부하 스펙트럼 (상체 피치 대표)",
    "회전 방향 양방향",
@@ -412,7 +412,7 @@
    "base": "mineral"
   },
   "loads": {
-   "basis": "ideal",
+   "basis": "iso",
    "KA": 1,
    "kgMode": "model",
    "kgFixed": 1.1,
