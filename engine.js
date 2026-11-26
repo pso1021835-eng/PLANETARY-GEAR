@@ -369,7 +369,8 @@
     const z2 = g.z / (cb * cb * Math.cos(g.beta)), x2 = g.x || 0;          // virtual spur internal gear (our sign: +x = thinner tooth)
     const z0 = Math.max(10, Math.round(pos(cut.z0) ? cut.z0 : 0.33 * g.z)), x0 = fin(cut.x0) ? cut.x0 : 0;
     const zn0 = z0 / (cb * cb * Math.cos(g.beta));
-    const key = [z2, x2, m, an, zn0, x0, rho, hfp, mesh.ean, g.dFa ?? g.da, g.d, mesh.a?.z].map(v => fin(v) ? v.toFixed(6) : v).join('|');
+    // εβ(치폭)와 β는 fe·Yβ를 바꾸므로 키에 포함 — 빠지면 치폭만 바꾼 설계에서 이전 YF·Yβ가 재사용됨 (verify_test 무작위 검증에서 발견)
+    const key = [z2, x2, m, an, zn0, x0, rho, hfp, mesh.ean, mesh.eb, mesh.ea, g.beta, g.dFa ?? g.da, g.d, mesh.a?.z].map(v => fin(v) ? v.toFixed(6) : v).join('|');
     if (IRF_CACHE.has(key)) return IRF_CACHE.get(key);
     const r0 = m * zn0 / 2, r2 = m * z2 / 2, rb0 = r0 * Math.cos(an), rb2 = r2 * Math.cos(an);
     const aw0 = invSolve(inv(an) + 2 * Math.tan(an) * (x2 - x0) / (z2 - zn0));
