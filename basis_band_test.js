@@ -1,6 +1,10 @@
 // 산정 기준 폭(오차 0 / ISO) · 저하중 경고 · C2–출력 플랜지 결합 판정 회귀 테스트
 const assert = require('assert');
 const E = require('./engine.js'); require('./viewer3d.js'); require('./checks.js'); const C = globalThis.PGDChecks;
+// 이 시험의 기준값은 2026-11-26 이전 기본 조건(이론 판정 · Kγ 물리 모델)에서 계산됨 — 기본 판정이 ISO로 바뀌어도 같은 조건으로 고정
+{ const t0 = E.templateDesign, d0 = E.defaultDesign;
+  E.templateDesign = () => { const D = t0(); D.loads.basis = 'ideal'; D.loads.kgMode = 'model'; return D; };
+  E.defaultDesign = () => { const D = d0(); D.loads.basis = 'ideal'; return D; }; }
 const prep = d => { C.ensure(d); C.applyNeedles(d); return d; };
 // 1) RH065 (m0.6, 실측 정격 28 N·m): 오차 0 기준이 실측에 가장 가깝고 ISO 방법 C는 저하중 영역
 const rh = prep(E.templateDesign()), b = E.basisBand(rh);

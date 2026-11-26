@@ -1533,7 +1533,7 @@
       // pin holes ⌖Ø0.01 → ±5 µm; ⊥0.01 A → carrier parallelism 10 µm.
       // S1: 6705DD in the cover (CN radial clearance ≥ 5 µm → free radius 2.5 µm), journal Ø25 / bore Ø17.5.
       // S2: 6703DD inside the S1 bore + 6705DD inside the C2 bore (straddle); 6703 CN ≥ 3 µm → 1.5 µm. Bearing stiffnesses are assumed.
-      loads: { basis: 'ideal', KA: 1.0, kgMode: 'model', kgFixed: 1.1, posError: 5, sunSupport: [{ mode: 'structure', k: 20, play: 2.5, bearingK: 30, od: 25, id: 17.5, overhang: 7.8 }, { mode: 'structure', k: 20, play: 1.5, bearingK: 30, od: 17, id: 15, overhang: 3 }], fmaMode: 'rss', carrierParallel: 10, extraFsh: [0, 0], reverse: false },
+      loads: { basis: 'iso', KA: 1.0, kgMode: 'agma', kgFixed: 1.1, posError: 5, sunSupport: [{ mode: 'structure', k: 20, play: 2.5, bearingK: 30, od: 25, id: 17.5, overhang: 7.8 }, { mode: 'structure', k: 20, play: 1.5, bearingK: 30, od: 17, id: 15, overhang: 3 }], fmaMode: 'rss', carrierParallel: 10, extraFsh: [0, 0], reverse: false },
       reliability: { mode: 'iso', covH: 0.08, covF: 0.07 },
       perf: { muMode: 'model', mu: 0.06, otherLoss: 1.5 },
       // output: RAU5005C0 × 2 between the C2 Ø50g6 seat and the housing Ø61H7 bore, ISTW-50 snap ring. Ratings not on the drawing → 가정.

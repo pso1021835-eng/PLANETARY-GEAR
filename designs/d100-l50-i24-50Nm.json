@@ -238,7 +238,7 @@
   "rzRoot": 6
  },
  "loads": {
-  "basis": "ideal",
+  "basis": "iso",
   "KA": 1,
   "kgMode": "model",
   "kgFixed": 1.1,

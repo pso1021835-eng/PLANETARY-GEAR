@@ -168,7 +168,7 @@ function ictx() { const X = procExtra(), EM = evalMap(); return { R, D, X, CK: X
 // 나머지는 설계 규칙 고정값 · 자동 산출값으로 계산에 그대로 쓰이고, 항목 페이지에서는 읽기 전용으로 보인다.
 // 3D 종합판정 · 부품 편집 · 설계 지도는 그대로 수정 가능. 상단 '입력 전체'로 전부 다시 열 수 있다.
 const MIN_INPUTS = new Set(['req.Trated', 'req.Tpeak', 'req.Temerg', 'req.motorTmax', 'req.rpm', 'req.ratio', 'req.Dmax', 'req.Lmax',
-  'geom.inshaft.id', 'req.lifeH', 'req.ext.Fr', 'req.ext.Fa', 'req.ext.M']);
+  'geom.inshaft.id', 'req.lifeH', 'req.ext.Fr', 'req.ext.Fa', 'req.ext.M', 'loads.basis']);   // loads.basis: 판정 기준 ISO(기본) ↔ 오차 0(옵션) 전환
 let FULLIN = (() => { try { return localStorage.getItem('pgd-inputs') === 'full'; } catch (e) { return false; } })();
 const minRow = r => FULLIN || r.kind === 'calc' || r.kind === 'pred' || (r.kind === 'in' && r.path && MIN_INPUTS.has(r.path));
 function minimalize(root) {
@@ -1562,7 +1562,7 @@ function ovInputs() {
   if (topic === 'other') return ovOtherInputs();
   if (topic === 'material') return (!R?.errors?.length && W.mat()) || '<p class="note">기어 제원을 확인하면 재료표를 표시합니다.</p>';
   if (topic === 'share') {
-    const basis = [['iso','가공 오차 고려 (ISO)'],['ideal','오차 없는 이상 조립']];
+    const basis = [['iso','ISO 6336:2019 (KISSsoft 방식) · 기본'],['ideal','이론 (오차 0) · 옵션']];
     if (D.loads.basis === 'tolerance') basis.push(['tolerance','공차 한계 (기존 설계)']);
     const model = D.loads.basis !== 'ideal' && D.loads.kgMode === 'model';
     return '<div class="grid">'+sel('loads.basis','계산 조건',basis)+expRows('5-6').filter(r=>r.kind==='in').map(inHTML).join('')+
@@ -1976,7 +1976,7 @@ async function dbOpen(key, toOverview) {
 async function dbLoadLib(list) {
   for (const x of list) {
     try {
-      if (x.file) { const j = await (await fetch('designs/' + x.file + '?v=std-2')).json(); x.D = j.schema === 'pgd-case/1' ? j.D : j; }
+      if (x.file) { const j = await (await fetch('designs/' + x.file + '?v=std-3')).json(); x.D = j.schema === 'pgd-case/1' ? j.D : j; }
       else if (x.builtin) x.D = E[x.builtin]();
       if (x.D && !x.summary) { const d = JSON.parse(JSON.stringify(x.D)); if (window.PGDChecks) { PGDChecks.ensure(d); PGDChecks.applyNeedles(d); } const c = caseRecord(d, E.analyze(d)); x.summary = c.summary; x.request = c.request; }
     } catch (e) { console.error(e); }
@@ -1988,7 +1988,7 @@ function dbRender() {
   $('#dbList').innerHTML = DBLIB.map((x, i) => row('lib:' + i, x.name, '기본')).join('') + mine.slice(0, 5).map((x, i) => row('mine:' + i, x.name, `${x.summary?.reducerCap ? (+x.summary.reducerCap).toFixed(0) + ' N·m · ' : ''}${new Date(x.saved).toLocaleDateString('ko-KR')}`)).join('') || '<span class="note">없음</span>';
   $('#dbList').querySelectorAll('[data-db]').forEach(b => b.onclick = e => { e.stopPropagation(); dbOpen(b.dataset.db); });
 }
-fetch('designs/index.json?v=std-2').then(r => r.json()).catch(() => [{ name: 'HDS 예제', builtin: 'defaultDesign' }, { name: 'RH065 템플릿', builtin: 'templateDesign' }])
+fetch('designs/index.json?v=std-3').then(r => r.json()).catch(() => [{ name: 'HDS 예제', builtin: 'defaultDesign' }, { name: 'RH065 템플릿', builtin: 'templateDesign' }])
   .then(l => { DBLIB = l; dbRender(); return dbLoadLib(l); }).then(() => { if (view === 'db') render(true); });
 // 케이스 레코드 (pgd-case/1): 나중에 모아서 참고·학습에 쓰도록 요구 조건 · 설계 제원 · 결과 요약을 같은 형식으로 남긴다.
 function caseRecord(D = PGDApp.state().D, R = PGDApp.state().R) {

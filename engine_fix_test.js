@@ -1,6 +1,10 @@
 // Regression tests: peak static verdict per target, rotation reversal, stop/idle spectrum time base, legacy duty JSON.
 const fs = require('fs');
 const E = require('./engine.js');
+// 이 시험의 기준값은 2026-11-26 이전 기본 조건(이론 판정 · Kγ 물리 모델)에서 계산됨 — 기본 판정이 ISO로 바뀌어도 같은 조건으로 고정
+{ const t0 = E.templateDesign, d0 = E.defaultDesign;
+  E.templateDesign = () => { const D = t0(); D.loads.basis = 'ideal'; D.loads.kgMode = 'model'; return D; };
+  E.defaultDesign = () => { const D = d0(); D.loads.basis = 'ideal'; return D; }; }
 let fails = 0;
 const ok = (cond, msg) => { console.log((cond ? 'ok  ' : 'FAIL') + ' ' + msg); if (!cond) fails++; };
 const near = (a, b, tol) => Math.abs(a / b - 1) <= tol;
