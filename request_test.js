@@ -11,7 +11,7 @@ const near = (a, b, m) => assert(Math.abs(a - b) < 1e-6, `${m}: ${a} ≠ ${b}`);
   assert(r.ok, JSON.stringify(r.errors));
   for (const k of ['Trated', 'Tpeak', 'Temerg', 'rpm', 'lifeH', 'ratio', 'Dmax', 'Lmax', 'basis']) assert.strictEqual(r.engineReq[k], std[k], k);
   assert.deepStrictEqual(r.engineReq.ext, std.ext);
-  near(r.target.TR, 32.5, 'TR×1.3'); near(r.target.lifeH, 26000, 'life×1.3');
+  near(r.target.TR, 25, '판정 토크 = 요구 정격 (배수 없음)'); near(r.target.lifeH, 20000, '수명 = 정격 수명'); assert.strictEqual(Q.MARGIN, 1);
   assert.strictEqual(r.meta.client, '세라로보틱스'); assert.strictEqual(r.hollow, null);
   assert(r.assumptions.some(a => a.id === 'I10')); assert(!r.assumptions.some(a => a.id === 'I11'));  // 수명은 입력함
   // 2) 빈 양식: 필수 항목 6개 오류, 양식 버전은 정상
