@@ -243,26 +243,6 @@
   "kgMode": "model",
   "kgFixed": 1.1,
   "posError": 5,
-  "sunSupport": [
-   {
-    "mode": "structure",
-    "k": 20,
-    "play": 2.5,
-    "bearingK": 30,
-    "od": 25,
-    "id": 17.5,
-    "overhang": 7.8
-   },
-   {
-    "mode": "structure",
-    "k": 20,
-    "play": 1.5,
-    "bearingK": 30,
-    "od": 17,
-    "id": 15,
-    "overhang": 3
-   }
-  ],
   "fmaMode": "rss",
   "carrierParallel": 10,
   "extraFsh": [
@@ -314,16 +294,8 @@
   "allowP": 300,
   "allowB": 250
  },
- "housing": {
-  "wall": 3,
-  "coverT": 3,
-  "flangeT": 4,
-  "boltN": 8,
-  "boltD": 5
- },
  "geom": {},
  "struct": {
-  "ringHousing": "integral",
   "c1s2": "pin",
   "c1s2Dim": {
    "d": 17,
@@ -343,16 +315,7 @@
    "pcd": 22
   },
   "c1Support": "nested",
-  "obPos": "outside",
-  "ringFit": {
-   "delta": 0.03,
-   "mu": 0.12,
-   "E": 70000,
-   "nu": 0.33,
-   "Sy": 240,
-   "boltN": 6,
-   "boltD": 3
-  }
+  "obPos": "outside"
  },
  "needle": [
   {
@@ -391,11 +354,6 @@
   "samples": 200,
   "utilization": 0.7
  },
- "bolts": {
-  "grade": 12.9,
-  "mu": 0.12,
-  "util": 0.7
- },
  "thermal": {
   "Tamb": 25,
   "h": 12,
@@ -418,7 +376,6 @@
    "planet": "hob",
    "ring": "shape",
    "carrier": "mill",
-   "housing": "turn",
    "pin": "buy"
   }
  }

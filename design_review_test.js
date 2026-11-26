@@ -75,9 +75,9 @@ function near(actual, expected, tol = 1e-6) {
   const d = E.defaultDesign();
   d.req.Trated = 8;
   const mc = E.monteCarlo(d, 24);
-  assert.equal(mc.life.noDamage, 16); assert.equal(mc.life.invalid, 0);
+  assert.equal(mc.life.noDamage, 13);   // BOM-1: 썬 지지 고정 가정 (20 N/µm · 유격 0) assert.equal(mc.life.invalid, 0);
   assert.equal(mc.life.p50, Infinity); assert.equal(mc.life.p90, Infinity);
-  near(mc.passLife, 19/24);
+  near(mc.passLife, 18/24);
   console.log('Unconditional empirical life quantiles passed.');
 }
 

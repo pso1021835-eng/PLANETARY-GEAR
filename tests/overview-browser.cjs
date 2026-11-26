@@ -58,8 +58,7 @@ async function run() {
       assert.ok((await page.locator('#ovInputs').innerText()).trim(), key);
     }
     await topic.selectOption('other');
-    assert.equal(await page.locator('#ovOtherItem option[value="8-1"]').count(),
-      await page.evaluate(() => Number(PGDApp.state().D.struct.ringHousing !== 'integral')));
+    assert.equal(await page.locator('#ovOtherItem option[value="8-1"]').count(), 0);   // BOM-1: 하우징 항목 삭제
     await page.locator('#ovOtherItem').selectOption('6-4');
     assert.ok(await page.locator('#ovInputs [data-p]').count() > 0);
     await topic.selectOption('duty');

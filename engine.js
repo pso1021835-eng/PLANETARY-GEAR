@@ -1027,15 +1027,9 @@
     const ktor = 4 * n * kweb * rw * rw / 1000;                                            // N·m/rad: mean pin rotation = ½ far-plate windup
     return { double, kweb, windup, slope, ktor, sigma, Fweb, span, w, h, I, A, fromShape, webShape: wb?.shape };
   }
-  // sun radial support: direct stiffness, or support bearing ⊕ shaft cantilever (structure)
-  function sunSupportK(D, i) {
-    const s = (D.loads.sunSupport || [])[i] || { k: 20, play: 0 };
-    if (s.mode !== 'structure') return { k: s.k, play: s.play || 0, src: '직접 입력' };
-    const E = 206000, I = Math.PI * ((s.od || 10) ** 4 - (s.id || 0) ** 4) / 64, L = s.overhang || 6;
-    const kShaft = 1 / (1000 * L ** 3 / (3 * E * I));                                      // N/µm
-    const k = 1 / (1 / Math.max(1e-6, s.bearingK || 40) + 1 / kShaft);
-    return { k, play: s.play || 0, kShaft, src: `베어링 ${s.bearingK} ⊕ 축 ${kShaft.toFixed(0)} N/µm` };
-  }
+  // sun radial support: 썬 지지 베어링은 사이트 범위에서 삭제 (BOM-1 2026-11-26) → 고정 가정 20 N/µm · 유격 0
+  const SUN_SUPPORT = { k: 20, play: 0, src: '가정 (썬 지지 베어링 범위 밖)' };
+  function sunSupportK() { return { ...SUN_SUPPORT }; }
 
   // ------------------------------------------------------------ output main bearing (cross-roller style equivalent load)
   // Output-bearing external loads: the catalogue formulas use magnitudes, so each entry is a size ≥ 0 in its unit.
@@ -1296,8 +1290,6 @@
     for (const c of [0, 1, 3]) if (c !== D.stages[0].mod.crown) C('크라우닝 ' + c + ' µm', d => d.stages.forEach(s => s.mod.crown = c));
     C('치형 수정 적합 확인 (fZCa 1.07)', d => d.stages.forEach(s => s.mod.verified = 'qualified'));
     if (tolCases) C(D.loads.fmaMode === 'rss' ? '잇줄 오차 최악합' : '잇줄 오차 제곱합', d => d.loads.fmaMode = D.loads.fmaMode === 'rss' ? 'worst' : 'rss');
-    C('썬 지지 강성 절반', d => d.loads.sunSupport = (D.loads.sunSupport || []).map(s => ({ ...s, k: s.k / 2, bearingK: (s.bearingK || 40) / 2 })));
-    if (tolCases) C('썬 지지 유격 +3 µm (베어링 틈새)', d => d.loads.sunSupport = (D.loads.sunSupport || []).map(s => ({ ...s, play: (s.play || 0) + 3 })));
     if (tolCases) C('유성 위치오차 2배', d => d.loads.posError *= 2);
     C('2단 치폭 +25 %', d => { d.stages[d.stages.length > 1 && d.config.stages === 2 ? 1 : 0].b *= 1.25; });
     C('목표 수명 ½', d => d.req.lifeH /= 2);
@@ -1428,7 +1420,7 @@
     add('하중', 'KA', D.loads.KA, D.loads.KA === 1 ? '모델' : '가정', '스펙트럼에 피크를 포함하므로 1.0');
     const so = o.rated.stages;
     so.forEach(s => add('하중', `${s.i + 1}단 Kγ`, s.Kg.toFixed(3), s.KgSrc, s.KgNote));
-    add('하중', '썬 지지 (플로팅 아님)', ctx.stages.map(s => { const k = sunSupportK(D, s.i); return `${k.k.toFixed(1)} N/µm · 유격 ${k.play} µm`; }).join(' / '), '가정', '축·베어링(1단)·캐리어(2단) 반경 강성 추정 · Kγ에 가장 큰 영향');
+    add('하중', '썬 지지 (플로팅 아님)', ctx.stages.map(s => { const k = sunSupportK(D, s.i); return `${k.k.toFixed(1)} N/µm · 유격 ${k.play} µm`; }).join(' / '), '가정', '썬 지지 베어링 삭제 (BOM-1) → 고정 가정 · Kγ에 영향');
     if (ctx.basis === 'iso') add('하중', 'KHβ 치폭 오차', 'Fβx = |1.33·B1·fsh − B2·fHβ5| (ISO 6336-1:2019 방법 C)', '규격', 'fHβ5 = 5급 잇줄 기울기 공차, B1·B2 = 리드 수정별 · KISSsoft와 같은 방식 · Kv·KHα는 정밀도 등급 공차');
     else if (ctx.basis === 'ideal') add('하중', '오차·공차', '0 (이론 계산)', '이론', '피치·치형·잇줄 오차, 유성 위치 오차, 캐리어 평행도 = 0 · 공차는 시편 시뮬레이션(11-1)에서만 무작위로 반영');
     else add('하중', 'fma (잇줄 오차)', D.loads.fmaMode === 'worst' ? '최악합 (식 64)' : '제곱합 (식 66)', '규격', 'ISO 1328 공차 + 캐리어 핀 구멍 평행도 ' + D.loads.carrierParallel + ' µm');
@@ -1491,7 +1483,6 @@
       materials: Array.from({ length: 6 }, () => ({ family: 'Eh', surfaceHRC: 61, coreHRC: 28, depth: 0.3 })),
       lube: { type: 'oil', base: 'mineral', nu40: 220, nu100: 17.5, temp: 70, rho: .895, alphaP: 2.0, starvation: 1, XL: 1, XW: 1, fzg: 12, rzFlank: 4.8, rzRoot: 20 },
       outBearing: { name: '크로스 롤러 Dw 2 (가정 · 카탈로그 확인)', rows: 2, type: 'roller', C: 2340, C0: 3220, dp: 40.6, Km: 30, Z: 0, Dw: 2, Lw: 2, preload: 0 },
-      housing: { wall: 2, coverT: 6, flangeT: 3, boltN: 6, boltD: 3 },
       geom: {},
       needle: [{ use: true, apply: true, Dw: 1.5, Lw: null, Z: 16, HRCpin: 60, HRCbore: 58 }, { use: true, apply: true, Dw: 1.5, Lw: null, Z: 16, HRCpin: 60, HRCbore: 58 }],
       verify: { feaKcar: [null, null], feaSigmaF: null, testT: null, testNote: '' },
@@ -1499,7 +1490,7 @@
     });
     // report: carrier torque 16.2 N·m, sun 3010 rpm, 100 h, required SH 1.0 / SF 1.4, KA 1.25, Kγ 1.00
     Object.assign(D.req, { Trated: 16.2, Tpeak: 16.2, Temerg: 16.2, rpm: 3010, lifeH: 100, SH: 1.0, SF: 1.4, ext: { Fr: 0, Fa: 0, M: 0 }, duty: [{ torque: 100, time: 100, rpm: 0, mode: 'rated' }] });
-    Object.assign(D.loads, { KA: 1.25, kgMode: 'fixed', kgFixed: 1.0, sunSupport: [{ ...D.loads.sunSupport[1], od: 11, id: 0 }] });
+    Object.assign(D.loads, { KA: 1.25, kgMode: 'fixed', kgFixed: 1.0 });
     return D;
   }
   // Template = RDP-RH065(9N) as drawn (EasternGear 300001–300009, 2026-06). Values not on the drawings are marked 가정 in the register.
@@ -1531,17 +1522,15 @@
       materials: Array.from({ length: 6 }, mat),
       lube: { type: 'grease', nu40: 100, nu100: 11, temp: 50, rho: .88, alphaP: 2.0, starvation: .7, XL: 1, XW: 1, fzg: 12, rzFlank: 2, rzRoot: 6 },
       // pin holes ⌖Ø0.01 → ±5 µm; ⊥0.01 A → carrier parallelism 10 µm.
-      // S1: 6705DD in the cover (CN radial clearance ≥ 5 µm → free radius 2.5 µm), journal Ø25 / bore Ø17.5.
-      // S2: 6703DD inside the S1 bore + 6705DD inside the C2 bore (straddle); 6703 CN ≥ 3 µm → 1.5 µm. Bearing stiffnesses are assumed.
-      loads: { basis: 'iso', KA: 1.0, kgMode: 'agma', kgFixed: 1.1, posError: 5, sunSupport: [{ mode: 'structure', k: 20, play: 2.5, bearingK: 30, od: 25, id: 17.5, overhang: 7.8 }, { mode: 'structure', k: 20, play: 1.5, bearingK: 30, od: 17, id: 15, overhang: 3 }], fmaMode: 'rss', carrierParallel: 10, extraFsh: [0, 0], reverse: false },
+      // S1 · S2 지지 베어링은 사이트 범위에서 삭제 (BOM-1) — 썬 지지는 엔진 고정 가정 20 N/µm · 유격 0.
+      loads: { basis: 'iso', KA: 1.0, kgMode: 'agma', kgFixed: 1.1, posError: 5, fmaMode: 'rss', carrierParallel: 10, extraFsh: [0, 0], reverse: false },
       reliability: { mode: 'iso', covH: 0.08, covF: 0.07 },
       perf: { muMode: 'model', mu: 0.06, otherLoss: 1.5 },
       // output: RAU5005C0 × 2 between the C2 Ø50g6 seat and the housing Ø61H7 bore, ISTW-50 snap ring. Ratings not on the drawing → 가정.
       outBearing: { name: 'RAU5005C0 × 2 (Ø50/Ø61, 카탈로그 값 확인 필요)', rows: 2, type: 'roller', C: 4000, C0: 5500, dp: 55.5, Km: 30, Z: 0, Dw: 2.5, Lw: 2.5, preload: 0 },
       carrier: { allowP: 300, allowB: 250 },
-      housing: { wall: 2, coverT: 8.8, flangeT: 4, boltN: 6, boltD: 3 },
-      geom: { inshaft: { id: 15 }, sun1: { hubInOD: 25, hubInL: 7.5 }, sun2: { hubInOD: 25, hubInL: 13 } },   // S1 journal Ø25g6 × 7.5, S2 journal Ø25g6 (shape only)
-      struct: { ringHousing: 'integral', c1s2: 'pin', c1s2Dim: { d: 17, L: 4.5, p: 40, n: 6, dp: 3, pcd: 21.5 }, s1motor: 'flange', s1Dim: { d: 17.5, L: 7.5, p: 40, n: 4, bd: 1.6, pcd: 22 }, c1Support: 'nested', obPos: 'outside' },
+      geom: { sun1: { hubInOD: 25, hubInL: 7.5 }, sun2: { hubInOD: 25, hubInL: 13 } },   // S1 journal Ø25g6 × 7.5, S2 journal Ø25g6 (shape only)
+      struct: { c1s2: 'pin', c1s2Dim: { d: 17, L: 4.5, p: 40, n: 6, dp: 3, pcd: 21.5 }, s1motor: 'flange', s1Dim: { d: 17.5, L: 7.5, p: 40, n: 4, bd: 1.6, pcd: 22 }, c1Support: 'nested', obPos: 'outside' },
       needle: [{ use: true, apply: true, Dw: 1.5, Lw: null, Z: 11, HRCpin: 60, HRCbore: 58 }, { use: true, apply: true, Dw: 1.5, Lw: null, Z: 11, HRCpin: 60, HRCbore: 58 }],
       verify: { feaKcar: [null, null], feaSigmaF: null, testT: 28, testNote: '시험성적서 정격 (RDP-RH065 9N)' },
       anim: { rpm: 1000, slow: 0.02 },
