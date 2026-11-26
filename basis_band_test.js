@@ -14,13 +14,7 @@ assert(b.iso < 0.2 * b.ideal, 'ISO method C far below ideal at light load');
 const iso = JSON.parse(JSON.stringify(rh)); iso.loads.basis = 'iso';
 assert(E.analyze(iso).warns.some(w => w.includes('저하중')), 'iso basis warns at light load');
 assert(!E.analyze(rh).warns.some(w => w.includes('저하중')), 'ideal basis no warning');
-// 2) C2–출력 플랜지: 기본 6×M3 → 템플릿 충족, 작은 볼트·높은 피크 → 미달, 일체 → 충족
+// 2) 출력 베어링: 내륜–C2 보스만 판정 (C2–출력 플랜지 결합은 BOM-1 에서 삭제)
 let R = E.analyze(rh), ck = C.compute(R, rh)['2-8'];
-assert.strictEqual(ck.ok, true, ck.val); assert(ck.c2.Tcap > ck.c2.need);
-const weak = JSON.parse(JSON.stringify(rh)); weak.req.Tpeak = 60; weak.struct.c2outDim.bd = 2;
-ck = C.compute(E.analyze(weak), weak)['2-8']; assert.strictEqual(ck.ok, false, ck.val);
-const integ = JSON.parse(JSON.stringify(weak)); integ.struct.c2out = 'integral';
-assert.strictEqual(C.compute(E.analyze(integ), integ)['2-8'].ok, true);
-const mom = JSON.parse(JSON.stringify(rh)); mom.req.ext = { Fr: 0, Fa: 0, M: 200 };
-ck = C.compute(E.analyze(mom), mom)['2-8']; assert(ck.c2.sep && ck.c2.sep.S < 1.5 && ck.ok === false, 'moment opens the bolted joint: ' + ck.val);
-console.log('basis band / light-load warning / C2–output flange joint: passed');
+assert.strictEqual(ck.ok, true, ck.val); assert.strictEqual(ck.c2, undefined); assert.strictEqual(ck.fit.outer, undefined);
+console.log('basis band / light-load warning / output bearing inner fit: passed');

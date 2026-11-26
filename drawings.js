@@ -110,69 +110,7 @@
         M.vd.push(at('outBearing.Dw', L.Dw, '롤러 Dw'));
         M.vd[M.vd.length - 1].span = [L.dp / 2 - h, L.dp / 2 + h];
         M.notes.push(`${D.outBearing.name || '크로스 롤러'} · 롤러 ${D.outBearing.Z}개`);
-      } else if (id === 'oflange') {
-        const ro = L.raceIn + .4, ri = L.hollowR + .6, hub = Math.max(L.hollowR + 1.2, L.hubR);
-        circ(ro, { cls: 'ol' }); circ(ri, { cls: 'ol' }); circ(hub, { cls: 'th' });
-        M.front.push({ t: 'h', n: L.sh.boltN, R: L.flangeBoltR, r: L.sh.boltD * .55 }); circ(L.flangeBoltR, { cls: 'cl' });
-        R2(ri, ro, L.zFlange[0], L.zFlange[1]); R2(ri, hub, L.zEnd - .2, L.zFlange[0] + .1);
-        M.fd.push(ref(ro * 2, '외경'), at('geom.oflange.hubD', L.hubR * 2, '허브 외경'), Object.assign(at('geom.oflange.boltPCD', L.flangeBoltR * 2, '볼트 PCD'), { prefix: `${L.sh.boltN}×M${L.sh.boltD} PCD ` }), ref(ri * 2, '내경'));
-        M.ad.push(Object.assign(at('housing.flangeT', L.sh.flangeT, '플랜지 두께'), { z0: L.zFlange[0], z1: L.zFlange[1] }));
-      } else if (id === 'housing') {
-        const pr = P.housingProfile(L); M.sec.push({ pts: pr }); pr.forEach(p => zs.push(p[1]));
-        circ(L.ringOD / 2, { cls: 'ol' }); circ(L.housR, { cls: 'ol' }); circ(L.flangeR, { cls: 'ol' }); circ(L.raceOut, { cls: 'th' });
-        M.front.push({ t: 'h', n: L.sh.boltN, R: L.coverBoltR, r: L.sh.boltD * .42 });
-        M.fd.push(at('geom.housing.flangeD', L.flangeR * 2, '출력부 외경'), ref(L.housR * 2, '몸체 외경'), ref(L.ringOD, '내경 (링 외경)'));
-        M.rd.push(Object.assign(at('housing.wall', L.sh.wall, '벽 두께'), { r0: L.ringOD / 2, r1: L.housR, z: pr[0][1] + 1 }));
-        M.vd.push(ref(L.flangeR * 2, '출력부'), ref(L.housR * 2, '몸체'));
-      } else if (id === 'cover') {
-        const pr = P.coverProfile(L); M.sec.push({ pts: pr }); pr.forEach(p => zs.push(p[1]));
-        const rin = Math.min(...pr.map(p => p[0]));
-        circ(L.housR, { cls: 'ol' }); circ(rin, { cls: 'ol' });
-        M.front.push({ t: 'h', n: L.sh.boltN, R: L.coverBoltR, r: L.sh.boltD * .55 }); circ(L.coverBoltR, { cls: 'cl' });
-        M.fd.push(ref(L.housR * 2, '외경'), Object.assign(at('geom.cover.boltPCD', L.coverBoltR * 2, '볼트 PCD'), { prefix: `${L.sh.boltN}×M${L.sh.boltD} PCD ` }), ref(rin * 2, '내경'));
-        M.ad.push(Object.assign(at('housing.coverT', L.sh.coverT, '두께'), { z0: L.zIn, z1: L.zIn + L.sh.coverT }));
-        if (L.s1on) M.notes.push('1단 썬기어 베어링 보스 포함');
-      } else if (id === 'inshaft') {
-        circ(L.shaftR, { cls: 'ol' }); circ(L.hollowR, { cls: 'ol' });
-        R2(L.hollowR, L.shaftR, L.zIn - L.shaftExt, L.S[0].z0 + L.S[0].b);
-        M.fd.push(at('geom.inshaft.od', L.shaftR * 2, '외경'), at('geom.inshaft.id', L.hollowR * 2, '내경'));
-        M.ad.push(Object.assign(at('geom.inshaft.ext', L.shaftExt, '돌출 길이'), { z0: L.zIn - L.shaftExt, z1: L.zIn }));
-      } else if (id === 'seal') {
-        circ(L.shaftR, { cls: 'ol' }); circ(L.shaftR + L.sealH, { cls: 'ol' });
-        R2(L.shaftR, L.shaftR + L.sealH, 0, L.sealW);
-        M.fd.push(ref(L.shaftR * 2, '내경'), ref((L.shaftR + L.sealH) * 2, '외경'));
-        M.ad.push(at('geom.seal.w', L.sealW, '폭'));
-        M.rd.push(Object.assign(at('geom.seal.h', L.sealH, '반경 높이'), { r0: L.shaftR, r1: L.shaftR + L.sealH }));
-      } else if (id === 'bolts') {
-        const d = L.sh.boltD, len = Math.max(d * 2, L.sh.coverT + d * 1.5);
-        M.axisSec = true;
-        M.front.push({ t: 'p', pts: Array.from({ length: 6 }, (_, k) => [d * .9 * Math.cos(k * Math.PI / 3), d * .9 * Math.sin(k * Math.PI / 3)]), cls: 'ol' });
-        circ(d * .4, { cls: 'ol' });
-        R2(0, d * .8, 0, d * .65); R2(0, d / 2, d * .65, d * .65 + len);
-        M.fd.push(at('housing.boltD', d, '호칭 M'));
-        M.ad.push(Object.assign(ref(len, '길이 (추정)'), { z0: d * .65, z1: d * .65 + len }));
-        M.notes.push(`${L.sh.boltN}개 × ${globalThis.PGD3D.partOn(D, 'cover') ? 2 : 1}곳 (커버·플랜지) · 소켓 렌치 볼트 근사`);
-        M.fd[0].prefix = 'M';
-      } else if (id === 'ocover') {
-        circ(L.raceOut + .2, { cls: 'ol' }); circ(L.ocIR, { cls: 'ol' });
-        R2(L.ocIR, L.raceOut + .2, L.zOC[0], L.zOC[1]);
-        M.fd.push(ref((L.raceOut + .2) * 2, '외경'), at('geom.ocover.id', L.ocIR * 2, '내경'));
-        M.ad.push(at('geom.ocover.t', L.ocT, '두께'));
-      } else if (id === 'oshaft') {
-        circ(L.oshaftR, { cls: 'ol' }); circ(L.oshaftIR, { cls: 'ol' });
-        R2(L.oshaftIR, L.oshaftR, L.zOS[0], L.zOS[1]);
-        M.fd.push(at('geom.oshaft.od', L.oshaftR * 2, '외경'), at('geom.oshaft.id', L.oshaftIR * 2, '내경'));
-        M.ad.push(ref(L.zOS[1] - L.zOS[0], '길이 (S2 ~ 출력면)'));
-      } else if (id === 'brgS1' || id === 'brgS2') {
-        const one = id === 'brgS1', ri = one ? L.shaftR : L.oshaftR, h = one ? L.b1h : L.sunBoreR - L.oshaftR, w = one ? L.b1w : L.b2w;
-        const rm = ri + h / 2, d = Math.min(h * .55, w * .7);
-        circ(ri, { cls: 'ol' }); circ(ri + h, { cls: 'ol' }); circ(rm - d * .35, { cls: 'th' }); circ(rm + d * .35, { cls: 'th' });
-        R2(ri, rm - d * .35, 0, w); R2(rm + d * .35, ri + h, 0, w);
-        M.sec.push({ circle: [rm, w / 2, d / 2], cls: 'roll' });
-        M.fd.push(ref(ri * 2, one ? '내경 (입력축)' : '내경 (출력 중공축)'), ref((ri + h) * 2, one ? '외경 (커버 보스)' : '외경 (S2 보어)'));
-        M.ad.push(at(`geom.${id}.w`, w, '폭'));
-        M.rd.push(Object.assign(at(`geom.${id}.h`, h, '단면 높이'), { r0: ri, r1: ri + h }));
-        M.notes.push(one ? '입력축(S1) 지지 · 입력단 커버 보스에 장착' : 'S2 지지 · 출력단 중공축 위에 장착');
+      // 출력 플랜지 · 하우징 · 커버 · 중공축 · 오일 실 · 볼트 · 썬 베어링 도면: 삭제 (BOM-1)
       }
     }
     // normalise section z to start at 0

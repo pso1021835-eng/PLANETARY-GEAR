@@ -19,27 +19,19 @@ const appCompute = d => {
   E.syncDutyTorque(d); C.ensure(d); C.applyNeedles(d); return E.analyze(d);
 };
 
-// ---------------------------------------------------------------- 1. shared ring joint: signed sum of stage reactions
+// ---------------------------------------------------------------- 1. shared ring reaction: signed sum of stage reactions
+// (링–하우징 결합 계산은 BOM-1 2026-11-26 에서 삭제 — 반력 계산만 유지)
 {
-  const run = (Tpeak, shared, type) => { const d = prep(E.templateDesign()); Object.assign(d.req, { Tpeak }); d.config.sharedRing = shared; d.struct.ringHousing = type; d.struct.ringFit.mu = .17; const R = appCompute(d); assert.deepEqual(R.errors, []); return { R, d, o: C.compute(R, d) }; };
-  const { R, o } = run(28, true, 'press');
+  const run = (Tpeak, shared) => { const d = prep(E.templateDesign()); Object.assign(d.req, { Tpeak }); d.config.sharedRing = shared; const R = appCompute(d); assert.deepEqual(R.errors, []); return { R, d, RR: C.ringReaction(R, d, Tpeak) }; };
+  const { R, RR } = run(28, true);
   near(R.ratio, 9, 1e-9, '3:1 × 3:1');
-  const RR = o['8-2'].RR, J = o['8-2'].J;
   near(RR.stages[0].ring, 6.2222, 1e-3, '1단 링 반력'); near(RR.stages[1].ring, 18.6667, 1e-3, '2단 링 반력');
-  near(J[0].T, 24.8889, 1e-3, '공용부 합계'); near(J[0].need, 37.3333, 1e-3, '요구 토크 1.5×|합|');
-  near(J[0].Tcap, 32.11, .01, '압입 전달능력');
-  assert.equal(o['8-2'].ok, false); assert.equal(o['2-4'].ok, false);
-  assert.match(o['8-2'].val, /전달 32\.11 < 37\.33 N·m 미달/);
-  // bolt uses the same reaction
-  const b = run(28, true, 'bolt'); near(b.o['8-2'].J[0].need, 37.3333, 1e-3, '볼트도 같은 반력');
-  // reversed torque: signs flip, magnitude and verdict stay
-  const r = run(-28, true, 'press'); near(r.o['8-2'].RR.stages[0].ring, -6.2222, 1e-3, '역토크 1단'); near(r.o['8-2'].J[0].T, -24.8889, 1e-3, '역토크 합계');
-  assert.equal(r.o['8-2'].ok, false); near(r.o['8-2'].J[0].need, 37.3333, 1e-3, '역토크 요구');
-  // separate rings: each ring against its own joint
-  const s = run(28, false, 'press'); assert.equal(s.o['8-2'].J.length, 2);
-  near(s.o['8-2'].J[0].need, 9.3333, 1e-3, 'R1 요구'); near(s.o['8-2'].J[1].need, 28, 1e-3, 'R2 요구');
-  assert.equal(s.o['8-2'].J.every(j => !j.shared), true);
-  console.log('1 shared ring joint: 6.22 + 18.67 → 37.33 > 32.11 미달, bolt/press same reaction, reversal, separate rings — passed');
+  near(RR.groups[0].T, 24.8889, 1e-3, '공용부 합계'); near(RR.groups[0].need, 37.3333, 1e-3, '요구 토크 1.5×|합|');
+  const r = run(-28, true).RR; near(r.stages[0].ring, -6.2222, 1e-3, '역토크 1단'); near(r.groups[0].T, -24.8889, 1e-3, '역토크 합계'); near(r.groups[0].need, 37.3333, 1e-3, '역토크 요구');
+  const s = run(28, false).RR; assert.equal(s.groups.length, 2);
+  near(s.groups[0].need, 9.3333, 1e-3, 'R1 요구'); near(s.groups[1].need, 28, 1e-3, 'R2 요구');
+  const o = C.compute(R, run(28, true).d); assert.equal(o['8-2'], undefined); assert.equal(o['2-4'], undefined); assert.equal(o['8-3'], undefined);
+  console.log('1 shared ring reaction: 6.22 + 18.67 → 37.33, reversal, separate rings; ring–housing joint items removed — passed');
 }
 
 // ---------------------------------------------------------------- 2. one tooth form for the shared ring

@@ -29,7 +29,7 @@ for (const n of ['ISO + Kγ 모델', 'ISO + Kγ 1.0']) {
 console.log('\n입력 한 개씩 변경 (ISO + Kγ 모델 기준):');
 const base = res['ISO + Kγ 모델'].T;
 for (const [n, f] of [['Kγ 1.0 고정', D => { D.loads.kgMode = 'fixed'; D.loads.kgFixed = 1; }], ['유성 위치오차 5 → 0 µm', D => { D.loads.posError = 0; }],
-  ['썬 지지 강성 × 0.1', D => D.loads.sunSupport.forEach(s => { s.k *= .1; s.bearingK *= .1; })], ['정밀도 7 → 5급', D => D.stages.forEach(s => { s.grade = 5; })],
+  ['정밀도 7 → 5급', D => D.stages.forEach(s => { s.grade = 5; })],
   ['캐리어 평행도 10 → 0 µm', D => { D.loads.carrierParallel = 0; }], ['rpm 1000 → 100', D => { D.req.rpm = 100; }], ['수명 5000 → 500 h', D => { D.req.lifeH = 500; }]]) {
   const T = run(mk('iso', 'model', f)).T; console.log(`  ${n.padEnd(22)} ${base.toFixed(3)} → ${T.toFixed(3)} N·m (×${(T / base).toFixed(2)})`);
 }

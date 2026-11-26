@@ -12,7 +12,7 @@ const Rc = require('./recommend.js');
   const ok = Rc.runSync(base, spec, E, globalThis.PGD3D.layout).res.filter(r => r.ok);
   assert.ok(ok.length > 0, 'Ø100 × 50 후보 없음');
   assert.ok(ok.every(r => r.OD <= 100.05 && r.H <= 50.05), '외형 한계');
-  assert.ok(ok.every(r => r.D.outBearing.maker && r.D.outBearing.D <= 100 - 2 * (r.D.housing.wall + 1.5)), '카탈로그 출력 베어링');
+  assert.ok(ok.every(r => r.D.outBearing.maker && r.D.outBearing.D <= 100 && r.D.housing === undefined), '카탈로그 출력 베어링');
   assert.ok(ok[0].cap >= 50, `1위 허용 토크 ${ok[0].cap}`);
   console.log(`compact recommend: Ø100 × 50 → ${ok.length}개 적합, 1위 ${ok[0].type} ${ok[0].stages.map(s => `m${s.m} ${s.s}/${s.p}/${s.R}×${s.n}`).join(' + ')} ${ok[0].cap.toFixed(1)} N·m · ${ok[0].D.outBearing.name} · 축방향 a ${ok[0].cand.axial}`);
 }

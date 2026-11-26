@@ -43,8 +43,7 @@
     for (const x of ev.fails) {
       const v = x.v;
       if (x.id === 'v' && Number.isFinite(v.value) && v.target > 0) d += Math.max(0, 1 - v.value / v.target);
-      else if (x.id === '8-3' && v.Tcap != null) d += Math.max(0, 1 - v.Tcap / (1.5 * D.req.Tpeak));
-      else if (x.id === '2-8' && v.c2 && v.c2.Tcap != null) d += Math.max(0, 1 - v.c2.Tcap / v.c2.need) + (v.c2.sep ? Math.max(0, 1 - v.c2.sep.S / 1.5) : 0) + (v.fit && v.fit.status === 'fail' ? 1 : 0);
+      else if (x.id === '2-8' && v.fit) d += v.fit.status === 'fail' ? 1 : 0;
       else if (x.id === '1-6' && v.Dout != null) d += Math.max(0, (v.Dout - D.req.Dmax) / D.req.Dmax) + Math.max(0, (v.Lt - D.req.Lmax) / D.req.Lmax);
       else if (x.id === '3-8' && ev.R && ev.R.ctx) d += ev.R.ctx.stages.reduce((a, st) => { const eb = st.geo.meshes[0].eb; return a + (eb > 0 && eb < 1 ? 1 - eb : 0); }, 0);
       else d += 1;
@@ -59,8 +58,9 @@
     if ((ev.advice || []).some(x => x.id === '5-4')) d += Math.max(0, Math.max(...ev.R.rated.rows.map(r => r.f.KHb)) - 2);
     return d;
   }
+  // BOM-1: 외경·길이 = 링 외경 · 출력 베어링 기준 (하우징·커버·플랜지 삭제)
   function envelope(layout, ev, D) {
-    try { const L = layout(ev.R, D), OD = 2 * Math.max(L.housR, L.flangeR), Ln = (L.zFlange[1] + .4) - L.zIn; return { OD, L: Ln, ok: OD <= D.req.Dmax + .05 && Ln <= D.req.Lmax + .05 }; }
+    try { const L = layout(ev.R, D), OD = 2 * Math.max(L.housR, L.flangeR), Ln = L.zFlange[1] - L.zIn; return { OD, L: Ln, ok: OD <= D.req.Dmax + .05 && Ln <= D.req.Lmax + .05 }; }
     catch (e) { return { OD: Infinity, L: Infinity, ok: false }; }
   }
   const massOf = (PG, ev, D) => { try { return PG.partsList(ev.R, D).reduce((s, p) => s + (p.mass || 0) * (p.qty || 1), 0); } catch (e) { return Infinity; } };
@@ -69,7 +69,6 @@
   const JOINT_ORDER = {
     c1s2: [['spline', '스플라인'], ['pin', '다웰 핀 + 파일럿'], ['key', '키'], ['press', '압입'], ['integral', '일체 (C1·S2 한 부품)']],
     s1motor: [['key', '키'], ['clamp', '클램프'], ['spline', '스플라인'], ['flange', '볼트 플랜지'], ['integral', '모터축 일체']],
-    ringHousing: [['press', '압입'], ['bolt', '볼트'], ['integral', '일체 (강 하우징)']],
   };
   function actions(D, ev) {
     const out = [], CK = ev.CK, R = ev.R, A = (key, why, basis, fn) => out.push({ key, why, basis, fn });
@@ -105,22 +104,9 @@
     });
     // KHβ (5-4) 과대: 치폭 −1 mm
     if (!ev.n && (ev.advice || []).some(x => x.id === '5-4')) D.stages.forEach((s, j) => { if (s.b - 1 >= 3) A(`${j + 1}단 치폭 −1 mm (KHβ)`, '5-4 KHβ > 2', 'ISO 6336-1 KHβ (폭/지름 비) · §6', () => { const w = s.b; s.b = +(w - 1).toFixed(1); return `${w} → ${s.b} mm`; }); });
-    // 하우징–상대 체결 볼트 (8-3)
-    if (isFail(CK['8-3'])) {
-      const h = D.housing, grid = [[3, 6], [3, 8], [4, 6], [4, 8], [5, 6], [5, 8], [6, 8], [6, 12], [8, 8], [8, 12]];
-      const cur = grid.findIndex(([d, k]) => d === h.boltD && k === h.boltN), nx = grid[cur + 1] || (cur < 0 ? grid[0] : null);
-      if (nx) A('출력 체결 볼트 한 단계 ↑', '8-3 마찰 전달 부족', 'VDI 2230 마찰 전달 ≥ 피크 × 1.5', () => { const w = `M${h.boltD}×${h.boltN}`; h.boltD = nx[0]; h.boltN = nx[1]; return `${w} → M${h.boltD}×${h.boltN}`; });
-    }
-    // C2–출력 플랜지 · 출력 베어링 결합 (2-8)
+    // 출력 베어링 내륜–보스 결합 (2-8)
     const c28 = CK['2-8'];
-    if (c28 && c28.c2) {
-      const c2 = c28.c2, x = D.struct.c2outDim, grid = [[3, 6], [3, 8], [4, 8], [4, 12], [5, 12], [6, 12]], cur = x ? grid.findIndex(([d, k]) => d === x.bd && k === x.n) : -1, nx = grid[cur + 1];
-      if ((c2.Tcap != null && c2.Tcap < c2.need) || (c2.sep && c2.sep.S < 1.5)) {
-        if (nx && x) A('C2–출력 플랜지 볼트 한 단계 ↑', '2-8 전달·벌어짐 부족', 'VDI 2230 · 피크 × 1.5 · 벌어짐 여유 ≥ 1.5', () => { const w = `M${x.bd}×${x.n}`; x.bd = nx[0]; x.n = nx[1]; return `${w} → M${x.bd}×${x.n}`; });
-        A('C2–출력 플랜지 일체', '2-8 볼트 결합 전달 부족', '결합 카탈로그 J10 다음 경우 (일체)', () => { const w = D.struct.c2out; D.struct.c2out = 'integral'; return `${w} → integral`; });
-      }
-    }
-    if (c28 && c28.fit) for (const g of [c28.fit.inner, c28.fit.outer]) for (const ch of g.checks) {
+    if (c28 && c28.fit) for (const g of [c28.fit.inner]) for (const ch of g.checks) {
       // 잠금은 사용자가 고정한 값(D.meta.locked)만 — 추천 엔진이 채운 값은 자동값으로 본다
       if (!['input', 'fail'].includes(ch.status) || !ch.fix || ch.key === 'fit' || locked(ch.fix.path)) continue;
       A(`출력 베어링 결합 · ${ch.label}`, ch.note, '베어링 치수에 맞춤 (자동값만) · ISO 286 · F-1', () => `${ch.fix.path} ${set(ch.fix.path, ch.fix.value) ?? '자동'} → ${ch.fix.value}`);
@@ -131,17 +117,11 @@
         if (mg[si] > 1.05 && D.stages[si].b - d >= 3 && !locked(`stages.${si}.b`)) A(`보스 연장 + ${si + 1}단 치폭 −${d} mm`, `${ch.note} · 길이 한계 안에서`, `강도 여유가 가장 큰 단 (최소 안전율 비 ${fx(mg[si], 2)}) · ISO 6336 · §6`, () => { set(ch.fix.path, ch.fix.value); const w = D.stages[si].b; D.stages[si].b = +(w - d).toFixed(1); return `${ch.fix.path} → ${ch.fix.value} · ${si + 1}단 b ${w} → ${D.stages[si].b} mm`; });
       }
     }
-    // 결합 형식 (2-4 · 2-5 · 2-6 · 8-2): 결합 카탈로그 다음 경우
-    for (const [id, key, name] of [['2-5', 'c1s2', 'C1–S2 결합'], ['2-6', 's1motor', 'S1–모터축 결합'], ['2-4', 'ringHousing', '링–하우징 결합'], ['8-2', 'ringHousing', '링–하우징 결합']]) {
+    // 결합 형식 (2-5 · 2-6): 결합 카탈로그 다음 경우
+    for (const [id, key, name] of [['2-5', 'c1s2', 'C1–S2 결합'], ['2-6', 's1motor', 'S1–모터축 결합']]) {
       if (!isFail(CK[id]) || out.some(o => o.key.startsWith(name))) continue;
       const order = JOINT_ORDER[key], cur = order.findIndex(([v]) => v === D.struct[key]);
       order.slice(cur + 1).forEach(([v, label]) => A(`${name} → ${label}`, `${id} 전달 부족`, '결합 카탈로그 · 전달 ≥ 1.5 × 피크', () => { const w = D.struct[key]; D.struct[key] = v; return `${w} → ${v}`; }));
-    }
-    // 외경·길이 (1-6): 커버·플랜지·벽을 가공 최소 2 mm까지
-    if (isFail(CK['1-6']) && CK['1-6'].Dout != null) {
-      const h = D.housing, oL = CK['1-6'].Lt - D.req.Lmax, oD = CK['1-6'].Dout - D.req.Dmax;
-      if (oL > 0) for (const k of ['coverT', 'flangeT']) if (h[k] > 2) A(`하우징 ${k === 'coverT' ? '커버' : '플랜지'} 두께 ↓`, `길이 ${fx(CK['1-6'].Lt, 1)} > ${D.req.Lmax} mm`, '가공 최소 2 mm · §6 외경·길이', () => { const w = h[k]; h[k] = +Math.max(2, h[k] - Math.ceil(oL * 2) / 2).toFixed(1); return `${w} → ${h[k]} mm`; });
-      if (oD > 0 && h.wall > 2) A('하우징 벽 두께 ↓', `외경 ${fx(CK['1-6'].Dout, 1)} > ${D.req.Dmax} mm`, '가공 최소 2 mm · §6 외경·길이', () => { const w = h.wall; h.wall = +Math.max(2, h.wall - Math.ceil(oD) / 2).toFixed(1); return `${w} → ${h.wall} mm`; });
     }
     return out;
   }
@@ -170,9 +150,9 @@
   function structure(D, log, tag) {
     const two = D.stages.length > 1, add = (key, value, why, basis) => log.push({ kind: '구조', key, value, why, basis, cand: tag });
     D.config.floatingSun = false; add('썬 지지', '베어링으로 동심 지지 (플로팅 없음)', '유성 하중분배를 계산 가능한 상태로 둔다', RULE.src.float);
-    if (two) { D.struct.c1Support = 'nested'; add('2단 썬 지지', 'S1 보어 · C2 보어 베어링 양측', 'C1 지지가 없으면 2단 썬이 사실상 플로팅', RULE.src.float); }
+    if (two) { D.struct.c1Support = 'nested'; add('2단 썬 지지', 'S2 양측 지지 (지지 베어링 부품은 범위 밖)', 'C1 지지가 없으면 2단 썬이 사실상 플로팅', RULE.src.float); }
     D.struct.obPos = 'outside'; add('출력 베어링 위치', '2단 출력측 바깥', '외부 모멘트가 치합 정렬(KHβ)에 주는 영향 감소', 'ISO 6336-1 KHβ');
-    D.struct.obFit = { inner: null, outer: null }; add('출력 베어링 끼워맞춤', '보스 h7 · 하우징 H7', '내륜 회전 · 외륜 고정', RULE.src.fit);
+    D.struct.obFit = { inner: null }; add('출력 베어링 끼워맞춤', '보스 h7', '내륜 회전 (외륜 고정부는 범위 밖)', RULE.src.fit);
     D.stages.forEach(s => { s.grade = RULE.grade; }); add('정밀도', `${RULE.grade}급`, '호브 + 이온질화 후 5~6급 중 보수 쪽', RULE.src.grade);
     add('판정 기준', `${RULE.basis === 'ideal' ? '이론 (오차 0, 옵션)' : 'ISO 6336:2019 (KISSsoft 방식)'} · SH ≥ 1.0 · SF ≥ 1.4`, '사용자 결정 AD-1 · SF-1', `${RULE.src.basis} · ${RULE.src.margin}`);
   }

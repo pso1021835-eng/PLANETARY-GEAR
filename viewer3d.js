@@ -281,14 +281,8 @@
   // optional parts: shown/hidden (on) and dimension lock (lock); strength calculations are unchanged
   const OPTIONS = [
     { key: 'pin', label: '유성핀', parts: ['pin1', 'pin2'] },
-    { key: 'cover', label: '입력단 커버', parts: ['cover'] },
-    { key: 'ocover', label: '출력단 커버', parts: ['ocover'] },
-    { key: 'oshaft', label: '출력단 중공축', parts: ['oshaft'] },
-    { key: 'housing', label: '하우징', parts: ['housing'] },
     { key: 'pbrg', label: '유성 베어링', parts: ['needle1', 'needle2'] },
-    { key: 'obrg', label: '출력 베어링', parts: ['xroller'] },
-    { key: 's2brg', label: '2단 썬기어 베어링', parts: ['brgS2'] },
-    { key: 's1brg', label: '1단 썬기어 베어링', parts: ['brgS1'] }
+    { key: 'obrg', label: '출력 베어링', parts: ['xroller'] }
   ];
   const optOf = id => OPTIONS.find(o => o.parts.includes(id));
   const optOn = (D, key) => D.options?.[key]?.on !== false;
@@ -302,7 +296,9 @@
   };
 
   function layout(R, D) {
-    const stages = R.ctx.stages, sh = Object.assign({ wall: 3, coverT: 4, boltN: 8, boltD: 3, flangeT: 5 }, D.housing || {});
+    // 하우징 · 커버 · 출력 플랜지 · 입력/출력 중공축 · 썬 베어링 · 오일 실 · 볼트는 사이트 범위에서 삭제 (사용자 결정 2026-11-26 BOM-1).
+    // 외형(외경 · 길이)은 링기어와 출력 베어링으로만 정한다. 아래 값은 0 두께로 남겨 다른 계산이 깨지지 않게 한다.
+    const stages = R.ctx.stages, sh = { wall: 0, coverT: 0, boltN: 0, boltD: 0, flangeT: 0 };
     const G = D.geom || {}, auto = {};
     // dimension override: D.geom[part][key] (mm, diameters as diameters); auto values are kept for the input panel
     const ov = (part, key, a) => { (auto[part] ||= {})[key] = a; const v = G[part]?.[key]; return Number.isFinite(v) && v > 0 ? v : a; };
@@ -324,45 +320,28 @@
     const dp = ob.dp || (cat ? (ob.d + ob.D) / 2 : 60), Dw = ob.Dw || 4, Bw = ov('xroller', 'width', cat ? ob.B : Dw * 1.5);
     const raceIn = cat ? ob.d / 2 : dp / 2 - Dw * 1.1, raceOut = cat ? ob.D / 2 : dp / 2 + Dw * 1.1;
     const zBear = [z + .6, z + .6 + Bw];
-    const zFlange = [zBear[1] + .2, zBear[1] + .2 + sh.flangeT];
+    const zFlange = [zBear[1], zBear[1]];
     const ringOD = Math.max(...S.map(x => x.ringOD || 0));
-    const hollowR = ov('inshaft', 'id', 2 * Math.max(1, (S[0].sunBore || 6) / 2 - 1.8)) / 2;
-    const shaftR = Math.max(hollowR + .4, ov('inshaft', 'od', 2 * (hollowR + 2.2)) / 2), shaftExt = ov('inshaft', 'ext', 9);
-    const sealW = ov('seal', 'w', 2.3), sealH = ov('seal', 'h', 2.6);
-    const housR = ringOD / 2 + sh.wall, flangeR = ov('housing', 'flangeD', 2 * (raceOut + sh.wall + 1.5)) / 2;
-    const hubR = ov('oflange', 'hubD', 2 * Math.min(raceIn + .4, S[S.length - 1].plateR)) / 2;
-    const coverBoltR = ov('cover', 'boltPCD', 2 * ((shaftR + sealH + housR) / 2 + .5)) / 2;
-    const flangeBoltR = ov('oflange', 'boltPCD', 2 * ((hollowR + raceIn) / 2 + 1)) / 2;
+    // 중공 = 썬 보어로 통과 (입력 중공축 삭제)
+    const hollowR = Math.max(.5, Math.min(...S.map(x => (x.sunBore || 0) / 2)));
+    const shaftR = hollowR, shaftExt = 0, sealW = 0, sealH = 0;
+    const housR = ringOD / 2, flangeR = raceOut, hubR = Math.min(raceIn, S[S.length - 1].plateR), coverBoltR = 0, flangeBoltR = 0;
     // 1단 썬기어 베어링: between input shaft and a boss on the input cover
-    const s1on = optOn(D, 's1brg'), b1w = ov('brgS1', 'w', 4), b1h = ov('brgS1', 'h', 3);
-    const zIn = S[0].carrier.axial[0] - .6 - (s1on ? b1w + .4 : 0) - sh.coverT;
-    const zB1 = [zIn + sh.coverT, zIn + sh.coverT + b1w];
+    const s1on = false, b1w = 0, b1h = 0;
+    const zIn = S[0].carrier.axial[0];
+    const zB1 = [zIn, zIn];
     // 출력단 중공축 (rides with the output) and 2단 썬기어 베어링 between it and the last sun bore
     const last = S[S.length - 1], sunBoreR = Math.max(1, (last.sunBore || 2 * (hollowR + 3)) / 2);
-    const s2on = optOn(D, 's2brg') && S.length > 1, b2h = ov('brgS2', 'h', 2.5), b2w = ov('brgS2', 'w', Math.min(last.b, 4));
-    const oshaftR = ov('oshaft', 'od', 2 * Math.max(.8, sunBoreR - (s2on ? b2h : .4))) / 2;
-    const oshaftIR = ov('oshaft', 'id', 2 * Math.max(.4, Math.min(hollowR, oshaftR - 1))) / 2;
+    const s2on = false, b2h = 0, b2w = 0, oshaftR = 0, oshaftIR = 0;
     const zOS = [last.z0 - (S.length > 1 ? .2 : 0), zFlange[1]];
     const zB2 = [last.z0 + (last.b - b2w) / 2, last.z0 + (last.b + b2w) / 2];
     // 출력단 커버: retainer ring over the outer race on the output face
-    const ocT = ov('ocover', 't', 1.5), ocIR = ov('ocover', 'id', 2 * (dp / 2 - Dw * .2)) / 2;
+    const ocT = 0, ocIR = 0;
     const zOC = [zBear[1] + .15, zBear[1] + .15 + ocT];
     return { S, zStart, gearEnd, zEnd: z, ob, cat, dp, Dw, Bw, raceIn, raceOut, zBear, zFlange, ringOD, hollowR, shaftR, shaftExt, sealW, sealH, housR, flangeR, hubR, coverBoltR, flangeBoltR, zIn, sh, auto,
       s1on, b1w, b1h, zB1, s2on, b2h, b2w, zB2, sunBoreR, oshaftR, oshaftIR, zOS, ocT, ocIR, zOC, shared: !!(D.config.sharedRing && S.length > 1) };
   }
-  // housing revolve profile (r, z) shared by 3D and drawings
-  function housingProfile(L) {
-    const zA = L.zIn + L.sh.coverT, zF0 = L.zBear[0] - .2, zF1 = L.zFlange[1] + .4;
-    const ch = .5, hr = L.housR, fr = L.flangeR, ri = L.ringOD / 2, ro = L.raceOut;
-    return [[ri, zA], [hr - ch, zA], [hr, zA + ch], [hr, zF0 - 2], [fr - ch, zF0 - 2], [fr, zF0 - 2 + ch], [fr, zF1 - ch], [fr - ch, zF1], [ro, zF1], [ro, zF0], [ri, zF0 - 2], [ri, zA]];
-  }
-  // input cover profile, with a bearing boss when the 1단 썬기어 베어링 is on
-  function coverProfile(L) {
-    const zA = L.zIn + L.sh.coverT, r0 = L.s1on ? L.shaftR + L.b1h : L.shaftR + L.sealH, hr = L.housR, c = .4;
-    if (!L.s1on) return [[r0 + c, L.zIn], [hr - c, L.zIn], [hr, L.zIn + c], [hr, zA], [r0, zA], [r0, L.zIn + c], [r0 + c, L.zIn]];
-    const rb = r0 + 1.6;
-    return [[L.shaftR + L.sealH + c, L.zIn], [hr - c, L.zIn], [hr, L.zIn + c], [hr, zA], [rb, zA], [rb, L.zB1[1]], [r0, L.zB1[1]], [r0, L.zIn + L.sealW + .2], [L.shaftR + L.sealH, L.zIn + L.sealW + .2], [L.shaftR + L.sealH, L.zIn + c], [L.shaftR + L.sealH + c, L.zIn]];
-  }
+
 
   // parts list for BOM (also used for picking names); masses are geometric estimates
   function partsList(R, D) {
@@ -397,17 +376,7 @@
     out.push({ id: 'xroller', name: `출력베어링 (${D.outBearing.name})`, qty: 1, material: '베어링강', heat: '담금질', step: 's9',
       mass: L.cat && D.outBearing.mass > 0 ? D.outBearing.mass : annulusMass(L.raceIn, L.raceOut, L.Bw, STEEL) * .8,
       verdict: { ok: ob.L10h >= D.req.lifeH && ob.governing.s0 >= D.req.s0 && (!roll || roll.governing.s0 >= D.req.s0), text: `s0 ${fmt(roll ? roll.governing.s0 : ob.governing.s0, 2)}` } });
-    out.push({ id: 'oflange', name: '출력 플랜지 (C2 결합)', qty: 1, material: 'S45C', heat: '조질', step: 'shous', mass: annulusMass(L.hollowR + .6, L.raceIn + .4, L.sh.flangeT, STEEL) + annulusMass(L.hollowR + .6, L.hubR, L.zFlange[0] - L.zEnd, STEEL) });
-    out.push({ id: 'housing', name: '하우징', qty: 1, material: 'AL6061-T6', heat: '흑색 아노다이징', step: 'shous',
-      mass: annulusMass(L.ringOD / 2, L.housR, L.zBear[0] - L.zIn, ALU) + annulusMass(L.raceOut, L.flangeR, L.zFlange[1] - L.zBear[0], ALU) });
-    out.push({ id: 'cover', name: '입력단 커버', qty: 1, material: 'AL6061-T6', heat: '흑색 아노다이징', step: 'shous', mass: annulusMass(L.shaftR + L.sealH, L.housR, L.sh.coverT, ALU) });
-    out.push({ id: 'inshaft', name: '입력 중공축', qty: 1, material: 'S45C', heat: '조질', step: 's7', mass: annulusMass(L.hollowR, L.shaftR, L.S[0].b + L.shaftExt + L.sh.coverT + 5, STEEL) });
-    out.push({ id: 'ocover', name: '출력단 커버', qty: 1, material: 'AL6061-T6', heat: '흑색 아노다이징', step: 'shous', mass: annulusMass(L.ocIR, L.raceOut + .2, L.ocT, ALU) });
-    out.push({ id: 'oshaft', name: '출력단 중공축', qty: 1, material: 'S45C', heat: '조질', step: 'shous', mass: annulusMass(L.oshaftIR, L.oshaftR, L.zOS[1] - L.zOS[0], STEEL) });
-    out.push({ id: 'brgS1', name: '1단 썬기어 베어링', qty: 1, material: '베어링강', heat: '—', step: 'shous', mass: annulusMass(L.shaftR, L.shaftR + L.b1h, L.b1w, STEEL) * .6 });
-    if (L.S.length > 1) out.push({ id: 'brgS2', name: '2단 썬기어 베어링', qty: 1, material: '베어링강', heat: '—', step: 'shous', mass: annulusMass(L.oshaftR, L.sunBoreR, L.b2w, STEEL) * .6 });
-    out.push({ id: 'seal', name: '오일 실', qty: 2, material: 'NBR', heat: '—', step: 'shous', mass: .002 });
-    out.push({ id: 'bolts', name: `볼트 M${L.sh.boltD}`, qty: L.sh.boltN * (partOn(D, 'cover') ? 2 : 1), material: 'SCM435', heat: '흑착색 12.9', step: 'shous', mass: Math.PI / 4 * L.sh.boltD ** 2 * 10 * STEEL });
+    // 출력 플랜지 · 하우징 · 커버 · 중공축 · 썬 베어링 · 오일 실 · 볼트: 삭제 (BOM-1)
     const shown = out.filter(p => partOn(D, p.id));
     shown.forEach((p, i) => { p.no = i + 1; const o = optOf(p.id); p.option = o?.key || null; p.locked = partLocked(D, p.id); });
     return shown;
@@ -622,44 +591,9 @@
     let outRot = null, cage = null, inRot = null;
     // 3D 종합판정(가공 부품만)에서도 카탈로그에서 고른 출력 베어링은 구매 부품으로 표시
     if (full && !extras && L.cat && partOn(D, 'xroller')) { outRot = new TH.Group(); root.add(outRot); cage = new TH.Group(); root.add(cage); drawXroller(outRot, root, cage); }
-    if (extras) {
-      const sh = L.sh;
-      if (partOn(D, 'housing')) add(new TH.Mesh(lathe(housingProfile(L), 128), mkMat('housing')), 'housing', root, 0, 0);
-      if (partOn(D, 'cover')) add(new TH.Mesh(lathe(coverProfile(L), 128), mkMat('housing')), 'cover', root, 3, -unit * 3.2);
-      const ballBearing = (ri, ro, z0, z1, parent, id, dz) => {
-        const g = new TH.Group(), h = ro - ri, rm = (ri + ro) / 2, d = Math.min(h * .55, (z1 - z0) * .7);
-        g.add(new TH.Mesh(ringSolid(ri, rm - d * .35, z0, z1, .2), mkMat('race')), new TH.Mesh(ringSolid(rm + d * .35, ro, z0, z1, .2), mkMat('race')));
-        const nb = Math.max(6, Math.floor(2 * Math.PI * rm / (d * 1.25))), im = new TH.InstancedMesh(new TH.SphereGeometry(d / 2, 14, 10), mkMat('roller'), nb), mm = new TH.Matrix4();
-        for (let j = 0; j < nb; j++) { const a = 2 * Math.PI * j / nb; mm.makeTranslation(rm * Math.cos(a), rm * Math.sin(a), (z0 + z1) / 2); im.setMatrixAt(j, mm); }
-        im.frustumCulled = false; g.add(im); add(g, id, parent, 3, dz);
-      };
-      // input hollow shaft + stage-1 sun ride together
-      inRot = new TH.Group(); root.add(inRot);
-      const shaft = new TH.Mesh(ringSolid(L.hollowR, L.shaftR, L.zIn - L.shaftExt, L.S[0].z0 + L.S[0].b, .4), mkMat('shaft'));
-      add(shaft, 'inshaft', inRot, 4, -unit * 4.2);
-      if (L.s1on) ballBearing(L.shaftR, L.shaftR + L.b1h, L.zB1[0], L.zB1[1], root, 'brgS1', -unit * 3.4);
-      const sealMat = mkMat('seal');
-      add(new TH.Mesh(ringSolid(L.shaftR, L.shaftR + L.sealH, L.zIn - .1, L.zIn - .1 + L.sealW, .3), sealMat), 'seal', root, 3, -unit * 3.6);
-      // output: cross roller races + rollers (cage at half speed) + flange
-      outRot = new TH.Group(); root.add(outRot);
-      const obOn = partOn(D, 'xroller');
-      if (partOn(D, 'oshaft')) add(new TH.Mesh(ringSolid(L.oshaftIR, L.oshaftR, L.zOS[0], L.zOS[1], .3), mkMat('shaft')), 'oshaft', outRot, 4, unit * 4.2);
-      if (L.s2on && L.sunBoreR - L.oshaftR > .5) ballBearing(L.oshaftR, L.sunBoreR, L.zB2[0], L.zB2[1], root, 'brgS2', unit * 1.9);
-      if (partOn(D, 'ocover')) add(new TH.Mesh(ringSolid(L.ocIR, L.raceOut + .2, L.zOC[0], L.zOC[1], .3), mkMat('housing')), 'ocover', root, 3, unit * 3.0);
-      cage = new TH.Group(); root.add(cage); if (obOn) drawXroller(outRot, root, cage);
-      const flange = new TH.Mesh(ringSolid(L.hollowR + .6, L.raceIn + .4, L.zFlange[0], L.zFlange[1], .5), mkMat('flange'));
-      const hub = new TH.Mesh(ringSolid(L.hollowR + .6, Math.max(L.hollowR + 1.2, L.hubR), L.zEnd - .2, L.zFlange[0] + .1, .4), flange.material);
-      add(flange, 'oflange', outRot, 4, unit * 3.6); add(hub, 'oflange', outRot, 4, unit * 3.6);
-      // bolts: cover ring + output flange ring (instanced hex heads)
-      const boltMat = mkMat('bolt'), bd = sh.boltD;
-      const head = new TH.CylinderGeometry(bd * .85, bd * .85, bd * .7, 6).rotateX(Math.PI / 2);
-      const mkBolts = (n, R0, z0, parent, dz) => {
-        const im = new TH.InstancedMesh(head, boltMat, n), mm = new TH.Matrix4(); im.frustumCulled = false;
-        for (let j = 0; j < n; j++) { const ang = 2 * Math.PI * (j + .5) / n; mm.makeRotationZ(ang); mm.setPosition(R0 * Math.cos(ang), R0 * Math.sin(ang), z0); im.setMatrixAt(j, mm); }
-        add(im, 'bolts', parent, 4, dz);
-      };
-      if (partOn(D, 'cover')) mkBolts(sh.boltN, L.coverBoltR, L.zIn - bd * .35, root, -unit * 3.2);
-      mkBolts(sh.boltN, L.flangeBoltR, L.zFlange[1] + bd * .35, outRot, unit * 3.6);
+    if (extras) {   // 하우징 · 커버 · 중공축 · 썬 베어링 · 오일 실 · 플랜지 · 볼트 삭제 (BOM-1) — 출력 베어링만
+      outRot = new TH.Group(); root.add(outRot); cage = new TH.Group(); root.add(cage);
+      if (partOn(D, 'xroller')) drawXroller(outRot, root, cage);
     }
 
     // ---- crisp feature edges (thin graphite lines) on non-gear solids
@@ -1048,16 +982,7 @@
     } else if (id === 'xroller') {
       E('outBearing.dp', '롤러 피치원 dp', D.outBearing.dp); E('outBearing.Z', '롤러 수', D.outBearing.Z, { step: 1 }); E('outBearing.Dw', '롤러 지름', D.outBearing.Dw); E('outBearing.Lw', '롤러 길이', D.outBearing.Lw);
       E('outBearing.preload', '예압 µm', D.outBearing.preload); E('outBearing.C', 'C N', D.outBearing.C); E('outBearing.C0', 'C0 N', D.outBearing.C0); Gm('xroller', 'width', '궤도륜 폭');
-    } else if (id === 'oflange') { E('housing.flangeT', '두께', D.housing?.flangeT); Gm('oflange', 'hubD', '허브 외경'); Gm('oflange', 'boltPCD', '볼트 PCD'); }
-    else if (id === 'housing') { E('housing.wall', '몸체 벽 두께', D.housing?.wall); Gm('housing', 'flangeD', '출력부 외경'); }
-    else if (id === 'cover') { E('housing.coverT', '두께', D.housing?.coverT); Gm('cover', 'boltPCD', '볼트 PCD'); }
-    else if (id === 'inshaft') { Gm('inshaft', 'od', '외경'); Gm('inshaft', 'id', '내경 (중공)'); Gm('inshaft', 'ext', '커버 밖 돌출 길이'); }
-    else if (id === 'seal') { Gm('seal', 'w', '폭'); Gm('seal', 'h', '반경 높이'); }
-    else if (id === 'bolts') { E('housing.boltN', '수 (커버·플랜지 각각)', D.housing?.boltN, { step: 1 }); E('housing.boltD', '호칭 M', D.housing?.boltD); }
-    else if (id === 'ocover') { Gm('ocover', 'id', '내경'); Gm('ocover', 't', '두께'); }
-    else if (id === 'oshaft') { Gm('oshaft', 'od', '외경'); Gm('oshaft', 'id', '내경 (중공)'); }
-    else if (id === 'brgS1') { Gm('brgS1', 'h', '반경 단면 높이'); Gm('brgS1', 'w', '폭'); }
-    else if (id === 'brgS2') { Gm('brgS2', 'h', '반경 단면 높이'); Gm('brgS2', 'w', '폭'); }
+    }
     if (partLocked(D, id)) out.forEach(r => r.lock = true);
     return out;
   }
@@ -1184,5 +1109,5 @@
     };
   }
 
-  globalThis.PGD3D = { mount, mountPart, partsList, partSchema, layout, outline, gearGeometry, carrierBody, OPTIONS, optOf, partOn, partLocked, housingProfile, coverProfile, compName };
+  globalThis.PGD3D = { mount, mountPart, partsList, partSchema, layout, outline, gearGeometry, carrierBody, OPTIONS, optOf, partOn, partLocked, compName };
 })();

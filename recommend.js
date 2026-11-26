@@ -248,7 +248,6 @@
     D.name = `추천 · i ${Number(candidateRatio(cand).toFixed(6))} · ${tag}`;
     D.config = { stages: ns, sharedRing: cand.type === 'shared', floatingSun: false };
     const wall = wallOf(spec.OD);
-    D.housing = { ...T.housing, wall, coverT: ax(T.housing.coverT * kz, 3), flangeT: ax(T.housing.flangeT * kz, 3) };
     const Dw = Math.max(1.5, r05(2.5 * k * (a + (1 - a) * .8)));
     const cat = pickOutBearing(spec, wall, D.req);
     D.outBearing = cat ? catalogBearing(T.outBearing, cat)
@@ -256,18 +255,8 @@
     D.geom = {};
     const sc = o => Object.fromEntries(Object.entries(o).map(([key, v]) => [key, typeof v === 'number' && !['n', 'p'].includes(key) ? r05(v * k) || v : v]));
     D.struct = { ...T.struct, c1s2Dim: sc(T.struct.c1s2Dim), s1Dim: sc(T.struct.s1Dim) };
-    // C2 ↔ 출력 플랜지·내륜 볼트: 마찰 전달 ≥ 1.5 × 피크가 되는 가장 작은 호칭·개수 (체결력 0.6σy(12.9)·μ 0.15 — 2-8 판정과 같은 식)
-    {
-      const pcd = D.outBearing.dp - 2.5 * (D.outBearing.Dw || 2), need = 1.5 * (D.req.Tpeak || 0);
-      const capOf = (n, bd) => n * .6 * 1080 * Math.PI / 4 * (bd * .85) ** 2 * .15 * pcd / 2 / 1000;
-      let pick = null;
-      for (const bd of [3, 4, 5, 6]) { for (const n of [6, 8, 12]) if (n * (bd * 2 + 2) <= Math.PI * pcd && capOf(n, bd) >= need) { pick = { n, bd }; break; } if (pick) break; }
-      D.struct.c2out = 'flange';
-      D.struct.c2outDim = { ...(T.struct.c2outDim || {}), n: pick?.n ?? 12, bd: pick?.bd ?? 6, dp: 3, pcd: null, d: null, L: null, p: 40 };
-    }
-    const sup = T.loads.sunSupport.map(s => ({ ...s, od: r05(s.od * k), id: r05(s.id * k), overhang: r05(s.overhang * kz) }));
-    D.loads = { ...D.loads, sunSupport: ns > 1 ? sup : [sup[1]], extraFsh: [0, 0] };
-    const ringOD = spec.OD - 2 * wall;
+    D.loads = { ...D.loads, extraFsh: [0, 0] };
+    const ringOD = spec.OD - 2 * wall;   // 외곽 여유 (하우징 부품은 삭제, BOM-1 — 링 외경은 기존 비례 유지)
     D.needle = [];
     D.stages = cand.stages.map((c, i) => {
       const out = i === ns - 1, tpl = T.stages[out ? 1 : 0], m = c.m, b = bs[i], mt = m / Math.cos(beta * RAD);
@@ -279,7 +268,7 @@
       const plate = ax((out ? 2.9 : 4) * kz, 2.5);
       return Object.assign(clone(tpl), {
         s: c.s, p: c.p, r: c.profile ? c.R : null, n: c.n, m, beta, b,
-        ...(c.profile || { xs: 0, xp: 0, xr: 0 }), autoRingShift: !c.profile, sunBore: spec.hollow > 0 ? +(spec.hollow + 5).toFixed(1) : null, planetBore: bore, ringOD,   // 중공: 축(두께 2.2) + 틈새가 썬 안을 지나감
+        ...(c.profile || { xs: 0, xp: 0, xr: 0 }), autoRingShift: !c.profile, sunBore: spec.hollow > 0 ? +spec.hollow.toFixed(1) : null, planetBore: bore, ringOD,   // 중공 = 썬 보어 (중공축은 범위 밖, BOM-1)
         tipChamfer: [0, 0, 0],
         bearing: { name: `풀니들 Ø${nDw} × ${Z} (추정)`, C: Math.round(1600 * bscale), C0: Math.round(1500 * bscale), count: 1 },
         pin: out ? { d: pin, type: 'double', material: 'SUJ2', wall: plate, allow: 1200, holeMode: a < 1 ? 'through' : 'blind', depth: null }   // 얇은 판: 막힌 홀 드릴 끝(118°)이 판을 다 먹으므로 관통
@@ -288,7 +277,6 @@
           : { width: plate, outerD: null, innerD: null, bossT: 0, bossD: null, axialClearance: 0.3, material: 'S45C' }
       });
     });
-    if (spec.hollow > 0) D.geom = { ...(D.geom || {}), inshaft: { id: spec.hollow } };
     return E.defaultDesign ? fillMissing(D, E.defaultDesign()) : D;
   }
 

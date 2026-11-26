@@ -113,7 +113,7 @@ const STEPS = [
   ['s1', '정의', '2. 요구사양'], ['s2', '', '3. 구성–감속비'],
   ['s3', '기어설계', '4. 제원–형상'], ['s4', '', '5. 치형 검사'], ['s5', '', '6. 정밀도–치형 수정'],
   ['s7', '구조 해석–강도', '7. 하중 계수'], ['s8', '', '8. 기어 강도'], ['s9', '', '9. 베어링'], ['scar', '', '10. 캐리어–핀'],
-  ['shous', '', '11. 하우징–커버·부품 형상'], ['smat', '', '12. 소재'],
+  ['shous', '', '11. 조립·부품 형상'], ['smat', '', '12. 소재'],
   ['s10', '검증', '13. 성능 예측'], ['s11', '', '14. 가상 검증'], ['reg', '', '15. 가정 대장'], ['out', '', '출력물·가공·원가']
 ];
 function status(id) {
@@ -134,7 +134,7 @@ function status(id) {
 }
 // ------------------------------------------------------------------ design process (PGDProc)
 const VIEW_TITLE = { s1: '요구사양', s2: '구성–감속비', s3: '제원–형상', s4: '치형 검사', s5: '정밀도–치형 수정', s7: '하중 계수', s8: '기어 강도',
-  scar: '캐리어–핀', s9: '베어링', shous: '하우징–커버·부품 형상', smat: '소재', s10: '성능 예측', s11: '가상 검증', reg: '가정 대장', out: '출력물·가공·원가' };
+  scar: '캐리어–핀', s9: '베어링', shous: '조립·부품 형상', smat: '소재', s10: '성능 예측', s11: '가상 검증', reg: '가정 대장', out: '출력물·가공·원가' };
 let XC = null, XC_MC;
 function procExtra() {
   if (XC && XC_MC === MC) return XC;
@@ -149,7 +149,7 @@ const gateCls = ok => ok === true ? 'ok' : ok === false ? 'bad' : '';
 const IT = () => window.PGDItems?.I || {};
 const SRCD = () => window.PGDItems?.SRC || {};
 // legacy screen ids → the first item that now holds that content
-const VIEW_ITEM = { s1: '1-1', s2: '2-1', s3: '3-2', s4: '4-1', s5: '4-5', s6: '9-1', slub: '5-10', s7: '5-2', s8: '5-7', scar: '6-1', s9: '7-1', shous: '8-1', smat: '9-1', s10: '10-1', s11: '11-1', reg: '11-6', out: '12-1' };
+const VIEW_ITEM = { s1: '1-1', s2: '2-1', s3: '3-2', s4: '4-1', s5: '4-5', s6: '9-1', slub: '5-10', s7: '5-2', s8: '5-7', scar: '6-1', s9: '7-1', shous: '8-7', smat: '9-1', s10: '10-1', s11: '11-1', reg: '11-6', out: '12-1' };
 const STAGE_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', 'D'];
 const itemStage = id => id.startsWith('D') ? 'D' : id.split('-')[0];
 let ANCHOR = null, LASTITEM = '1-1';
@@ -168,7 +168,7 @@ function ictx() { const X = procExtra(), EM = evalMap(); return { R, D, X, CK: X
 // 나머지는 설계 규칙 고정값 · 자동 산출값으로 계산에 그대로 쓰이고, 항목 페이지에서는 읽기 전용으로 보인다.
 // 3D 종합판정 · 부품 편집 · 설계 지도는 그대로 수정 가능. 상단 '입력 전체'로 전부 다시 열 수 있다.
 const MIN_INPUTS = new Set(['req.Trated', 'req.Tpeak', 'req.Temerg', 'req.motorTmax', 'req.rpm', 'req.ratio', 'req.Dmax', 'req.Lmax',
-  'geom.inshaft.id', 'req.lifeH', 'req.ext.Fr', 'req.ext.Fa', 'req.ext.M', 'loads.basis']);   // loads.basis: 판정 기준 ISO(기본) ↔ 오차 0(옵션) 전환
+  'stages.0.sunBore', 'stages.1.sunBore', 'req.lifeH', 'req.ext.Fr', 'req.ext.Fa', 'req.ext.M', 'loads.basis']);   // loads.basis: 판정 기준 ISO(기본) ↔ 오차 0(옵션) 전환
 let FULLIN = (() => { try { return localStorage.getItem('pgd-inputs') === 'full'; } catch (e) { return false; } })();
 const minRow = r => FULLIN || r.kind === 'calc' || r.kind === 'pred' || (r.kind === 'in' && r.path && MIN_INPUTS.has(r.path));
 function minimalize(root) {
@@ -352,7 +352,7 @@ function corePage() {
   return `<div class="shead"><span class="snum">핵심</span><div><h2>핵심 검토 ${O.length}</h2><p class="lead">99개 공정 항목을 서로 얽힌 것끼리 ${O.length}개로 묶은 축소 흐름입니다. 검토 완료 ${done} / ${O.length}${stale ? ` · <b class="bad">재검토 ${stale}</b>` : ''}. 묶음 페이지에서 입력·계산·판정을 한 번에 보고, 세부 항목은 99개 항목 페이지로 바로 갈 수 있습니다.</p></div><button class="btn primary" data-gocg="${first}">${gnum(first)}부터 검토 →</button></div>` +
     (errBox() || '') +
     Gs.PH.map(p => `<h3 class="cardsh">${p.n}. ${esc(p.name)}</h3><ol class="slist">${p.items.map(id => { const g = Gs.G[id]; return `<li><button data-gocg="${id}"><span class="pid">${gnum(id)}</span><span class="st"><b>${esc(g.t)}</b><small>${esc(g.what)}</small></span><span class="srcs">${srcChips(id)}</span><span class="pval">세부 ${g.m.length}</span>${okMark(gOk(id, c))}${rvBadge(sts[id])}</button></li>`; }).join('')}</ol>`).join('') +
-    `<p class="note" style="margin-top:16px">묶음에 넣지 않은 공정 항목(출력물 12-1~12-6, 커버·플랜지 형상 8-4·8-5, 조립 순서 8-7, 가공·원가 D1·D2·D5·D6)은 '전체 항목'에 그대로 있습니다.</p>`;
+    `<p class="note" style="margin-top:16px">묶음에 넣지 않은 공정 항목(출력물 12-1~12-6, 조립 순서 8-7, 가공·원가 D1·D2·D5·D6)은 '전체 항목'에 그대로 있습니다.</p>`;
 }
 function groupPage(id) {
   const c = ictx(), Gs = GR(), g = Gs.G[id], sp = gspec(id);
@@ -757,7 +757,7 @@ function extraHTML(id, ck) {
   if (id === 'D6' && ck.sug) return ck.sug.length ? `<ul class="sug">${ck.sug.map(s => `<li>${esc(s.t)} <span class="x">약 ${s.v.toLocaleString('ko-KR')} 원/대 절감</span></li>`).join('')}</ul><p class="note">절감안을 적용하면 강도·공차가 바뀔 수 있으니 해당 단계로 돌아가 재검토하세요.</p>` : '';
   if (id === '12-2') return `<div class="row"><button class="btn" data-copy="sw">솔리드웍스 전역변수 복사</button><button class="btn" data-copy="cq">CadQuery 스크립트 복사</button><span class="x" id="copyMsg"></span></div><details><summary class="x">미리보기</summary><pre class="code">${esc(swVars())}</pre></details>`;
   if (id === '12-4') return datasheetHTML();
-  if (id === '12-5') return `<ul class="sug">${Object.entries({ '링–하우징': D.struct.ringHousing, 'C1–S2': D.struct.c1s2, 'S1–모터축': D.struct.s1motor, 'C1 지지': D.struct.c1Support, '출력 베어링 위치': D.struct.obPos }).map(([k, v]) => `<li>${k}: <b>${esc(v)}</b></li>`).join('')}<li>가정 대장 ${R.register?.length || 0}개 — <a href="#reg">가정 대장 화면</a></li></ul>`;
+  if (id === '12-5') return `<ul class="sug">${Object.entries({ 'C1–S2': D.struct.c1s2, 'S1–모터축': D.struct.s1motor, 'C1 지지': D.struct.c1Support, '출력 베어링 위치': D.struct.obPos }).map(([k, v]) => `<li>${k}: <b>${esc(v)}</b></li>`).join('')}<li>가정 대장 ${R.register?.length || 0}개 — <a href="#reg">가정 대장 화면</a></li></ul>`;
   return '';
 }
 function datasheetHTML() {
@@ -770,7 +770,7 @@ function datasheetHTML() {
 function swVars() {
   const L = window.PGD3D ? PGD3D.layout(R, D) : null, out = [];
   R.ctx.stages.forEach((s, i) => { const n = i + 1, st = s.st; out.push(`"m${n}" = ${st.m}`, `"zs${n}" = ${st.s}`, `"zp${n}" = ${st.p}`, `"zr${n}" = ${s.geo.r}`, `"b${n}" = ${st.b}`, `"beta${n}" = ${st.beta}`, `"np${n}" = ${st.n}`, `"xs${n}" = ${st.xs}`, `"xp${n}" = ${st.xp}`, `"pin_d${n}" = ${st.pin.d}`); if (L) out.push(`"orbit_r${n}" = ${fmt(L.S[i].a, 4)}`, `"sun_bore${n}" = ${fmt(L.S[i].sunBore, 3)}`, `"planet_bore${n}" = ${fmt(L.S[i].planetBore, 3)}`); });
-  if (L) out.push(`"ring_od" = ${fmt(L.ringOD, 3)}`, `"housing_od" = ${fmt(2 * L.housR, 3)}`, `"flange_od" = ${fmt(2 * L.flangeR, 3)}`, `"hollow_d" = ${fmt(2 * L.hollowR, 3)}`, `"xroller_dp" = ${D.outBearing.dp}`, `"bolt_n" = ${D.housing.boltN}`, `"bolt_m" = ${D.housing.boltD}`);
+  if (L) out.push(`"ring_od" = ${fmt(L.ringOD, 3)}`, `"hollow_d" = ${fmt(2 * L.hollowR, 3)}`, `"xroller_dp" = ${D.outBearing.dp}`);
   return out.join('\n');
 }
 function cqScript() {
@@ -782,7 +782,6 @@ function cqScript() {
     `for j in range(${st.n}):`, `    a = j * 360 / ${st.n}`,
     `    parts[f"P${k}_{j+1}"] = (cq.Workplane("XY").workplane(offset=${n(x.z0)}).center(${n(x.a)}, 0).circle(${n(st.m * st.p / 2)}).circle(${n(x.planetBore / 2)}).extrude(${n(st.b)}).rotate((0,0,0),(0,0,1),a))`); });
   g.push(`parts["R"] = cq.Workplane("XY").circle(${n(L.ringOD / 2)}).circle(${n(S[0].geo.parts[2].d / 2)}).extrude(${n(L.gearEnd)})`,
-    `parts["housing"] = cq.Workplane("XY").workplane(offset=${n(L.zIn)}).circle(${n(L.housR)}).circle(${n(L.ringOD / 2)}).extrude(${n(L.zFlange[1] - L.zIn)})`,
     'asm = cq.Assembly()', 'for k, v in parts.items(): asm.add(v, name=k)', 'asm.save("reducer.step")');
   return g.join('\n');
 }
@@ -1137,15 +1136,12 @@ const W = {
   housingDims() {
     let L = null; try { L = PGD3D.layout(R, D); } catch (e) { }
     if (!L) return '';
-    const bl = bomList(), w = id => bl.find(p => p.id === id);
     return `<div class="card scroll"><h3>계산된 치수</h3><table><tr><th class="l">항목</th><th>값</th><th class="l">근거</th></tr>
-      <tr><td class="l">링 외경 (하우징 안지름)</td><td>Ø${fmt(L.ringOD, 2)}</td><td class="l note">3-9 링 외경 (빈칸이면 자동 림)</td></tr>
-      <tr><td class="l">하우징 몸체 외경</td><td>Ø${fmt(L.housR * 2, 1)}</td><td class="l note">링 외경 + 2 × 벽</td></tr>
-      <tr><td class="l">출력부 플랜지 외경</td><td>Ø${fmt(L.flangeR * 2, 1)}</td><td class="l note">크로스 롤러 외륜 + 벽 + 1.5</td></tr>
+      <tr><td class="l">링 외경</td><td>Ø${fmt(L.ringOD, 2)}</td><td class="l note">3-9 링 외경 (빈칸이면 자동 림)</td></tr>
       <tr><td class="l">크로스 롤러 내·외륜</td><td>Ø${fmt(L.raceIn * 2, 1)} / Ø${fmt(L.raceOut * 2, 1)}</td><td class="l note">${L.cat ? `카탈로그 ${esc(D.outBearing.model || '')} (d × D × B)` : `dp ${L.dp} ± 1.1·Dw`}</td></tr>
-      <tr><td class="l">중공 지름</td><td>Ø${fmt(L.hollowR * 2, 1)}</td><td class="l note">1단 썬 보어 − 3.6</td></tr>
-      <tr><td class="l">전체 길이</td><td>${fmt(L.zFlange[1] - L.zIn, 1)} mm</td><td class="l note">캐리어·핀·보스 축방향 범위 반영</td></tr>
-      <tr><td class="l">하우징 · 커버 · 플랜지 중량</td><td>${fmt(w('housing')?.mass * 1000, 0)} · ${fmt(w('cover')?.mass * 1000, 0)} · ${fmt(w('oflange')?.mass * 1000, 0)} g</td><td class="l note">AL6061 2.7, 강 7.85 g/cm³</td></tr></table></div>`;
+      <tr><td class="l">외경 (판정)</td><td>Ø${fmt(2 * Math.max(L.housR, L.flangeR), 1)}</td><td class="l note">max(링 외경, 출력 베어링 외경) · 하우징·커버·플랜지는 범위 밖</td></tr>
+      <tr><td class="l">중공 지름</td><td>Ø${fmt(L.hollowR * 2, 1)}</td><td class="l note">썬 보어 최소값</td></tr>
+      <tr><td class="l">전체 길이</td><td>${fmt(L.zFlange[1] - L.zIn, 1)} mm</td><td class="l note">1단 캐리어 입력측 ~ 출력 베어링 끝</td></tr></table></div>`;
   },
   drawing() { return drawingHTML(DWSTATE.id); },
   partDims() {
@@ -1347,9 +1343,7 @@ function runJob(type, done) {
 // ------------------------------------------------------------------ 3D (viewer3d.js) glue
 let VIEW3D = null;
 const OVSTATE = { view: null, sel: null };
-const HOUS_DEF = { wall: 3, coverT: 4, boltN: 8, boltD: 3, flangeT: 5 };
 function ensureD() {
-  D.housing = Object.assign({}, HOUS_DEF, D.housing || {});
   D.view = D.view || {};
   D.anim = D.anim || { rpm: 1000, slow: .02 };
   D.options = D.options || {};
@@ -1359,7 +1353,7 @@ function ensureD() {
 function componentsHTML() {
   const n = R?.ctx?.stages?.length || D.config.stages, shared = D.config.sharedRing && n > 1;
   const rows = Array.from({ length: n }, (_, i) => `<tr><td>${i + 1}단</td><td>S${i + 1} 썬기어</td><td>P${i + 1} 유성기어</td><td>${shared ? (i ? '〃 (공유)' : 'R1-2 링기어') : `R${i + 1} 링기어`}</td><td>C${i + 1} 캐리어${i === n - 1 ? ' (출력)' : ''}</td></tr>`).join('');
-  const opts = (window.PGD3D?.OPTIONS || []).filter(o => !(o.key === 's2brg' && n < 2)).map(o => `<tr><td class="l">${esc(o.label)}</td>
+  const opts = (window.PGD3D?.OPTIONS || []).map(o => `<tr><td class="l">${esc(o.label)}</td>
     <td><label class="sw"><input type="checkbox" data-p="options.${o.key}.on" data-t="bool" ${D.options?.[o.key]?.on !== false ? 'checked' : ''}> 표시</label></td>
     <td><label class="sw"><input type="checkbox" data-p="options.${o.key}.lock" data-t="bool" ${D.options?.[o.key]?.lock ? 'checked' : ''}> 잠금</label></td></tr>`).join('');
   return `<div class="card"><h3>기본 구성요소</h3><p class="note" style="margin-top:0">링기어 고정 · 썬 입력 · 캐리어 출력. S·P·R은 4단계 기어 제원에서, C는 10단계 캐리어–핀에서 형상이 정해집니다.</p>
@@ -1867,7 +1861,6 @@ function mountOverview(m) {
   const tb = m.querySelector('#tBom'); tb.onclick = () => { const hid = bom.classList.toggle('closed'); tb.setAttribute('aria-expanded', String(!hid)); };
 }
 
-// ------------------------------------------------------------------ 11. housing – cover
 // ------------------------------------------------------------------ header actions
 $('#dname').value = D.name || '';
 $('#dname').onchange = e => { D.name = e.target.value; save(); };
@@ -1988,7 +1981,7 @@ async function dbOpen(key, toOverview) {
 async function dbLoadLib(list) {
   for (const x of list) {
     try {
-      if (x.file) { const j = await (await fetch('designs/' + x.file + '?v=std-3')).json(); x.D = j.schema === 'pgd-case/1' ? j.D : j; }
+      if (x.file) { const j = await (await fetch('designs/' + x.file + '?v=std-4')).json(); x.D = j.schema === 'pgd-case/1' ? j.D : j; }
       else if (x.builtin) x.D = E[x.builtin]();
       if (x.D && !x.summary) { const d = JSON.parse(JSON.stringify(x.D)); if (window.PGDChecks) { PGDChecks.ensure(d); PGDChecks.applyNeedles(d); } const c = caseRecord(d, E.analyze(d)); x.summary = c.summary; x.request = c.request; }
     } catch (e) { console.error(e); }
@@ -2000,7 +1993,7 @@ function dbRender() {
   $('#dbList').innerHTML = DBLIB.map((x, i) => row('lib:' + i, x.name, '기본')).join('') + mine.slice(0, 5).map((x, i) => row('mine:' + i, x.name, `${x.summary?.reducerCap ? (+x.summary.reducerCap).toFixed(0) + ' N·m · ' : ''}${new Date(x.saved).toLocaleDateString('ko-KR')}`)).join('') || '<span class="note">없음</span>';
   $('#dbList').querySelectorAll('[data-db]').forEach(b => b.onclick = e => { e.stopPropagation(); dbOpen(b.dataset.db); });
 }
-fetch('designs/index.json?v=std-3').then(r => r.json()).catch(() => [{ name: 'HDS 예제', builtin: 'defaultDesign' }, { name: 'RH065 템플릿', builtin: 'templateDesign' }])
+fetch('designs/index.json?v=std-4').then(r => r.json()).catch(() => [{ name: 'HDS 예제', builtin: 'defaultDesign' }, { name: 'RH065 템플릿', builtin: 'templateDesign' }])
   .then(l => { DBLIB = l; dbRender(); return dbLoadLib(l); }).then(() => { if (view === 'db') render(true); });
 // 케이스 레코드 (pgd-case/1): 나중에 모아서 참고·학습에 쓰도록 요구 조건 · 설계 제원 · 결과 요약을 같은 형식으로 남긴다.
 function caseRecord(D = PGDApp.state().D, R = PGDApp.state().R) {
@@ -2010,7 +2003,7 @@ function caseRecord(D = PGDApp.state().D, R = PGDApp.state().R) {
     request: { Trated: D.req.Trated, Tpeak: D.req.Tpeak, Temerg: D.req.Temerg, rpm: D.req.rpm, lifeH: D.req.lifeH, ratio: D.req.ratio ?? null, Dmax: D.req.Dmax ?? null, Lmax: D.req.Lmax ?? null, ext: D.req.ext, duty: D.req.duty, basis: D.loads?.basis },
     summary: ok ? { stages: S.length, sharedRing: !!D.config.sharedRing, ratio: R.ratio,
       gears: S.map(x => ({ s: x.st.s, p: x.st.p, r: x.geo.r, n: x.st.n, m: x.st.m, beta: x.st.beta, b: x.st.b })),
-      OD: L ? 2 * Math.max(L.housR, L.flangeR) : null, L: L ? (L.zFlange[1] + .4) - L.zIn : null, outBearing: D.outBearing?.name,
+      OD: L ? 2 * Math.max(L.housR, L.flangeR) : null, L: L ? L.zFlange[1] - L.zIn : null, outBearing: D.outBearing?.name,
       gearCap: R.capacityLife, reducerCap: R.reducerCap, governing: R.reducerGov, eff: R.eff?.total, backlash: R.backlash?.arcmin,
       verdictFail: R.verdict.filter(v => !v.ok).map(v => v.k), band: (() => { try { return E.basisBand(D); } catch (e) { return null; } })() } : { errors: R?.errors || [] },
     D: JSON.parse(JSON.stringify(D)) };
