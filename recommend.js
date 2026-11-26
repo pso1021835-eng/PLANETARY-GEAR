@@ -375,7 +375,7 @@
     return { res, total: sl.total, counts: sl.counts, checked: sl.list.length };
   }
 
-  const api = { pickOutBearing, inspectTeeth, ringRange, stageOptions, candidates, proxy, build, envelope, evaluateOne, shortlist, run, runSync };
+  const api = { pickOutBearing, catalogBearing, inspectTeeth, ringRange, stageOptions, candidates, proxy, build, envelope, evaluateOne, shortlist, run, runSync };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PGDRecommend = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

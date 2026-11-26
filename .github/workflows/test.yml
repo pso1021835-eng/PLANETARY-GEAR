@@ -45,6 +45,8 @@ jobs:
         run: node verify_test.js 120 7 && node verify_test.js 120 2026
       - name: 자동 설계 (외형 고정 · 제작 규칙 · 입력 불변 · 판정 기준별)
         run: node autodesign_test.js
+      - name: 베어링 기준 자동 설계
+        run: node bearing_first_test.js
       - name: 문법 검사
         run: for f in *.js; do node --check "$f" || exit 1; done
 

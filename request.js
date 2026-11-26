@@ -119,6 +119,68 @@
     return { ok, format: FORMAT, input: q, given, extGiven, meta, derived: derived || null, target, engineReq, hollow: given.hollow ? q.hollow : null, errors, assumptions };
   }
 
+  // ---- 베어링 기준 의뢰서 (PGD-REQ-3, 사용자 결정 2026-11-26 AD-2)
+  // 감속비 · 출력 베어링 형번 · 1·2단 캐리어 간격 · 전위 탐색 / 링 공유 선택. 요구 토크 · 외경 · 길이는 입력하지 않는다
+  // (토크는 베어링 C0로 산출, 외경 = 2단 링기어 림 포함 외경, 길이 = b1 + 캐리어 간격 + b2 자동 산출).
+  const FORMAT_BF = 'PGD-REQ-3';
+  const FIELDS_BF = [
+    ['M1', 'client', '의뢰처', '', '', 'text', ''],
+    ['M2', 'requester', '의뢰자', '', '', 'text', ''],
+    ['M3', 'date', '의뢰일', '', '', 'text', ''],
+    ['M4', 'application', '용도', '', '', 'text', ''],
+    ['I7', 'ratio', '감속비', '', 'Y', 'num', ''],
+    ['B1', 'bearing', '출력 베어링 형번 (카탈로그, 예: THK RU42)', '', 'Y', 'bearing', ''],
+    ['G1', 'gap', '1·2단 캐리어 축방향 간격 (2단일 때)', 'mm', '', 'num', '3 mm'],
+    ['O1', 'shift', '전위 탐색', 'Y/N', '', 'yn', 'N (전위 0)'],
+    ['O2', 'shared', '1·2단 링기어 공유', 'Y/N', '', 'yn', 'N (링 분리 — 1단 링 외경은 2단 링 외경 안에서 자유)'],
+    ['I3', 'nr', '정격 입력 회전수', 'rpm', 'Y', 'num', ''],
+    ['I10', 'hollow', '중공 지름 (0 = 중실)', 'mm', '', 'num', '0'],
+    ['I11', 'lifeH', '정격 수명', 'h', '', 'num', '20,000 h'],
+    ['I12a', 'Fr', '출력 외력 — 반경 하중 Fr', 'N', '', 'num', '0'],
+    ['I12b', 'Fa', '출력 외력 — 축 하중 Fa', 'N', '', 'num', '0'],
+    ['I12c', 'M', '출력 외력 — 모멘트 M', 'N·m', '', 'num', '0'],
+    ['K1', 'kappa', '토크 계수 κ (출력 토크 / 베어링 허용 모멘트)', '', '', 'num', '0.2 (실물 RH065 0.18 · PI82 0.25 보정, 가정)'],
+    ['K2', 's0', '베어링 허용 모멘트 정적 안전율 s0', '', '', 'num', '1.0'],
+  ].map(([id, key, label, unit, need, type, blank]) => ({ id, key, label, unit, need, type, blank }));
+  const BY_BF = Object.fromEntries(FIELDS_BF.map(f => [f.id, f]));
+  const YES = /^(y|yes|예|true|1|o|on|사용|공유)$/i, NO = /^(n|no|아니오|아니요|false|0|x|off|미사용|분리)$/i;
+  function parseBF(cells, opt = {}) {
+    const errors = [], assumptions = [], q = {}, given = {};
+    const err = (id, msg) => errors.push({ id, msg: (BY_BF[id] ? BY_BF[id].label + ': ' : '') + msg });
+    const asm = (id, msg) => assumptions.push({ id, msg });
+    const findB = opt.findBearing || (root.PGDBearingFirst && root.PGDBearingFirst.findBearing);
+    for (const f of FIELDS_BF) {
+      const raw = cells[f.id];
+      given[f.key] = !isBlank(raw);
+      if (!given[f.key]) { q[f.key] = undefined; if (f.need === 'Y') err(f.id, '필수 항목이 비어 있음'); continue; }
+      if (f.type === 'text') { q[f.key] = String(raw).trim(); continue; }
+      if (f.type === 'yn') { const v = String(raw).trim(); if (raw === true || YES.test(v)) q[f.key] = true; else if (raw === false || NO.test(v)) q[f.key] = false; else err(f.id, `"${v}" — Y 또는 N`); continue; }
+      if (f.type === 'bearing') { const name = String(raw).trim(), b = findB ? findB(name) : null; if (!b) err(f.id, `"${name}" — 카탈로그에 없는 형번`); else if (!(b.C0 > 0)) err(f.id, `${name}: 정정격 C0 없음`); else q.bearing = b; q.bearingName = name; continue; }
+      const x = toNum(raw);
+      if (Number.isNaN(x)) { err(f.id, `숫자가 아님 ("${raw}")`); continue; }
+      if (x < 0) { err(f.id, '음수 불가'); continue; }
+      q[f.key] = x;
+    }
+    for (const k of ['ratio', 'nr', 'lifeH', 'kappa', 's0']) if (q[k] === 0) err(FIELDS_BF.find(f => f.key === k).id, '0보다 커야 함');
+    if (q.ratio > 0 && (q.ratio < 3 || q.ratio > 100)) err('I7', '3 ~ 100 범위 (1단 3~10, 2단 9~100)');
+    if (q.kappa > 1) err('K1', '1 이하 (토크 계수)');
+    if (q.hollow > 0 && q.bearing && q.hollow >= q.bearing.d) err('I10', `출력 베어링 내경 Ø${q.bearing.d} 이상`);
+    if (!given.gap) { q.gap = 3; if (q.ratio > 10) asm('G1', '1·2단 캐리어 간격 3 mm (가정)'); }
+    if (!given.shift) { q.shift = false; asm('O1', '전위 탐색 안 함 (전위 0)'); }
+    if (!given.shared) { q.shared = false; asm('O2', '링 분리 (1단 링 외경은 2단 링 외경 안에서 자유)'); }
+    if (!given.hollow) q.hollow = 0;
+    if (!given.lifeH) { q.lifeH = LIFE0; asm('I11', `정격 수명 ${LIFE0.toLocaleString('en-US')} h`); }
+    for (const k of ['Fr', 'Fa', 'M']) if (!given[k]) q[k] = 0;
+    if (!given.kappa) { q.kappa = 0.2; asm('K1', '토크 계수 κ 0.2 (가정 — 실물 2건 보정)'); }
+    if (!given.s0) q.s0 = 1;
+    const ok = !errors.length;
+    let derived = null;
+    if (ok) { const dp = q.bearing.dp ?? (q.bearing.d + q.bearing.D) / 2, M0 = q.bearing.C0 * dp / (2000 * q.s0); derived = { dp: r6(dp), M0: r6(M0), T: r6(M0 * q.kappa), nOut: r6(q.nr / q.ratio) }; }
+    const meta = { client: q.client, requester: q.requester, date: q.date, application: q.application };
+    return { ok, format: FORMAT_BF, input: q, given, meta, derived, errors, assumptions,
+      bearing: q.bearing, ratio: q.ratio, gap: q.gap, shift: q.shift, shared: q.shared, hollow: q.hollow, rpm: q.nr, lifeH: q.lifeH, ext: { Fr: q.Fr, Fa: q.Fa, M: q.M }, kappa: q.kappa, s0: q.s0 };
+  }
+
   // ---- .xlsx 읽기 (zip 중앙 디렉터리 + deflate-raw) ----
   const u16 = (b, o) => b[o] | (b[o + 1] << 8), u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
   const utf8 = b => new TextDecoder('utf-8').decode(b);
@@ -181,18 +243,19 @@
 
   // 의뢰서 시트: A열 ID, C열 값. 행 위치가 아니라 ID로 찾으므로 행을 끼워 넣어도 읽힌다.
   async function readXlsx(buf, opt = {}) {
+    const bf = opt.format === 'bf', BY = bf ? BY_BF : BY_ID, FMT = bf ? FORMAT_BF : FORMAT;
     const grid = await readSheet(buf, opt.sheet || SHEET), cells = {}, dup = [];
     for (const ref in grid) {
       const m = /^A(\d+)$/.exec(ref); if (!m) continue;
       const id = String(grid[ref]).trim();
       if (id === 'FORMAT') { cells.FORMAT = grid['C' + m[1]]; continue; }
-      if (!BY_ID[id]) continue;
+      if (!BY[id]) continue;
       if (id in cells) dup.push(id);
       cells[id] = grid['C' + m[1]];
     }
-    const res = parse(cells, opt);
-    if (cells.FORMAT !== FORMAT) res.errors.unshift({ id: 'FORMAT', msg: `양식 버전 불일치 ("${cells.FORMAT ?? '없음'}", 필요 ${FORMAT}) — 최신 의뢰서 양식 사용` });
-    for (const id of dup) res.errors.unshift({ id, msg: BY_ID[id].label + ': ID가 두 번 나옴' });
+    const res = bf ? parseBF(cells, opt) : parse(cells, opt);
+    if (cells.FORMAT !== FMT) res.errors.unshift({ id: 'FORMAT', msg: `양식 버전 불일치 ("${cells.FORMAT ?? '없음'}", 필요 ${FMT}) — 최신 의뢰서 양식 사용` });
+    for (const id of dup) res.errors.unshift({ id, msg: BY[id].label + ': ID가 두 번 나옴' });
     res.ok = !res.errors.length; if (!res.ok) { res.engineReq = null; res.target = null; }
     res.cells = cells;
     return res;
@@ -241,7 +304,7 @@
     return zipStore(files);
   }
 
-  const api = { FORMAT, SHEET, FIELDS, KINDS, ETA0, MARGIN, LIFE0, TM_PER_TA, parse, readXlsx, readSheet, writeXlsx };
+  const api = { FORMAT, FORMAT_BF, FIELDS_BF, parseBF, SHEET, FIELDS, KINDS, ETA0, MARGIN, LIFE0, TM_PER_TA, parse, readXlsx, readSheet, writeXlsx };
   root.PGDRequest = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
