@@ -85,6 +85,9 @@
       A(`${gi + 1}단 치폭 +1 mm`, why, 'ISO 6336-2/-3 (σH ∝ 1/√b, σF ∝ 1/b) · §6 ①', () => { const w = D.stages[gi].b; D.stages[gi].b = +(w + 1).toFixed(1); return `${w} → ${D.stages[gi].b} mm`; });
       D.stages.forEach((s, j) => { if (j !== gi && s.b - 1 >= 3) A(`치폭 이동 ${j + 1}단 → ${gi + 1}단`, why, '§6 ② 여유가 큰 단의 치폭을 지배 단으로', () => { s.b = +(s.b - 1).toFixed(1); D.stages[gi].b = +(D.stages[gi].b + 1).toFixed(1); return `${j + 1}단 ${s.b + 1}→${s.b} · ${gi + 1}단 → ${D.stages[gi].b} mm`; }); });
     }
+    // 기어 강도 ⑤ (마지막 수단): 정밀도 5급 — 사용자 제작 조건 '호브 + 열처리 후 5~6급' 범위 (Q15). 가공처 달성 확인 필요
+    if (gearF.length && D.stages.some(s => s.grade > 5)) A('정밀도 5급 (마지막 수단)', gearF.map(x => x.k).join(', ') + ' 미달 · 치폭·축방향 배분으로 해결 안 됨',
+      '§6 ⑤ · ISO 1328 · 제작 조건 Q15 (호브 + 이온질화 5~6급) — 가공처 측정 성적서로 5급 달성 확인 필요', () => { const w = D.stages.map(s => s.grade).join('/'); D.stages.forEach(s => { s.grade = 5; }); return `${w} → 5급`; });
     // 유성 베어링 · 핀: 핀 지름 +1 mm (니들은 applyNeedles가 보어에 맞춰 재선정)
     if (brgF.length || pinF.length) D.stages.forEach((s, j) => {
       if (!s.pin || !(s.pin.d > 0)) return;
@@ -236,6 +239,7 @@
     log.push(...best.log);
     const out = { status: best.sc.feasible ? 'pass' : 'short', D: best.D, R: best.ev.R, CK: best.ev.CK, ev: best.ev, score: best.sc, life, log, hist, ms: Date.now() - t0, pool: pool.length, searched: RS.total };
     out.short = shortfall(out, q); out.advice = (best.ev.advice || []).map(x => ({ id: x.id, k: x.k, val: x.val }));
+    if (best.D.stages.some(s => s.grade <= 5)) out.advice.push({ id: 'grade', k: '정밀도 5급 적용 — 가공처 측정 성적서로 5급 달성 확인 필요' });
     // 참고: 같은 설계의 산정 기준 폭 (오차 0 가정 ↔ ISO). 판정은 ISO, 폭은 소형 저하중 재검토용 정보 (§3)
     try { const b = E.basisBand(clone(best.D)); out.band = { ideal: b.ideal, iso: b.iso, lowLoad: b.lowLoad, wm: b.wm, need: q.target.TR }; } catch (e) { out.band = null; }
     out.gears = gearTable(best.ev.R, best.D); out.bom = bom(PG, best.ev, best.D);

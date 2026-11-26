@@ -108,7 +108,7 @@
       <div class="card"><h3>2. 자동 설계</h3>
         <div class="grid"><label class="f">판정 기준<select id="rqBasis"><option value="iso"${S.basis === 'iso' ? ' selected' : ''}>ISO 6336:2019 (KISSsoft 방식) · 기본</option><option value="ideal"${S.basis === 'ideal' ? ' selected' : ''}>이론 (오차 0) · 옵션</option></select></label></div>
         <p><button class="btn primary" id="rqRun" ${q.ok && !S.busy ? '' : 'disabled'}>자동 설계 실행</button> <span class="note" id="rqProg">${S.busy ? '계산 중…' : '보통 1~30초 걸립니다. 잇수·모듈·치폭 조합을 탐색하고, 후보마다 판정 → 수정을 반복합니다.'}</span></p>
-        <p class="note">설계 규칙: 모듈 0.4·0.5·0.6·0.7·0.8·1.0 · β 12° · 유성 3개 · 전위 0 우선 · 6급 · SCM440 이온질화 · 크라우닝 없음 · SH ≥ 1.0 · SF ≥ 1.4 · 외경·길이 절대 고정</p></div>
+        <p class="note">설계 규칙: 모듈 0.4·0.5·0.6·0.7·0.8·1.0 · β 12° · 유성 3개 · 전위 0 우선 · 6급 (강도 미달 시 마지막 수단으로 5급) · SCM440 이온질화 · 크라우닝 없음 · SH ≥ 1.0 · SF ≥ 1.4 · 외경·길이 절대 고정</p></div>
       <div id="rqResult">${resultHTML(S.run, S.hooks || {})}</div>`;
   }
 
