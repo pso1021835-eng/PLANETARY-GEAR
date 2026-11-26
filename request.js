@@ -6,7 +6,7 @@
   const FORMAT = 'PGD-REQ-2';
   const SHEET = '의뢰서';
   const ETA0 = 0.95;           // §2-1 정격 효율 가정 (계산 후 반복으로 대체 예정)
-  const MARGIN = 1.3;          // §3 강도·수명 여유 (ISO 계산 조건 기준)
+  const MARGIN = 1.0;          // §3: 여유는 기본 안전율 SH ≥ 1.0 · SF ≥ 1.4로 둔다 (토크 배수 없음, 사용자 결정 2026-11-26 SF-1)
   const LIFE0 = 20000;         // §2 기본 정격 수명 (ALG-2)
   const TM_PER_TA = 1.5;       // §2-1 순간 최대 / 반복 피크 가정 (ALG-3)
   const NMAX_PER_NR = 1.5;     // §1 I4 빈칸 가정
