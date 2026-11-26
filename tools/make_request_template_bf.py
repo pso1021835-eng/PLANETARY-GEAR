@@ -11,7 +11,7 @@ R = json.loads(subprocess.check_output(['node', '-e',
     "const R=require('./request.js');console.log(JSON.stringify({F:R.FIELDS_BF,K:R.KINDS,FORMAT:R.FORMAT_BF,SHEET:R.SHEET}))"], cwd=ROOT))
 F, KINDS, FORMAT, SHEET = R['F'], R['K'], R['FORMAT'], R['SHEET']
 
-EX = {'M1': '예시', 'I7': 25, 'B1': 'THK RU42', 'G1': 3, 'O1': 'N', 'O2': 'N', 'I3': 3000, 'I11': 20000}
+EX = {'M1': '예시', 'I7': 25, 'B1': 'THK RU42', 'G1': 3, 'O1': 'N', 'O2': 'N', 'O3': 'N', 'I3': 3000, 'I11': 20000}
 
 AR = 'Arial'
 f_title = Font(name=AR, size=14, bold=True); f_b = Font(name=AR, bold=True); f_n = Font(name=AR)

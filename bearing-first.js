@@ -12,15 +12,16 @@
     mods: [0.4, 0.5, 0.6, 0.7, 0.8, 1.0], beta: 12, n: 3, ratioTolPct: 1, grade: 6,
     kappa: 0.2,          // 목표 출력 토크 / 베어링 허용 모멘트 (C0·dp / 2000·s0). RH065 0.18 · PI82 0.25 실물에서 보정한 가정
     s0: 1.0,             // 베어링 허용 모멘트를 정할 정적 안전율
-    ringTeethBand: 2,    // 2단 링 잇수: 롤러 피치원에 가장 가까운 값 ± 2
+    ringTeethBand: 2,    // 2단 링 잇수: 롤러 피치원 근처(−2잇)부터 링 외경이 베어링 외경 D에 닿을 때까지
     stageRatio: [3, 10], // 단 감속비 범위
     bMin: 3, bPerD1: 1.0, // 치폭 하한 3 mm, 상한 = 작은 기어 피치원 × 1.0 (ISO 권장 b/d1 ≤ 1)
     gap0: 3,             // 1·2단 캐리어 간격 빈칸 기본 (mm)
     clearance: .3,       // 캐리어 축방향 틈새 (한쪽, mm)
     shortlist: 14, top: 5, iters: 3,
     src: {
+      material: '침탄 연삭 (Eh MQ, 표면 HRC 60 · 심부 HRC 36) — 서보 감속기 관례. 이온질화는 옵션',
       kappa: '가정 κ 0.2 — 실물 RH065(28 N·m · RAU5005 C0 5500) 0.18, PI82(16.2 N·m · C0 3220) 0.25',
-      ring: '사용자 결정 AD-2: 2단 링기어 피치원 ≈ 출력 베어링 롤러 피치원',
+      ring: '사용자 결정 AD-2: 2단 링기어 피치원 ≥ 롤러 피치원 근처, 링 외경 ≤ 베어링 외경 (2026-11-26 보완: 피치원 일치만으로는 기어가 베어링보다 훨씬 작아짐)',
       balance: '사용자 결정 AD-2: 1·2단 토크 밸런스 (출력 환산 단별 한계를 같게)',
       basis: 'ISO 6336:2019 (KISSsoft 방식) · SH ≥ 1.0 · SF ≥ 1.4 (AD-1 · SF-1)',
     },
@@ -56,14 +57,15 @@
     const minSun = hollow > 0 ? hollow + 8 : 0, cosB = Math.cos(RULE.beta * RAD), out = [], pcache = new Map();
     const prof = o => { const k = [o.s, o.p, o.R].join('/'); if (!pcache.has(k)) pcache.set(k, profiles(E, REC, o, shift)); return pcache.get(k); };
     const sunOK = o => o.s * o.m / cosB + 1e-9 >= minSun;
+    const lcache = new Map(), list = (m, R) => { const k = m + '/' + R; if (!lcache.has(k)) lcache.set(k, stageList(REC, m, R, shift)); return lcache.get(k); };
     const one = i <= RULE.stageRatio[1] + 1e-9;
     let nRing = 0;
     for (const m2 of RULE.mods) {
-      const Rt = dp * cosB / m2;
-      for (let R2 = Math.round(Rt) - RULE.ringTeethBand; R2 <= Math.round(Rt) + RULE.ringTeethBand; R2++) {
+      const Rt = dp * cosB / m2, Rhi = Math.max(Math.round(Rt) + RULE.ringTeethBand, Math.floor((spec.Dout - 10.5 * m2) / mtOf(m2)));
+      for (let R2 = Math.round(Rt) - RULE.ringTeethBand; R2 <= Rhi; R2++) {
         if (R2 < 36) continue; nRing++;
         const od2 = ringODest(m2, R2), dev = mtOf(m2) * R2 - dp;
-        for (const o2 of stageList(REC, m2, R2, shift)) {
+        for (const o2 of list(m2, R2)) {
           if (!sunOK(o2)) continue;
           const i2 = ratioOf(o2);
           if (one && i2 >= lo && i2 <= hi) { const p2 = prof(o2)[0]; if (p2) out.push({ type: 'one', stages: [{ ...o2, profile: p2 }], dev, od2 }); }
@@ -71,14 +73,14 @@
           const l1 = lo / i2, h1 = hi / i2;
           if (h1 < RULE.stageRatio[0] || l1 > RULE.stageRatio[1]) continue;
           const firsts = [];
-          if (shared) firsts.push(...stageList(REC, m2, R2, shift).map(o => ({ o, m: m2 })));
+          if (shared) firsts.push(...list(m2, R2).map(o => ({ o, m: m2 })));
           else for (const m1 of RULE.mods) {
             if (m1 > m2) continue;
             const Rmax = Math.floor((od2 - 10.5 * m1) / mtOf(m1));
             for (let R1 = 36; R1 <= Rmax; R1++) {
               const sLo = Math.ceil(R1 / (h1 - 1)), sHi = Math.floor(R1 / (l1 - 1));
               if (sHi < 12 || sLo > R1) continue;
-              for (const o of stageList(REC, m1, R1, shift)) if (o.s >= sLo && o.s <= sHi) firsts.push({ o, m: m1 });
+              for (const o of list(m1, R1)) if (o.s >= sLo && o.s <= sHi) firsts.push({ o, m: m1 });
             }
           }
           for (const { o: o1 } of firsts) {
@@ -95,7 +97,7 @@
         }
       }
     }
-    log.push({ kind: '탐색', key: '2단 링 잇수 후보', value: `모듈 ${RULE.mods.join('·')} × 링 잇수 ${nRing}개 (롤러 피치원 Ø${fx(dp, 2)} ± ${RULE.ringTeethBand}잇)`, why: '링 피치원 ≈ 롤러 피치원', basis: RULE.src.ring });
+    log.push({ kind: '탐색', key: '2단 링 잇수 후보', value: `모듈 ${RULE.mods.join('·')} × 링 잇수 ${nRing}개 (피치원 Ø${fx(dp, 2)} 근처 ~ 링 외경 Ø${fx(spec.Dout, 1)})`, why: '링 피치원 ≥ 롤러 피치원 근처, 링 외경 ≤ 베어링 외경', basis: RULE.src.ring });
     log.push({ kind: '탐색', key: '잇수 조합', value: `${out.length}개 (감속비 ±${RULE.ratioTolPct} %, 단 감속비 ${RULE.stageRatio.join('~')}, 유성 ${RULE.n}개, ${shared ? '링 공유' : '링 분리'}, 전위 탐색 ${shift ? '켬' : '끔'})`, why: '조립 (S+R)/n 정수 · 인접 간섭 · 내접 간섭', basis: '§4' });
     return out;
   }
@@ -121,7 +123,8 @@
     const rspec = { OD: cand.od2 + 4, H: 400, ratio: spec.i, beta: RULE.beta, hollow: spec.hollow || 0 };
     const D = REC.build(base, rspec, { ...cand, axial: 1 }, bs, E);
     D.outBearing = REC.catalogBearing(T.outBearing, spec.bearing);
-    D.stages.forEach(s => { s.ringOD = null; s.grade = RULE.grade; });
+    D.stages.forEach(s => { s.ringOD = null; s.grade = spec.grade || RULE.grade; });
+    if (!spec.nitride) D.materials = D.materials.map((m, k) => { const st = D.stages[Math.floor(k / 3)] || D.stages[0]; return { family: 'Eh', surfaceHRC: 60, coreHRC: 36, depth: +(0.2 + 0.3 * st.m).toFixed(2) }; });
     if (D.stages.length > 1) { D.stages[0].carrier.width = Math.max(1.5, +(spec.gap - 2 * RULE.clearance).toFixed(2)); D.stages[0].carrier.axialClearance = RULE.clearance; }
     D.config.floatingSun = false;
     if (D.stages.length > 1) D.struct.c1Support = 'nested';
@@ -172,32 +175,41 @@
       ratio: R.ratio, dev: cand.dev, type: cand.type, stages: cand.stages, fails: R.verdict.filter(v => !v.ok).map(v => v.k) };
   }
 
+  // 6급으로 목표에 못 미치면 5급(연삭 가능 등급)으로 다시 맞춰 보고, 한계 토크가 오르면 채택 (사용자 결정: 5급은 마지막 수단)
+  function tuneBest(env, spec, cand, log) {
+    const a = tune(env, spec, cand, log); if (!a.ok || a.cap >= spec.T) return a;
+    const b = tune(env, { ...spec, grade: 5 }, cand, log); if (b.ok && b.cap > a.cap * 1.02) { b.grade5 = true; return b; }
+    return a;
+  }
+
   async function run(q, env, onStep) {
     const log = [], t0 = Date.now(), step = async (m, p) => { if (onStep) { onStep(m, p); await new Promise(r => setTimeout(r, 0)); } };
     if (!q || !q.ok) return { status: 'input', errors: (q && q.errors) || [], log };
     const B = q.bearing, bt = torqueFromBearing(B, { s0: q.s0, kappa: q.kappa });
-    const spec = { basis: env.basis || 'iso', i: q.ratio, bearing: B, dp: bt.dp, T: bt.T, s0: bt.s0, kappa: bt.kappa, gap: q.gap, shift: q.shift, shared: q.shared, hollow: q.hollow || 0, rpm: q.rpm, lifeH: q.lifeH, ext: q.ext };
+    const spec = { basis: env.basis || 'iso', i: q.ratio, bearing: B, dp: bt.dp, T: bt.T, s0: bt.s0, kappa: bt.kappa, gap: q.gap, shift: q.shift, shared: q.shared, nitride: !!q.nitride, Dout: B.D, hollow: q.hollow || 0, rpm: q.rpm, lifeH: q.lifeH, ext: q.ext };
     log.push({ kind: '요구', key: '감속비', value: String(q.ratio), why: '의뢰 조건', basis: 'AD-2' });
     log.push({ kind: '베어링', key: '출력 베어링', value: `${bearingKey(B)} · d ${B.d} × D ${B.D} × B ${B.B} · dp ${fx(bt.dp, 2)} · C ${B.C} · C0 ${B.C0} N`, why: '사용자 선택', basis: B.source || '카탈로그' });
+    log.push({ kind: '재료', key: '기어 재료', value: q.nitride ? 'SCM440 이온질화 (옵션)' : '침탄 연삭 (Eh MQ, HRC 60 / 심부 36, 유효 경화 깊이 0.2 + 0.3·m)', why: q.nitride ? '의뢰서 O3 = Y' : '서보 감속기 관례 — 이온질화(σHlim 약 770 MPa) 대비 침탄(약 1300 MPa)', basis: RULE.src.material });
     log.push({ kind: '베어링', key: '목표 출력 토크', value: `M0 = C0·dp/(2000·s0) = ${fx(bt.M0, 1)} N·m → T = κ ${bt.kappa} × M0 = ${fx(bt.T, 2)} N·m`, why: '베어링 정정격에 맞는 출력 토크 (의뢰서 요구 토크는 쓰지 않음)', basis: RULE.src.kappa });
     await step('잇수 조합 탐색', 5);
     const cands = search(env.E, env.REC, spec, log);
     if (!cands.length) return { status: 'none', error: `롤러 피치원 Ø${fx(bt.dp, 1)} 근처 링으로 감속비 ${q.ratio}를 만드는 조합이 없습니다${spec.shared ? ' (링 공유 — 공유 해제 또는 전위 탐색을 켜 보세요)' : spec.shift ? '' : ' (전위 탐색을 켜 보세요)'}.`, log, ms: Date.now() - t0, spec };
     // 간이 순위: 치폭 상한 안에서 낼 수 있는 출력 토크 → 롤러 피치원 근접 → 길이
-    cands.forEach(c => { c.b0 = firstWidths(env.REC, c, spec.T); c.pcap = Math.min(spec.T, proxyCap(env.REC, c, c.b0)); c.L0 = c.b0.reduce((s, b) => s + b, 0); });
-    cands.sort((a, b) => b.pcap - a.pcap || Math.abs(a.dev) - Math.abs(b.dev) || a.L0 - b.L0);
+    // 간이 순위: 치폭 상한에서 낼 수 있는 출력 토크(간이식, ISO보다 크게 나오므로 순위용) → 롤러 피치원 근접 → 길이
+    cands.forEach(c => { c.b0 = firstWidths(env.REC, c, spec.T); c.pmax = proxyCap(env.REC, c, c.stages.map(bMax)); c.L0 = c.b0.reduce((s, b) => s + b, 0); });
+    cands.sort((a, b) => Math.round(b.pmax) - Math.round(a.pmax) || Math.abs(a.dev) - Math.abs(b.dev) || a.L0 - b.L0);
     const pick = [], seen = new Set();
     for (const c of cands) { const k = c.type + c.stages.map(o => `${o.m}/${o.R}`).join('-'); if (seen.has(k)) continue; seen.add(k); pick.push(c); if (pick.length >= RULE.shortlist) break; }
     for (const c of cands) { if (pick.length >= RULE.shortlist) break; if (!pick.includes(c)) pick.push(c); }
-    log.push({ kind: '탐색', key: '정밀 계산 대상', value: `${cands.length}개 중 ${pick.length}개 (모듈·링 잇수 중복 없이)`, why: '간이 강도식 순위 (치폭 상한 안 출력 토크)', basis: 'recommend.js proxy' });
+    log.push({ kind: '탐색', key: '정밀 계산 대상', value: `${cands.length}개 중 ${pick.length}개 (모듈·링 잇수 중복 없이)`, why: '간이 강도식 순위 (치폭 상한에서 낼 수 있는 출력 토크)', basis: 'recommend.js proxy' });
     const res = [];
     for (let k = 0; k < pick.length; k++) {
       await step(`후보 ${k + 1} / ${pick.length} 치폭·토크 밸런스`, 10 + 85 * k / pick.length);
-      const r = tune(env, spec, pick[k], log); r.cand = pick[k]; res.push(r);
+      const r = tuneBest(env, spec, pick[k], log); r.cand = pick[k]; res.push(r);
     }
     const ok = res.filter(r => r.ok);
     ok.sort((a, b) => Math.round(b.cap * 10) - Math.round(a.cap * 10) || b.balance - a.balance || a.L - b.L);
-    const top = ok.slice(0, RULE.top).map((r, k) => ({ ...r, rank: k + 1, tag: `${k + 1}안 · ${r.type === 'one' ? '1단' : r.type === 'shared' ? '2단 링 공유' : '2단 링 분리'} · ${r.stages.map(o => `m${o.m} ${o.s}/${o.p}/${o.R}`).join(' + ')}` }));
+    const top = ok.slice(0, RULE.top).map((r, k) => ({ ...r, rank: k + 1, tag: `${k + 1}안${r.grade5 ? ' (5급)' : ''} · ${r.type === 'one' ? '1단' : r.type === 'shared' ? '2단 링 공유' : '2단 링 분리'} · ${r.stages.map(o => `m${o.m} ${o.s}/${o.p}/${o.R}`).join(' + ')}` }));
     log.push({ kind: '선택', key: '비교안', value: `${top.length}안 (정밀 계산 ${res.length} · 성립 ${ok.length})`, why: '감속기 한계 토크 → 밸런스 → 길이 순', basis: RULE.src.balance });
     await step('완료', 100);
     if (!top.length) return { status: 'none', error: '정밀 계산에서 성립한 안이 없습니다: ' + [...new Set(res.map(r => r.why))].slice(0, 3).join(' · '), log, ms: Date.now() - t0, spec };

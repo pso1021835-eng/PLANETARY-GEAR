@@ -7,7 +7,7 @@
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const fx = (x, d = 1) => Number.isFinite(+x) && x !== null && x !== '' ? (+x).toFixed(d) : '—';
   const EXAMPLE = { M1: '예시', I7: 25, B1: 'THK RU42', G1: 3, O1: 'N', O2: 'N', I3: 3000, I11: 20000 };
-  const GROUPS = [['의뢰 정보', ['M1', 'M2', 'M3', 'M4']], ['감속비 · 출력 베어링 · 구조', ['I7', 'B1', 'G1', 'O1', 'O2']],
+  const GROUPS = [['의뢰 정보', ['M1', 'M2', 'M3', 'M4']], ['감속비 · 출력 베어링 · 구조', ['I7', 'B1', 'G1', 'O1', 'O2', 'O3']],
     ['운전 · 수명 · 외력', ['I3', 'I10', 'I11', 'I12a', 'I12b', 'I12c']], ['토크 산출 계수 (보통 빈칸)', ['K1', 'K2']]];
   const S = { cells: null, basis: 'iso', run: null, pick: 0, busy: false, msg: '' };
   const load = () => { try { const j = JSON.parse(localStorage.getItem(KEY)); if (j && j.cells) { S.cells = j.cells; S.basis = j.basis || 'iso'; } } catch (e) { } if (!S.cells) S.cells = { ...EXAMPLE }; };
@@ -89,7 +89,7 @@
       <div class="card"><h3>2. 자동 설계</h3>
         <div class="grid"><label class="f">판정 기준<select id="rqBasis"><option value="iso"${S.basis === 'iso' ? ' selected' : ''}>ISO 6336:2019 (KISSsoft 방식) · 기본</option><option value="ideal"${S.basis === 'ideal' ? ' selected' : ''}>이론 (오차 0) · 옵션</option></select></label></div>
         <p><button class="btn primary" id="rqRun" ${q.ok && !S.busy ? '' : 'disabled'}>자동 설계 실행</button> <span class="note" id="rqProg">${S.busy ? '계산 중…' : '보통 5~30초'}</span></p>
-        <p class="note">설계 규칙: 모듈 ${BF().RULE.mods.join('·')} · β ${BF().RULE.beta}° · 유성 ${BF().RULE.n}개 · 단 감속비 ${BF().RULE.stageRatio.join('~')} · 2단 링 잇수 = 롤러 피치원 근접 ± ${BF().RULE.ringTeethBand} · 치폭 ${BF().RULE.bMin} mm ~ 작은 기어 피치원 × ${BF().RULE.bPerD1} · ${BF().RULE.grade}급 · SCM440 이온질화 · SH ≥ 1.0 · SF ≥ 1.4</p></div>
+        <p class="note">설계 규칙: 모듈 ${BF().RULE.mods.join('·')} · β ${BF().RULE.beta}° · 유성 ${BF().RULE.n}개 · 단 감속비 ${BF().RULE.stageRatio.join('~')} · 2단 링 피치원 ≥ 롤러 피치원 근처 · 치폭 ${BF().RULE.bMin} mm ~ 작은 기어 피치원 × ${BF().RULE.bPerD1} · ${BF().RULE.grade}급 (미달 시 5급) · 침탄 연삭 (이온질화 옵션) · 2단 링 외경 ≤ 베어링 외경 · SH ≥ 1.0 · SF ≥ 1.4</p></div>
       <div id="rqResult">${resultHTML(S.run)}</div>`;
   }
 
