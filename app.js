@@ -597,19 +597,36 @@ function go(id, anchor) {
   try { history.replaceState(null, '', '#' + id); } catch (e) { }
   renderRail(); render(); window.scrollTo(0, 0); applyFocus();
 }
+function torqueBars(target, limit) {
+  if (!Number.isFinite(target) || target <= 0 || !Number.isFinite(limit) || limit < 0) return '<p class="note">토크 비교 계산 불가</p>';
+  const scale = Math.max(target, limit);
+  const row = (title, value, cls) => `<div class="pg-compare-row"><div class="pg-compare-label"><span>${title}</span><b>${fmt(value, 1)} N·m</b></div><span aria-hidden="true" class="pg-bar ${cls}"><i style="width:${100 * value / scale}%"></i></span></div>`;
+  return `<div class="pg-compare">${row('요구 정격', target, '')}${row('기어·유성 베어링 한계', limit, limit < target ? 'limit bad' : 'limit')}</div>`;
+}
 function renderVerdict() {
   const el = $('#verdict'), chip = $('#vchip');
+  const missing = x => x.na || typeof x.ok !== 'boolean' || Number.isNaN(x.value);
+  const failed = R?.verdict?.filter(x => !missing(x) && !x.ok) || [];
+  const unavailable = R?.verdict?.filter(missing) || [];
+  const status = [failed.length && failed.length + '개 미달', unavailable.length && unavailable.length + '개 계산 불가'].filter(Boolean).join(' · ') || '계산 항목 충족';
+  const ok = !failed.length && !unavailable.length;
   if (chip) {
     if (!R || R.errors?.length) chip.innerHTML = '<b class="bad">계산 불가</b>';
-    else { const nb = R.verdict.filter(x => !x.ok).length; chip.innerHTML = `<span>기어·유성 베어링 한계 <b class="${R.reducerCap < D.req.Trated ? 'bad' : 'good'}">${fmt(R.reducerCap, 1)}</b> / 목표 ${D.req.Trated} N·m</span><span class="vb ${nb ? 'bad' : 'good'}">${nb ? nb + '개 미달' : '전 항목 충족'}</span><i>▾</i>`; }
+    else chip.innerHTML = `<span>한계 ${fmt(R.reducerCap, 1)} / 요구 ${fmt(D.req.Trated, 1)} N·m</span><span class="vb ${ok ? 'good' : 'bad'}">${status}</span><i>▾</i>`;
   }
-  if (!R || R.errors?.length) { el.innerHTML = `<div class="kpi"><div class="label">계산 불가</div></div><ul class="warns">${(R?.errors || []).map(e => `<li>${esc(e)}</li>`).join('')}</ul>`; return; }
-  const ok = R.verdict.every(x => x.ok);
+  if (!R || R.errors?.length) { el.innerHTML = `<div class="kpi"><div class="label">계산 불가</div></div><ul class="warns">${(R?.errors || []).map(e => `<li>${esc(e)}</li>`).join('')}</ul><button type="button" class="btn" data-vgo="page:1-1">요구 조건 확인</button>`; bindVerdictLinks(el); return; }
+  const bearing = R.bearingCap?.indexOf(R.reducerCap) >= 0 && R.reducerCap !== R.capacityLife;
+  const limitPage = bearing ? '7-1' : R.govRated?.mode?.includes('치면') ? '5-7' : '5-8';
+  const delta = Number.isFinite(R.reducerCap) && Number.isFinite(D.req.Trated) ? R.reducerCap - D.req.Trated : null;
+  const lines = [...failed,...unavailable,...R.verdict.filter(x => x.ok && !missing(x))];
   el.innerHTML = `
-   <div class="kpi"><div class="label">기어·유성 베어링 수명 한계 · ${BASIS()} (${D.req.lifeH} h)</div><div class="big ${R.reducerCap < D.req.Trated ? 'bad' : ''}">${fmt(R.reducerCap, 1)}<small> N·m</small></div><div class="note">${esc(R.reducerGov)}</div><button type="button" class="btn" data-torque-trace>한계 근거 · 기준안 비교</button></div>
+   <div class="kpi"><div class="label">정격 토크 비교 · ${BASIS()} (${D.req.lifeH} h)</div>${torqueBars(D.req.Trated,R.reducerCap)}
+   <div class="note">제한 부품: ${esc(R.reducerGov || '계산 불가')}${delta != null ? ` · ${delta < 0 ? '부족' : '여유'} ${fmt(Math.abs(delta), 1)} N·m` : ''}</div><button type="button" class="lnk" data-vgo="page:${limitPage}">제한 항목 확인</button>
+   <button type="button" class="btn" data-torque-trace>한계 근거 · 기준안 비교</button></div>
+   <p class="note">토크 막대는 기어·유성 베어링 수명 기준입니다. 출력 베어링·핀·캐리어 등은 아래 항목별로 확인하세요. 실측 검증 전의 설계 추정값입니다.</p>
    ${MC ? `<div class="kpi"><div class="label">시편 예측 · 중앙값 (P10–P90)</div><div class="big">${fmt(MC.capacity.p50, 1)}<small> N·m</small></div><div class="note">${fmt(MC.capacity.p10, 1)} – ${fmt(MC.capacity.p90, 1)} N·m · 몬테카를로 ${MC.n}회</div></div>` : `<div class="kpi"><div class="label">시편 예측</div><div class="note">11단계 검증에서 가상 검증을 실행하면 표시됩니다.</div></div>`}
-   <div class="kpi"><div class="label">목표 정격 ${D.req.Trated} N·m · 판정</div><div class="big ${ok ? 'good' : 'bad'}" style="font-size:28px">${ok ? '전 항목 충족' : R.verdict.filter(x => !x.ok).length + '개 항목 미달'}</div></div>
-   <ul>${R.verdict.map(x => `<li><span>${esc(x.k)}${verdictLinks(x)}</span><b class="${x.ok ? 'good' : 'bad'}">${x.ok ? '✓' : '✗'} ${fmtV(x)}</b></li>`).join('')}</ul>`;
+   <div class="kpi"><div class="label">항목별 판정</div><b class="${ok ? 'good' : 'bad'}">${status}</b></div>
+   <ul>${lines.map(x => `<li><span>${esc(x.k)}${verdictLinks(x)}${missing(x) && x.note ? `<small class="note">${esc(x.note)}</small>` : ''}</span><b class="${missing(x) ? 'pg-verdict-missing' : x.ok ? 'good' : 'bad'}">${missing(x) ? '계산 불가' : (x.ok ? '충족 ' : '미달 ') + fmtV(x)}${Number.isFinite(x.target) ? `<small class="note"> 기준 ${fmtV({...x,na:false,value:x.target})}</small>` : ''}</b></li>`).join('')}</ul>`;
   bindVerdictLinks(el);
 }
 // Links from a verdict line to the inputs that decide it (governing duty row, pin entries, external loads).
@@ -621,15 +638,25 @@ function verdictLinks(x) {
     out.push(`<button type="button" class="lnk" data-vgo="pin:${c.stage}">${c.stage}단 핀 입력</button>`);
   }
   if (x.na && id.startsWith('출력 베어링')) out.push('<button type="button" class="lnk" data-vgo="ext:0">외력 입력</button>');
+  if (!x.ok && !out.length) {
+    const page = id.startsWith('출력 베어링') ? '7-5' : id.startsWith('유성 베어링') ? '7-1'
+      : id.startsWith('부하 스펙트럼') ? '1-4' : id.startsWith('정격 토크') ? '1-2'
+      : /^(피크|비상|정지 유지) 토크/.test(id) ? '1-2'
+      : id.startsWith('스커핑') ? '5-10' : id.startsWith('효율') ? '1-9'
+      : id.includes('최소 백래시') ? '4-7' : id.startsWith('출력 백래시') ? '1-8' : null;
+    if (page) out.push(`<button type="button" class="lnk" data-vgo="page:${page}">관련 입력</button>`);
+  }
   return out.length ? ` <span class="vlinks">${out.join('')}</span>` : '';
 }
 let FOCUS = null;   // { duty: row } or { path } — highlighted once on the next render of that page
 function bindVerdictLinks(root) {
   root.querySelectorAll('[data-vgo]').forEach(b => b.onclick = e => {
     e.stopPropagation(); const [k, v] = b.dataset.vgo.split(':');
+    document.body.classList.remove('vopen');
     if (k === 'duty') { FOCUS = { duty: +v }; go('it-1-4'); }
     else if (k === 'pin') { FOCUS = { path: `stages.${+v - 1}.pin.allow` }; go('it-6-4'); }
     else if (k === 'ext') { FOCUS = { path: 'req.ext.Fr' }; go('it-1-5'); }
+    else if (k === 'page') { go('it-' + v); $('#main').setAttribute('tabindex','-1'); $('#main').focus({preventScroll:true}); }
   });
 }
 function applyFocus() {
@@ -644,7 +671,7 @@ function torqueSummary() {
   const gear = R.govRated, stage = gear.row.stage;
   const after = R.ctx.stages.slice(stage).reduce((v, s) => v * s.geo.ratio, 1);
   const sizes = R.ctx.stages.map(({st}) => `${fmt(st.b, 2)} mm / ${st.n}개`).join(' · ');
-  return { sizes, gear: R.capacityLife, total: R.reducerCap, gov: R.reducerGov,
+  return { sizes, gear: R.capacityLife, total: R.reducerCap, gov: R.reducerGov, target: D.req.Trated,
     part: `${stage}단 · ${gear.row.mesh} · ${gear.row.partName} · ${gear.mode}`, after,
     loadFactors: `Kγ ${fmt(gear.row.f.Kg,3)} · Kv ${fmt(gear.row.f.Kv,3)}`, life: D.req.lifeH, rpm: D.req.rpm, basis: BASIS(),
     L10: Math.min(...R.bearings.map(b => b.L10h)),
@@ -682,12 +709,13 @@ function showTorqueTrace() {
     const load = op.pinForce / Math.max(1, bearing.count || 1);
     support = `<p>감속기 지배 부품 · ${bearingStage + 1}단 유성 베어링 · 한계점의 개당 하중 ${fmt(load,2)} N · 동정격 C ${fmt(bearing.C,0)} N · 목표 L10 ${fmt(D.req.lifeH,0)} h</p>`;
   }
-  $('#traceBody').innerHTML = `<p><b>${esc(cur.part)}</b></p>
+  $('#traceBody').innerHTML = `${torqueBars(cur.target,cur.total)}<p class="note">기어·유성 베어링 수명 기준 · 실측 검증 전 추정값</p><p><b>${esc(cur.part)}</b></p>
     <p>한계점에서 SH ${fmt(row.SH,3)} / 목표 ${fmt(D.req.SH,2)} · SF ${fmt(row.SF,3)} / 목표 ${fmt(D.req.SF,2)}</p>
     <p>KA ${fmt(f.KA,3)} · Kγ ${fmt(f.Kg,3)} · Kv ${fmt(f.Kv,3)} · ${bending ? 'KFβ '+fmt(f.KFb,3)+' · KFα '+fmt(f.KFa,3) : 'KHβ '+fmt(f.KHb,3)+' · KHα '+fmt(f.KHa,3)}</p>
     <p>제한 단 캐리어 ${fmt(cur.gear/cur.after,3)} N·m × 후속 단 감속비 ${fmt(cur.after,4)} = 출력축 ${fmt(cur.gear,3)} N·m (엔진의 기어 한계 환산 기준)</p>
     ${support}<div class="scroll"><table><tr><th>비교 항목</th><th>기준안</th><th>현재안</th></tr>
     ${tr('단별 유성 치폭 / 개수',ref?.sizes || '—',cur.sizes)}${tr('운전 기준',renderCase(ref),renderCase(cur))}
+    ${tr('요구 정격 N·m', ref ? fmt(ref.target,1) : '—', fmt(cur.target,1))}${tr('요구 대비 여유 N·m', ref ? fmt(ref.total-ref.target,1) : '—', fmt(cur.total-cur.target,1))}
     ${tr('기어 한계 N·m',ref ? fmt(ref.gear,2) : '—',diff('gear'))}${tr('기어 지배 부위',ref?.part || '—',cur.part)}${tr('지배점 하중계수',ref?.loadFactors || '—',cur.loadFactors)}
     ${tr('감속기 한계 N·m',ref ? fmt(ref.total,2) : '—',diff('total'))}${tr('감속기 지배 부위',ref?.gov || '—',cur.gov)}
     ${tr('유성 베어링 L10 (최저)', ref ? (ref.L10 < 1e4 ? fmtN0(ref.L10) : fmtH(ref.L10)) + ' h' : '—', (cur.L10 < 1e4 ? fmtN0(cur.L10) : fmtH(cur.L10)) + ' h' + (ref && Math.abs(ref.L10 - cur.L10) > 1e-6 * Math.max(1, ref.L10) ? ` — ${causes.brg || '베어링 입력 변화 없음 (하중 변화)'}` : ''))}
@@ -1879,6 +1907,11 @@ $('#dname').onchange = e => { D.name = e.target.value; save(); };
 { const b = $('#bInputs'); const lab = () => { if (b) { b.textContent = FULLIN ? '입력 전체' : '입력 간소'; b.setAttribute('aria-pressed', String(FULLIN)); } }; lab();
   if (b) b.onclick = () => { FULLIN = !FULLIN; try { localStorage.setItem('pgd-inputs', FULLIN ? 'full' : 'min'); } catch (e) { } lab(); render(true); }; }
 $('#bExample').onclick = () => { D = E.defaultDesign(); $('#dname').value = D.name; changed(); };
+$('#bTry').onclick = () => {
+  if (!window.confirm('현재 작업안을 예제로 바꿀까요? 보관하려면 먼저 파일 메뉴에서 저장하세요.')) return;
+  $('#bExample').click();
+  go('overview');
+};
 $('#bExport').onclick = () => {
   const txt = JSON.stringify(D, null, 1);
   dlg('설계 JSON', txt, '아래 내용을 복사해 보관하세요. "복사"를 누르면 클립보드에 넣습니다.', '복사', async () => { try { await navigator.clipboard.writeText(txt); return '복사했습니다.'; } catch (e) { $('#dlgText').select(); return '자동 복사가 막혀 있어 내용을 선택해 두었습니다. Ctrl+C로 복사하세요.'; } });
@@ -1887,20 +1920,50 @@ $('#bImport').onclick = () => dlg('JSON 불러오기', '', '이 사이트에서 
   try { const d = JSON.parse($('#dlgText').value); if (d.schema !== 'pgd/1') throw new Error('형식이 다릅니다'); d.config.floatingSun = false; D = migrateLoaded(d); $('#dname').value = D.name || ''; changed(); $('#dlg').close(); return null; } catch (e) { return '불러오지 못했습니다: ' + e.message; }
 });
 // 추천 제원: 외형·목표 감속비·입력축 조건 → 허용 토크 순
-let REC = null, recDesign = '', recRevision = 0;
-$('#bRecommend').onclick = () => {
+let REC = null, recDesign = '', recRevision = 0, recSeed = null;
+function openRecommend(seed = D, target = null) {
   $('#moreMenu').hidden = true;
   const last = D.stages[D.stages.length - 1];
   let L = null; try { if (R?.ctx && !R.errors?.length) L = PGD3D.layout(R, D); } catch (e) { L = null; }
-  const key = JSON.stringify(D), reset = key !== recDesign;
+  const key = JSON.stringify(D), reset = key !== recDesign || seed !== D || recSeed !== D;
   const v = (id, x) => { const el = $('#' + id); if (reset || el.value === '') el.value = x; };
   if (reset) { recRevision++; REC = null; $('#recOut').textContent = ''; $('#trialOut').textContent = ''; }
-  recDesign = key;
+  recDesign = key; recSeed = seed;
+  $('#recRequirements').textContent = `정격 ${fmt(seed.req.Trated, 1)} N·m · 목표 수명 ${fmtN0(seed.req.lifeH)} h · ${fmtN0(seed.req.rpm)} rpm` +
+    (seed !== D ? ' · 관절 케이스 가정' : '');
   const st = D.stages[0];
   for (const [id, val] of Object.entries({ trialS: st.s, trialP: st.p, trialR: E.ringTeeth(st), trialN: st.n, trialM: st.m, trialB: st.b, trialA: st.alpha })) v(id, val);
   v('rOD', L ? Math.round(2 * Math.max(L.housR, L.flangeR) * 10) / 10 : 68); v('rH', L ? Math.round((L.zFlange[1] - L.zIn) * 10) / 10 : 54);
-  v('rRatio', R?.ratio || 9); v('rMods', [...new Set(D.stages.map(s => s.m))].join(', ')); v('rBeta', last.beta);
+  v('rRatio', target ?? (R?.ratio || 9)); v('rMods', [...new Set(D.stages.map(s => s.m))].join(', ')); v('rBeta', last.beta);
   $('#recDlg').showModal();
+}
+$('#bRecommend').onclick = () => openRecommend();
+$('#bStart').onclick = () => {
+  const cases = $('#startCase'); cases.replaceChildren(new Option('관절 케이스 선택', ''));
+  for (const [key, c] of Object.entries(E.CASES)) cases.add(new Option(c.label, key));
+  cases.value = Object.hasOwn(E.CASES, D.req.case) ? D.req.case : '';
+  $('#startTorque').value = D.req.Trated;
+  $('#startRatio').value = R?.ratio > 2 ? +R.ratio.toFixed(3) : 9;
+  $('#startRatio').setCustomValidity('');
+  $('#startDlg').showModal();
+};
+$('#startCancel').onclick = () => $('#startDlg').close();
+$('#startRatio').oninput = e => e.target.setCustomValidity('');
+$('#startForm').onsubmit = e => {
+  e.preventDefault();
+  const ratioInput = $('#startRatio'), ratio = ratioInput.valueAsNumber, torque = $('#startTorque').valueAsNumber;
+  const key = $('#startCase').value;
+  if (!Number.isFinite(ratio) || ratio <= 2) {
+    ratioInput.setCustomValidity('목표 감속비는 2보다 커야 합니다.');
+    ratioInput.reportValidity(); return;
+  }
+  if (!Number.isFinite(torque) || torque <= 0 || !Object.hasOwn(E.CASES, key)) return;
+  const seed = JSON.parse(JSON.stringify(D));
+  seed.req.Trated = torque;
+  E.applyCase(seed, key, ratio);
+  seed.anim.rpm = seed.req.rpm;
+  $('#startDlg').close();
+  openRecommend(seed, ratio);
 };
 // 감속비 표시: 정확한 정수면 정수만, 아니면 기약분수와 오차 (소수 나열 없이)
 const recRatioHTML = (r, spec) => {
@@ -1938,7 +2001,13 @@ $('#recGo').onclick = async () => {
     : !mods.length ? '모듈 후보를 하나 이상 넣어 주세요 (예: 0.5, 0.6, 0.8).' : !(spec.beta >= 0 && spec.beta < 45) ? '비틀림각은 0 ~ 45° 사이로 넣어 주세요.'
     : bIn !== '' && !(spec.b > 0) ? '치폭은 양수로 넣거나 비워 두세요 (자동 배분).' : !ns.length ? '유성 개수를 하나 이상 고르세요.' : !Object.values(modes).some(Boolean) ? '구성을 하나 이상 고르세요.' : '';
   if (err) { out.innerHTML = `<p class="bad">${err}</p>`; return; }
-  const revision = ++recRevision, design = JSON.parse(JSON.stringify(D));
+  const revision = ++recRevision, design = JSON.parse(JSON.stringify(recSeed || D));
+  if (recSeed !== D && Object.hasOwn(E.CASES, design.req.case)) {
+    E.applyCase(design, design.req.case, spec.ratio);
+    design.anim.rpm = design.req.rpm;
+  }
+  $('#recRequirements').textContent = `정격 ${fmt(design.req.Trated, 1)} N·m · 목표 수명 ${fmtN0(design.req.lifeH)} h · ${fmtN0(design.req.rpm)} rpm` +
+    (recSeed !== D ? ' · 관절 케이스 가정' : '');
   const go_ = $('#recGo'); go_.disabled = true;
   out.innerHTML = '<p class="note">조건에 맞는 잇수 조합을 찾는 중…</p>';
   await new Promise(r => setTimeout(r, 0));
@@ -1955,13 +2024,20 @@ $('#recGo').onclick = async () => {
   const sum = `<p class="note">감속비 ${ratioCondition}${sunCondition} · 조합 ${RS.total.toLocaleString()}개 (1단 ${c.one} · 2단 링 공유 ${c.shared} · 2단 링 분리 ${c.sep.toLocaleString()}) → 간이 강도 상위 ${RS.checked}개 정밀 계산 → 적합 ${ok.length}개.${bad.length ? ` 제외 ${bad.length}개: ${Object.values(why).map(w => `${esc(w.ex)}${w.n > 1 ? ` 외 ${w.n - 1}` : ''}`).join(' · ')}` : ''}</p>`;
   if (!RS.total) { out.innerHTML = `<p class="bad">감속비 ${ratioCondition}${sunCondition} 조건에 맞는 잇수 조합이 없습니다.</p>`; return; }
   if (!ok.length) { out.innerHTML = '<p class="bad">조합은 있으나 모두 외형·간섭 조건에서 제외됐습니다.</p>' + sum; return; }
+  const required = design.req.Trated;
+  const scale = Math.max(required, ...ok.map(r => Number.isFinite(r.cap) ? r.cap : 0));
+  const candidateTorque = r => {
+    if (!Number.isFinite(r.cap) || r.cap < 0 || !(scale > 0)) return '계산 불가';
+    const cls = r.cap < required ? 'bad' : 'good';
+    return `<b class="${cls}">${fmt(r.cap, 1)}</b><span class="pg-bar pg-candidate limit ${cls}" aria-hidden="true"><i style="width:${100 * r.cap / scale}%"></i><em style="left:${100 * required / scale}%"></em></span>`;
+  };
   const typeName = { one: '1단', shared: '2단 링 공유', sep: '2단 링 분리' };
   const shiftLine = t => t.profile ? ` <small class="note">xS ${fmt(t.profile.xs, 4)} · xP ${fmt(t.profile.xp, 4)} · xR ${fmt(t.profile.xr, 4)}</small>` : '';
   const stg = r => r.stages.map((t, i) => `${r.stages.length > 1 ? `${i + 1}단 ` : ''}m${t.m} · S${t.s}/P${t.p}/R${t.R} ×${t.n} · b ${fmt(r.b[i], 1)} · i ${recFrac(t)}${shiftLine(t)}`).join('<br>');
   const caps = r => r.stageCap.map((cc, i) => `${r.stages.length > 1 ? `${i + 1}단 ` : ''}<b>${fmt(cc.out, 1)}</b>${r.stages.length > 1 ? ` <small class="note">(캐리어 ${fmt(cc.own, 1)})</small>` : ''}`).join('<br>');
   out.innerHTML = `<div class="scroll"><table><tr><th>순위</th><th>구성</th><th>실제 감속비<br><small>목표 대비</small></th><th class="l">모듈 · 잇수 · 유성 개수 · 치폭 · 단 감속비 · 전위</th><th>1단 썬 PCD<br><small>mm</small></th><th>단별 허용 토크<br><small>N·m · 출력축 환산</small></th><th>감속기 허용 토크<br><small>N·m · 출력</small></th><th class="l">지배 부위</th><th>외경 × 높이</th><th></th></tr>
-    ${ok.map((r, k) => `<tr class="${k === 0 ? 'gov' : ''}"><td>${k + 1}</td><td>${typeName[r.type]}</td><td>${recRatioHTML(r, spec)}</td><td class="l">${stg(r)}</td><td>${fmt(r.stages[0].s * r.stages[0].m / Math.cos(spec.beta * Math.PI / 180), 3)}</td><td>${caps(r)}</td><td><b class="${r.cap < D.req.Trated ? 'bad' : 'good'}">${fmt(r.cap, 1)}</b>${r.fails ? `<br><small class="bad">미달 ${r.fails}</small>` : ''}</td><td class="l note">${esc(r.gov)}</td><td>Ø${fmt(r.OD, 1)} × ${fmt(r.H, 1)}</td><td><button class="btn" type="button" data-rec="${REC.indexOf(r)}">적용</button></td></tr>`).join('')}</table></div>
-    <p class="note">요구 조건: 정격 ${D.req.Trated} N·m · 수명 ${D.req.lifeH} h · ${D.req.rpm} rpm · SH ${D.req.SH} · SF ${D.req.SF} · ${BASIS()}. 미달 = 판정 항목(효율·백래시·정적 등) 중 기준 미달 수. 단 감속비는 분수로 표시합니다.</p>${sum}`;
+    ${ok.map((r, k) => `<tr class="${k === 0 ? 'gov' : ''}"><td>${k + 1}</td><td>${typeName[r.type]}</td><td>${recRatioHTML(r, spec)}</td><td class="l">${stg(r)}</td><td>${fmt(r.stages[0].s * r.stages[0].m / Math.cos(spec.beta * Math.PI / 180), 3)}</td><td>${caps(r)}</td><td>${candidateTorque(r)}${r.fails ? `<br><small class="bad">미충족 ${r.fails}</small>` : ''}</td><td class="l note">${esc(r.gov)}</td><td>Ø${fmt(r.OD, 1)} × ${fmt(r.H, 1)}</td><td><button class="btn" type="button" data-rec="${REC.indexOf(r)}">적용</button></td></tr>`).join('')}</table></div>
+    <p class="note">요구 조건: 정격 ${required} N·m · 수명 ${design.req.lifeH} h · ${design.req.rpm} rpm · SH ${design.req.SH} · SF ${design.req.SF} · ${BASIS()}. 막대는 동일한 축척이며 세로선은 요구 정격입니다. 미충족 수에는 계산 불가 항목이 포함될 수 있습니다.</p>${sum}`;
   out.querySelectorAll('[data-rec]').forEach(b => b.onclick = () => { const r = REC[+b.dataset.rec]; D = JSON.parse(JSON.stringify(r.D)); $('#dname').value = D.name; $('#recDlg').close(); changed(); });
 };
 function dlg(title, text, note, okLabel, onOk) {
